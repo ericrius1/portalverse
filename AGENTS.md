@@ -10,25 +10,32 @@ Everything—both the Vite WebGPU frontend (`dist/`) and the authoritative multi
 - **Health / Presence API:** https://portalverse-server-production.up.railway.app/api/health
 - **Multiplayer WebSocket:** `wss://portalverse-server-production.up.railway.app/ws` (same-origin, no env vars needed)
 
+### Always Keep `CHANGELOG.md` Updated (Shared Context Between Eric, JP & Agents)
+- **At the start of feature work**, skim the top of [CHANGELOG.md](./CHANGELOG.md) so you know what the other collaborator recently changed and *why*.
+- **For every feature or notable change**, update [CHANGELOG.md](./CHANGELOG.md) (newest first) *before pushing* with:
+  - **What changed** (`Added` / `Changed` / `Fixed` / `Removed`)
+  - **Why it changed** (`Design & engineering decisions` — capture the prompting intent, problem solved, and tradeoffs so both collaborators and future agents stay aligned).
+
 ### When Eric or JP asks to "push" or "deploy":
-1. Verify locally first:
+1. Make sure [CHANGELOG.md](./CHANGELOG.md) reflects the feature(s) and the *why* behind them.
+2. Verify locally first:
    ```bash
    pnpm run build   # runs check:rooms && tsc --noEmit && vite build
    pnpm test        # runs full Vitest suite
    ```
-2. Sync cleanly with `origin/main` (never force-push `main`):
+3. Sync cleanly with `origin/main` (never force-push `main`):
    ```bash
    git fetch origin
    git checkout main
    git pull --rebase origin main
    ```
    *(If working on a feature branch like `eric/...` or `jp/...`, merge it cleanly into `main`, re-run `pnpm run build && pnpm test`, then push.)*
-3. Push to `main`:
+4. Push to `main`:
    ```bash
    git push origin main
    ```
-4. **Auto-deploy happens automatically on Railway** (typically ~45–90 seconds; no Railway CLI login is required for either collaborator).
-5. Verify the live redeploy before finishing:
+5. **Auto-deploy happens automatically on Railway** (typically ~45–90 seconds; no Railway CLI login is required for either collaborator).
+6. Verify the live redeploy before finishing:
    - Check `GET https://portalverse-server-production.up.railway.app/api/health` returns `200 OK` with `"ok": true` and includes any newly added room IDs in `worlds`.
    - Check `GET https://portalverse-server-production.up.railway.app/` returns `200 OK`.
 

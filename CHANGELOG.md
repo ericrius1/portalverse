@@ -1,8 +1,50 @@
 # Changelog
 
-Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit it shipped in. `Unreleased` is work on `jp/seamless-portals` that hasn't been committed yet.
+Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
-## [Unreleased] — `jp/seamless-portals` (2026-11-24)
+## Railway all-in-one hosting, 10-room loop, FPS + tutorial, and Earth-style flight — `dd6aa95`..`2a8d19c` (2026-11-25)
+
+### Added
+
+- **All-in-one Railway deployment (`packages/server/Dockerfile`, `packages/server/src/index.ts`, `.railway/railway.ts`, `.dockerignore`)** — multi-stage Docker build runs `pnpm run build` and serves the built Vite frontend (`dist/` with immutable caching for `/assets/*` and SPA fallback for room deep links) alongside the authoritative `/ws` WebSocket server, `/api/health`, and `/api/worlds` on one origin (`https://portalverse-server-production.up.railway.app`), auto-deploying on every push to `main`.
+- **Two new Eric rooms**, completing a **10-room loop** (`eric-world` → `jp-world` → `jp-garden` → `fishpond` → `jp-reef` → `jp-loft` → `laser-lab` → `alpine-sled` → `eric-biolum-grove` → `eric-sun-observatory`):
+  - **Bioluminescent Redwood Grove (`worlds/eric-biolum-grove/index.ts`)** — nocturnal redwood cathedral with a mossy TSL mycelial-vein floor, overhead TSL emerald-to-violet aurora ribbons, redwood trunks, drifting firefly spores, and glowing mushrooms that brighten and pulse as `ctx.player` passes.
+  - **Golden Cloud Observatory (`worlds/eric-sun-observatory/index.ts`)** — floating marble-and-brass promenade above a rolling sunset TSL sea of clouds, flanked by player-reactive astrolabe beacons and crowned by colossal rotating brass armillary rings and orbiting moons.
+- **Agent onboarding & auto-deploy guide (`AGENTS.md`, `CLAUDE.md`)** — auto-loaded by Claude, Codex, and Gemini/Antigravity agents so either Eric or JP can ask their agent to push/deploy and it knows the exact checks, `main` push → Railway auto-deploy verification flow, file/branch/thread conventions, and `CHANGELOG.md` update requirement.
+- **Controls context & optional interactive tutorial (`app/tutorial.ts`, `index.html`, `app/styles.css`, `app/main.ts`)**:
+  - Loading gate quick-controls strip plus a ready-state choice between **Interactive Tutorial (30s)** (highlighted for first-time visitors) and **Jump Right In** / **ENTER**.
+  - Live 5-step interactive tutorial HUD card (Look Around → Walk & Sprint → Take Flight & Land → Switch Camera View → Step Through a Portal), always skippable and replayable.
+  - Full **Controls & How to Play** modal (`H`, `?`, or the top-bar `Controls` button), subtle FPS center reticle when pointer-locked, and an unlocked-cursor context pill.
+
+### Changed
+
+- **FPS + Pointer Lock by default (`AvatarController.ts`, `WorldEngine.ts`)** — starts in 1st-person (`firstPerson = true`) with a level horizon (`pitch = 0`) and requests browser Pointer Lock on gate entry and canvas clicks (keeping drag-look as a fallback for touch/unsupported contexts, clamping pointer-lock delta spikes, and releasing lock cleanly on `Esc` or modal open). Pressing `V` still switches to 3rd-person.
+- **Earth-repo-style flight (`AvatarController.ts`, `WorldEngine.ts`)** — modeled after Eric's `world` (Earth) repo (`camera/controls.ts`):
+  - `Space` jumps (holding briefly extends jump height); pressing `Space` again while airborne launches smoothly into flight with upward takeoff drift.
+  - While flying: `WASD` steers along look direction with smooth throttle ramp & coasting glide, `Shift` boosts (and flies forward alone if no direction key is held), `Q` (or `Space`) rises, and holding `E` descends (easing gently near the floor) and lands cleanly on foot. Diving low after flying above 4.5 m also releases flight smoothly onto your feet with carried momentum.
+  - While airborne in flight, `E` belongs to descending/landing rather than the portal interact prompt (fly straight through portals instead).
+- **Future-proof room crossing test (`roomCrossing.test.ts`)** — depth-2 portal crossing tests now look up `eric-world`'s neighbors dynamically from `registry.json` instead of hardcoding `alpine-sled`/`laser-lab`, so adding new rooms won't break crossing assertions.
+
+### Removed
+
+- **Vercel hosting (`vercel.json`, `.vercel.app` fallback branch in `app/main.ts`)** — deleted the Vercel project and removed Vercel-specific static fallback code.
+
+### Design & engineering decisions
+
+- **Single-origin Railway over Vercel + separate WS server**
+  - *Why*: Vercel's Hobby tier blocked JP's collaborator commits behind a Pro account paywall and couldn't host persistent WebSockets, forcing a split frontend/backend setup.
+  - *Decision*: Serve both `dist/` and `/ws` from `packages/server` in one Railway container auto-deploying from `main`. Both collaborators can push freely, multiplayer works out of the box on the main URL with zero env vars, and `packages/server` tests remain unaffected because static serving is enabled only when `staticDir` is passed (auto-detected when run as main).
+- **FPS + pointer lock default with explicit control context & opt-in tutorial**
+  - *Why*: Drag-look 3rd-person felt indirect for new visitors exploring the rooms, and first-time players had no quick onboarding for portals, flight, or unlocking the cursor.
+  - *Decision*: Default to FPS + pointer lock with clear on-screen context (`Esc` for cursor, `H` for controls), and offer an interactive 5-step tutorial right on the loading gate that players can choose or skip in one click.
+- **Earth-style double-jump flight (`Space ×2`, `Q` up, hold `E` down/land)**
+  - *Why*: Eric wanted flying to feel intuitive and match the muscle memory from his `world` (Earth) repo rather than requiring a separate `F` toggle and `Space`/`C` keys.
+  - *Decision*: Port the core feel from `world/web/src/camera/controls.ts` (variable-height jump, mid-air double-jump takeoff, damped throttle/coast flight, `Q` rise, gentle ground-proximity sink + hold-`E` landing, and `E` yielding portal-use while flying), tuned to Portalverse's 72.5 m room scale.
+- **Keep `AGENTS.md` + `CHANGELOG.md` updated on every feature**
+  - *Why*: With two collaborators and multiple agents working in parallel, commit diffs alone lose the *why* behind UX and architecture choices.
+  - *Decision*: Require agents in `AGENTS.md` to read recent `CHANGELOG.md` entries for context and append the *what* and *why* (prompt rationale + design decisions) for every feature before pushing.
+
+## Seamless portals & eight-room loop — `9a7253d` (2026-11-25)
 
 ### Added
 
