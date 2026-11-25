@@ -2,7 +2,7 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
-## Honey in da Hood Ya Heard room — `feat/honey-hood-room` (2026-11-25)
+## Honey in da Hood Ya Heard room — [PR #3](https://github.com/ericrius1/portalverse/pull/3), `7c9050d` (2026-11-25)
 
 ### Added
 
@@ -28,11 +28,12 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 - **The fire hydrant talks**
   - *Decision*: Within 5 m a speech bubble pops up reading はちみつタイム ("honey time"), and it goes away past 6 m.
 
-## Stutter when crossing portals — `fix/portal-crossing-stutter` (2026-11-25)
+## Stutter when crossing portals — [PR #2](https://github.com/ericrius1/portalverse/pull/2), `d2b21e1`, `aaa52cb` (2026-11-25)
 
 ### Fixed
 
 - **Freezes on every portal crossing (`engine/PortalPreviews.ts`)** — previews and snapshots hid the arrival portal along with its point light. The arrival portal's meshes are still hidden there, but its light now stays on.
+- The regression tests check which lights the camera can see in both live portal windows and loading snapshots. Both tests fail if hiding the arrival gate also hides its light.
 
 ### Design & engineering decisions
 
@@ -43,14 +44,14 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 
 JP confirmed the crossing stutter was gone in a local playtest.
 
-## Platformer jump timing — `jp/platformer-input-fixes` (2026-11-25)
+## Platformer jump timing — [PR #1](https://github.com/ericrius1/portalverse/pull/1), `4b097a6` (2026-11-25)
 
 ### Fixed
 
 - Platformer jumps follow the same vertical trajectory at 20–240 FPS for the same hold duration. Movement now accounts for the time spent rising and falling within each frame. A held jump still matches Classic at 60 FPS, so players can clear the same ledges across frame rates in Platformer.
 - Two Space taps between frames now start flight when the first tap launches a jump. The controller counts presses until its next update so a frame hitch cannot swallow the second tap.
 
-## Platformer physics toggle — `feat/platformer-physics` (2026-11-25)
+## Platformer physics toggle — [PR #1](https://github.com/ericrius1/portalverse/pull/1), `c7ea955`, `2793e7d` (2026-11-25)
 
 ### Added
 
