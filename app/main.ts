@@ -51,6 +51,25 @@ function saveIdentity(identity: PlayerIdentity): void {
   }
 }
 
+function resolveMultiplayerUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const explicit = params.get('ws') ?? (import.meta.env.VITE_WS_URL as string | undefined);
+  if (explicit) {
+    try {
+      const u = new URL(explicit);
+      if (u.protocol === 'ws:' || u.protocol === 'wss:') return u.toString();
+    } catch {
+      // Ignore malformed override
+    }
+  }
+  // Static Vercel preview has no built-in /ws server unless ?ws= or VITE_WS_URL is supplied.
+  if (window.location.hostname.endsWith('.vercel.app')) {
+    return null;
+  }
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws`;
+}
+
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -241,7 +260,9 @@ async function boot(): Promise<void> {
     },
   });
 
+  const wsUrl = resolveMultiplayerUrl();
   const net = new MultiplayerClient({
+    url: wsUrl ?? undefined,
     identity,
     initialWorldId,
     onConnectionChange: (state: ConnectionState) => {
@@ -613,7 +634,12 @@ async function boot(): Promise<void> {
     extraPortals: combinedDynamicPortals(),
   });
 
-  net.connect();
+  if (wsUrl) {
+    net.connect();
+  } else {
+    hudNetStatus.dataset.state = 'offline';
+    hudNetStatus.textContent = 'Solo / Local';
+  }
   renderPresenceRoster();
 
   // Stream local avatar coordinates to multiplayer server at ~20 Hz
