@@ -297,4 +297,38 @@ describe('the room window', () => {
     outer.open();
     previews.clear();
   });
+
+  it('starts the outer rooms only after both neighbours are ready', async () => {
+    const { previews, loads, holds, home } = loop();
+    const neighbour = gate();
+    holds.set(at(2), neighbour.closed);
+    const synced = previews.syncPinnedForRoom(await home(at(3)));
+    await settle();
+    expect(loads).toEqual([at(4), at(2)]);
+    neighbour.open();
+    await synced;
+    await settle();
+    expect(loads).toEqual([at(4), at(2), at(5), at(1)]);
+    previews.clear();
+  });
+
+  it('holds the old queue while travelling somewhere else', async () => {
+    const { previews, loads, holds, home } = loop();
+    const stale = gate();
+    const destination = gate();
+    holds.set(at(5), stale.closed);
+    holds.set(at(8), destination.closed);
+    await previews.syncPinnedForRoom(await home(at(3)));
+    await settle();
+    const arriving = previews.travelTo(at(8))!;
+    stale.open();
+    await settle();
+    expect(loads).not.toContain(at(1));
+    // A destination that never gets installed must not leave the queue stuck.
+    destination.open();
+    await arriving;
+    await settle();
+    expect(loads).toContain(at(1));
+    previews.clear();
+  });
 });

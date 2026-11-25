@@ -233,7 +233,7 @@ export class WorldEngine {
   ): Promise<SpawnPoint | undefined> {
     const sequence = ++this.mountSequence;
     const source = this.getAllPortals().find(p => p.portal === options?.fromPortal);
-    const cached = this.previews?.prepare(module.manifest.id);
+    const cached = this.previews?.travelTo(module.manifest.id);
     const room = await (cached ?? RoomInstance.mount(module, this.renderer));
     if (sequence !== this.mountSequence) {
       if (!cached) this.disposeRoom(room);

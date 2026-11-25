@@ -410,6 +410,8 @@ export class PortalPreviews {
   /** Outer rooms of the window still waiting to load, in order. */
   private queue: string[] = [];
   private loadingQueue = false;
+  /** The rooms needed right now. The queue waits for them. */
+  private urgent: Promise<unknown> = Promise.resolve();
   /** The room the player is in, which this cache doesn't own but keeps supplied with snapshots. */
   private activeRoom?: RoomInstance;
   private readonly compileCamera = new THREE.PerspectiveCamera();
@@ -533,6 +535,13 @@ export class PortalPreviews {
     });
   }
 
+  /** Prepare the room the player is travelling to, ahead of anything still queued. */
+  travelTo(id: string): Promise<RoomInstance> | undefined {
+    const ready = this.prepare(id);
+    if (ready) this.urgent = ready.catch(() => {});
+    return ready;
+  }
+
   /**
    * Centre the room window on the player's room. Its neighbours load at once and
    * the outer rooms queue behind them, one at a time. Rooms outside the window are
@@ -565,8 +574,10 @@ export class PortalPreviews {
     this.queue = window
       .map(entry => entry.id)
       .filter(id => !neighbours.has(id) && this.needsLoad(id));
+    const ready = Promise.all(pending).then(() => {});
+    this.urgent = ready;
     void this.loadQueued();
-    return Promise.all(pending).then(() => {});
+    return ready;
   }
 
   /** Whether `id` is one of the rooms kept loaded around `centerId`. */
@@ -585,8 +596,11 @@ export class PortalPreviews {
     this.loadingQueue = true;
     try {
       while (this.queue.length) {
+        const urgent = this.urgent;
+        await urgent;
         await this.idle();
-        // Read the queue only now: the player may have moved on while we waited.
+        // The player may have moved on while we waited: wait again, then read the queue.
+        if (urgent !== this.urgent) continue;
         const id = this.queue.shift();
         if (id === undefined) break;
         await this.prepare(id)?.catch(() => {});
