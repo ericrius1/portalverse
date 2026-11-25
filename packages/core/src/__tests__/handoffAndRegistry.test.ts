@@ -211,6 +211,7 @@ describe('WorldRegistry', () => {
       'alpine-sled',
       'eric-biolum-grove',
       'eric-sun-observatory',
+      'honey-hood',
     ]);
     expect(reg.getManifest('eric-world')?.name).toBe("Eric's Room");
     expect(reg.getManifest('jp-world')?.name).toBe("JP's Solarpunk Meadow");
