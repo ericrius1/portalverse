@@ -30,6 +30,18 @@ import { createSceneTarget } from './sceneTarget';
 type Aperture = PortalVisualHandle['aperture'];
 type LocalLoader = (worldId: string) => Promise<WorldModule> | undefined;
 
+export interface PortalPreviewOptions {
+  /** Resolves when there is spare time for the next step of background loading. */
+  idle?: () => Promise<void>;
+}
+
+function nextIdle(): Promise<void> {
+  return new Promise(resolve => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 200 });
+    else setTimeout(resolve, 0);
+  });
+}
+
 export interface TransitAvatarState {
   rig: THREE.Group;
   position: THREE.Vector3;
@@ -387,8 +399,22 @@ export class PortalPreviews {
   private seenWithoutLive = new Set<Aperture>();
   private nextSeenWithoutLive = new Set<Aperture>();
   private lastElapsed = 0;
+  private readonly idle: () => Promise<void>;
+  /** The room the player is in, which this cache doesn't own but keeps supplied with snapshots. */
+  private activeRoom?: RoomInstance;
+  private readonly compileCamera = new THREE.PerspectiveCamera();
+  private compileTarget?: THREE.RenderTarget;
+  /** Compiles run one after another; three.js shares precompile state between calls. */
+  private compiling: Promise<void> = Promise.resolve();
+  /** Bumped by `clear()` so rooms still being prepared stop touching the GPU. */
+  private generation = 0;
 
-  constructor(private readonly renderer: THREE.WebGPURenderer, private readonly load: LocalLoader) {
+  constructor(
+    private readonly renderer: THREE.WebGPURenderer,
+    private readonly load: LocalLoader,
+    options: PortalPreviewOptions = {},
+  ) {
+    this.idle = options.idle ?? nextIdle;
     this.farProxy.matrixAutoUpdate = false;
   }
 
@@ -400,7 +426,10 @@ export class PortalPreviews {
     }
     const module = this.load(id);
     if (!module) return;
-    const ready = module.then(mod => RoomInstance.mount(mod, this.renderer));
+    const generation = this.generation;
+    const ready = module
+      .then(mod => RoomInstance.mount(mod, this.renderer))
+      .then(room => this.prepareRoom(room, generation));
     const entry: Destination = { ready, lastSeen: elapsed };
     this.destinations.set(id, entry);
     void ready.then(room => {
@@ -411,6 +440,62 @@ export class PortalPreviews {
       console.warn(`Portal preview unavailable for "${id}"`, error);
     });
     return entry;
+  }
+
+  /**
+   * Do a new room's GPU work before it counts as ready: compile its shaders and
+   * photograph both ends, a step per idle slot. A failed step leaves the room usable.
+   */
+  private async prepareRoom(room: RoomInstance, generation: number): Promise<RoomInstance> {
+    const steps = [
+      () => this.compile(room, generation),
+      () => this.captureSnapshot(room, 'entrance'),
+      () => this.captureSnapshot(room, 'exit'),
+    ];
+    for (const step of steps) {
+      await this.idle();
+      if (generation !== this.generation) return room;
+      try {
+        await step();
+      } catch (error) {
+        console.warn('Room preparation step failed', error);
+      }
+    }
+    this.applySnapshotsToMounted();
+    return room;
+  }
+
+  private compile(room: RoomInstance, generation: number): Promise<void> {
+    const run = async () => {
+      if (generation !== this.generation) return;
+      // Compile everything, not just what one camera happens to see.
+      const culled: THREE.Object3D[] = [];
+      room.scene.traverse(object => {
+        if (!object.frustumCulled) return;
+        object.frustumCulled = false;
+        culled.push(object);
+      });
+      try {
+        this.compileTarget ??= createSceneTarget(1, 1);
+        this.compileCamera.coordinateSystem = this.renderer.coordinateSystem;
+        this.compileCamera.updateProjectionMatrix();
+        const previous = this.renderer.getRenderTarget();
+        let pending: Promise<unknown>;
+        this.renderer.setRenderTarget(this.compileTarget);
+        try {
+          // three.js records the target before its first await, so it can be restored at once.
+          pending = this.renderer.compileAsync(room.scene, this.compileCamera);
+        } finally {
+          this.renderer.setRenderTarget(previous);
+        }
+        await pending;
+      } finally {
+        for (const object of culled) object.frustumCulled = true;
+      }
+    };
+    const result = this.compiling.then(run);
+    this.compiling = result.catch(() => {});
+    return result;
   }
 
   prepare(id: string): Promise<RoomInstance> | undefined {
@@ -479,6 +564,7 @@ export class PortalPreviews {
 
   /** Dispose a room this cache no longer tracks, releasing the snapshot materials on its portals. */
   disposeRoom(room: RoomInstance): void {
+    if (this.activeRoom === room) this.activeRoom = undefined;
     this.releaseRoomSnapshotMaterials(room);
     room.dispose();
   }
@@ -576,76 +662,30 @@ export class PortalPreviews {
   }
 
   /**
-   * Prewarm entrance & exit snapshots for every local room in the loop during the
-   * initial loading gate, reporting fractional progress [0..1].
+   * Photograph the active and every mounted room again now that they can see each
+   * other's snapshots, so portals inside nearby snapshots show real rooms too.
    */
-  async prewarmSnapshots(
-    worldIds: string[],
-    activeRoom: RoomInstance,
-    onProgress?: (fraction: number) => void,
-  ): Promise<void> {
-    const mountedForPass: Array<{ id: string; room: RoomInstance; owned: boolean }> = [];
-    const totalSteps = Math.max(1, worldIds.length * 2);
-    let completed = 0;
-
-    try {
-      // Pass 1: capture every room's entrance & exit snapshot
-      for (const id of worldIds) {
-        let room: RoomInstance | undefined;
-        let owned = false;
-        if (activeRoom.module.manifest.id === id) {
-          room = activeRoom;
-        } else {
-          const dest = this.destinations.get(id);
-          if (dest) {
-            room = await dest.ready;
-          } else {
-            const loader = this.load(id);
-            if (loader) {
-              const mod = await loader;
-              room = await RoomInstance.mount(mod, this.renderer);
-              owned = true;
-            }
-          }
-        }
-        if (room) {
-          this.captureSnapshot(room, 'entrance');
-          this.captureSnapshot(room, 'exit');
-          mountedForPass.push({ id, room, owned });
-        }
-        completed++;
-        onProgress?.(completed / totalSteps);
-      }
-
-      // Pass 2: apply snapshot materials to every room and refresh snapshots
-      // so even distant depth-3 portals inside snapshots show real destinations!
-      for (const entry of mountedForPass) {
-        this.applySnapshotsToRoom(entry.room);
-      }
-      for (const entry of mountedForPass) {
-        this.captureSnapshot(entry.room, 'entrance');
-        this.captureSnapshot(entry.room, 'exit');
-        completed++;
-        onProgress?.(completed / totalSteps);
-      }
-    } finally {
-      const keepHot = worldIds.length <= MAX_HOT_ROOMS;
-      for (const entry of mountedForPass) {
-        if (entry.owned) {
-          if (keepHot) {
-            this.retain(entry.id, entry.room);
-          } else {
-            this.disposeRoom(entry.room);
-          }
-        }
-      }
+  async refreshSnapshots(activeRoom: RoomInstance): Promise<void> {
+    this.activeRoom = activeRoom;
+    this.applySnapshotsToMounted();
+    for (const room of this.mountedRooms()) {
+      this.captureSnapshot(room, 'entrance');
+      this.captureSnapshot(room, 'exit');
     }
+    this.applySnapshotsToMounted();
+  }
 
-    // Ensure active room and all currently cached previews use their snapshot materials
-    this.applySnapshotsToRoom(activeRoom);
+  private mountedRooms(): RoomInstance[] {
+    const rooms = new Set<RoomInstance>();
+    if (this.activeRoom) rooms.add(this.activeRoom);
     for (const dest of this.destinations.values()) {
-      if (dest.room) this.applySnapshotsToRoom(dest.room);
+      if (dest.room) rooms.add(dest.room);
     }
+    return [...rooms];
+  }
+
+  private applySnapshotsToMounted(): void {
+    for (const room of this.mountedRooms()) this.applySnapshotsToRoom(room);
   }
 
   private releaseRoomSnapshotMaterials(room: RoomInstance): void {
@@ -1014,6 +1054,10 @@ export class PortalPreviews {
   }
 
   clear(): void {
+    this.generation++;
+    this.activeRoom = undefined;
+    this.compileTarget?.dispose();
+    this.compileTarget = undefined;
     this.releaseViews();
     this.seenWithoutLive.clear();
     this.nextSeenWithoutLive.clear();

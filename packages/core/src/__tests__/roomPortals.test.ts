@@ -161,6 +161,8 @@ it('promotes the same in-flight preview and transfers disposal to the active sce
 
 it('synchronously hands over a resolved preview via takeReady without disposing it', async () => {
   const instance = { dispose: vi.fn(), deactivate: vi.fn(), portals: [] } as unknown as RoomInstance;
+  // The stand-in room has no scene, so its preparation steps warn and are skipped.
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const mount = vi.spyOn(RoomInstance, 'mount').mockResolvedValue(instance);
   try {
     const loader = vi.fn(async () => ({}) as WorldModule);
@@ -175,5 +177,6 @@ it('synchronously hands over a resolved preview via takeReady without disposing 
     expect(instance.dispose).not.toHaveBeenCalled();
   } finally {
     mount.mockRestore();
+    warn.mockRestore();
   }
 });

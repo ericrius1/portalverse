@@ -27,6 +27,7 @@ async function renderPreviews() {
     getDrawingBufferSize: (out: THREE.Vector2) => out.set(1600, 900),
     getRenderTarget: () => target,
     setRenderTarget: (next: THREE.RenderTarget | null) => { target = next; },
+    compileAsync: async () => {},
     render: (scene: THREE.Scene) => { seen.push({ scene, ...visibleIn(scene) }); },
   } as unknown as THREE.WebGPURenderer;
   const previews = new PortalPreviews(renderer, id => Promise.resolve(emptyRoom(id)));
@@ -62,7 +63,8 @@ describe('room lighting stays the same between preview and active', () => {
 
   it('in the snapshots taken while loading', async () => {
     const { previews, home, seen } = await renderPreviews();
-    await previews.prewarmSnapshots(['jp-world'], home);
+    await previews.prepare('jp-world');
+    await previews.refreshSnapshots(home);
     expectActiveLighting(seen);
     for (const render of seen) {
       expect(render.openings.length).toBeLessThan(visibleIn(render.scene).openings.length);

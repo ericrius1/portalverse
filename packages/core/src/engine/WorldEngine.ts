@@ -257,20 +257,17 @@ export class WorldEngine {
   }
 
   /**
-   * Capture POV-matched portal snapshots for every local room in the loop, used for
-   * portals too far away to draw live and for rooms still loading.
+   * Refresh the nearby rooms' portal snapshots and warm up the post-processing
+   * pass, during the loading gate.
    */
-  async prewarmPortalSnapshots(
-    worldIds: string[],
-    onProgress?: (fraction: number) => void,
-  ): Promise<void> {
+  async warmUpPortals(): Promise<void> {
     if (!this.room || !this.previews) return;
     // Hide the local & remote avatar scene while capturing snapshots so no character
     // appears baked into the initial room's portal preview (e.g. Eric's Room).
     const prevAvatarVisible = this.avatarScene.visible;
     this.avatarScene.visible = false;
     try {
-      await this.previews.prewarmSnapshots(worldIds, this.room, onProgress);
+      await this.previews.refreshSnapshots(this.room);
     } finally {
       this.avatarScene.visible = prevAvatarVisible;
     }

@@ -784,11 +784,8 @@ async function boot(): Promise<void> {
     setLoadPhase(60, 'PRELOADING ADJACENT ROOMS');
     await engine.preloadAdjacentRooms();
 
-    const localIds = registry.listWorlds().filter(w => w.kind === 'local').map(w => w.id);
     setLoadPhase(68, 'RENDERING PORTAL PREVIEWS');
-    await engine.prewarmPortalSnapshots(localIds, (frac) => {
-      setLoadPhase(68 + frac * 30, 'RENDERING PORTAL PREVIEWS');
-    });
+    await engine.warmUpPortals();
 
     preloadComplete = true;
     setLoadPhase(100, activeManifest.name.toUpperCase());
