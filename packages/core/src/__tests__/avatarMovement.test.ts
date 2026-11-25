@@ -135,6 +135,8 @@ describe('platformer momentum in the controller', () => {
     avatar.position.y = 5;
     avatar.toggleFlight();
     key('keydown', 'Space');
+    key('keyup', 'Space');
+    key('keydown', 'Space');
     run(1);
     expect(avatar.velocityY).toBeLessThan(0);
     expect(avatar.isFlying).toBe(false);
@@ -162,6 +164,15 @@ describe('platformer momentum in the controller', () => {
 
 describe.each(['classic', 'platformer'] as const)('double-tap flight in %s', mode => {
   const tap = () => { key('keydown', 'Space'); key('keyup', 'Space'); };
+
+  it('takes off when both presses arrive between frames', () => {
+    const { avatar, run } = setup();
+    avatar.setMovementMode(mode);
+    tap();
+    tap();
+    run(1);
+    expect(avatar.isFlying).toBe(true);
+  });
 
   it('starts flying on a second press during a jump', () => {
     const { avatar, run } = setup();
@@ -216,15 +227,22 @@ describe('jump height', () => {
       best = Math.max(best, avatar.position.y);
     }
     key('keyup', 'Space');
+    avatar.dispose();
     return best;
   }
 
-  // Both modes vary a little with frame rate, in opposite directions, so they coincide at 60 fps.
+  // Classic's jump height varies with frame rate. The two modes are tuned to match at 60 fps.
   it.each([[60, 0.05], [30, 0.3], [120, 0.3]])('reaches the same full height in both modes at %s fps', (fps, within) => {
     expect(Math.abs(apex('platformer', fps) - apex('classic', fps))).toBeLessThan(within);
   });
 
   it('keeps the Platformer tap low', () => {
     expect(Math.abs(apex('platformer', 60, 0) - 0.8)).toBeLessThan(0.15);
+  });
+
+  it.each([0, 0.1, Infinity])('keeps the same Platformer apex across frame rates for a %s s hold', seconds => {
+    const heights = [20, 30, 60, 120, 240].map(fps => apex('platformer', fps, seconds * fps));
+    // Even with an identical trajectory the displayed frames can straddle the apex.
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(0.025);
   });
 });

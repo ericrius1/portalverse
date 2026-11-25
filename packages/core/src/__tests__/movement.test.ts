@@ -168,6 +168,20 @@ describe('platformer jumping', () => {
     expect(b.state.velocity.y).toBe(-30);
   });
 
+  it('travels the same distance through the apex and terminal speed when a step is divided', () => {
+    for (const initialYSpeed of [1, -29]) {
+      const advance = (steps: number) => {
+        const state = createMovementState();
+        state.grounded = false;
+        state.velocity.y = initialYSpeed;
+        let y = 0;
+        for (let i = 0; i < steps; i++) y += stepMovement(state, idle, platformer, 0.05 / steps).y;
+        return y;
+      };
+      expect(advance(1)).toBeCloseTo(advance(12), 10);
+    }
+  });
+
   it.each([[0.08, true], [0.15, false]])('allows a jump %s s after leaving a ledge: %s', (delay, jumps) => {
     const b = body(platformer);
     b.step();

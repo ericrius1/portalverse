@@ -123,7 +123,7 @@ export class AvatarController {
   private onGround = true;
   /** Platformer timers; velocity and footing are copied from the fields above each step. */
   private readonly platformer = createMovementState();
-  private jumpPressed = false;
+  private pendingJumpPresses = 0;
 
   private localRig: StylizedAvatarRig;
   private localColor: string;
@@ -355,7 +355,7 @@ export class AvatarController {
     this.platformer.coyote = 0;
     this.platformer.jumpBuffer = 0;
     this.platformer.gaitSpeed = 0;
-    this.jumpPressed = false;
+    this.pendingJumpPresses = 0;
   }
 
   private triggerJumpOrFly(): void {
@@ -368,7 +368,7 @@ export class AvatarController {
     }
     // Platformer jumps happen in its movement step, which also allows late and early presses.
     if (this.movementMode === 'platformer') {
-      this.jumpPressed = true;
+      this.pendingJumpPresses++;
     } else if (!air) {
       this.velocityY = JUMP_VELOCITY;
       this.onGround = false;
@@ -472,8 +472,8 @@ export class AvatarController {
 
   update(dt: number, elapsed: number, inputLocked: boolean): void {
     const clampedDt = Math.min(dt, 0.05);
-    const jumpPressed = this.jumpPressed;
-    this.jumpPressed = false;
+    const jumpPresses = this.pendingJumpPresses;
+    this.pendingJumpPresses = 0;
 
     if (inputLocked && this.movementMode === 'platformer') {
       this.stride.set(0, 0);
@@ -583,9 +583,10 @@ export class AvatarController {
         const dz = fwdZ * forward + rightZ * strafe;
         const len = Math.hypot(dx, dz) || 1;
         this.updatePlatformer(
-          { x: dx / len, z: dz / len, sprint, jumpHeld: this.keys.has('Space'), jumpPressed },
+          { x: dx / len, z: dz / len, sprint, jumpHeld: this.keys.has('Space'), jumpPressed: jumpPresses > 0 },
           clampedDt,
         );
+        if (jumpPresses > 1 && this.jumpedInAir) this.takeOff();
       } else {
         this.jumpT += clampedDt;
         const moveSpeed = sprint ? RUN_SPEED : 8.2;

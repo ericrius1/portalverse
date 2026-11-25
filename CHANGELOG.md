@@ -2,6 +2,13 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
+## Platformer jump timing — `jp/platformer-input-fixes` (2026-11-25)
+
+### Fixed
+
+- Platformer jumps follow the same vertical trajectory at 20–240 FPS for the same hold duration. Movement now accounts for the time spent rising and falling within each frame. A held jump still matches Classic at 60 FPS, so players can clear the same ledges across frame rates in Platformer.
+- Two Space taps between frames now start flight when the first tap launches a jump. The controller counts presses until its next update so a frame hitch cannot swallow the second tap.
+
 ## Platformer physics toggle — `feat/platformer-physics` (2026-11-25)
 
 ### Added

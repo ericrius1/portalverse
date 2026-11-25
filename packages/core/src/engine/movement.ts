@@ -39,7 +39,7 @@ export const PLATFORMER_TUNING: Readonly<MovementTuning> = {
   accelTime: 0.25,
   stopTime: 0.15,
   airControl: 0.35,
-  jumpSpeed: 14.5, // A held jump peaks level with Classic's at 60 fps.
+  jumpSpeed: 14.3, // A held jump peaks level with Classic's at 60 fps.
   riseGravity: 30,
   releaseGravity: 115,
   fallGravity: 48,
@@ -96,10 +96,31 @@ export function stepMovement(
     s.jumpBuffer = Math.max(0, s.jumpBuffer - dt);
   }
 
-  const gravity = s.velocity.y <= 0 ? t.fallGravity : input.jumpHeld ? t.riseGravity : t.releaseGravity;
-  s.velocity.y = Math.max(-t.maxFallSpeed, s.velocity.y - gravity * dt);
+  const y = stepVertical(s, input.jumpHeld, t, dt);
+  return { x: s.velocity.x * dt, y, z: s.velocity.z * dt };
+}
 
-  return { x: s.velocity.x * dt, y: s.velocity.y * dt, z: s.velocity.z * dt };
+/** Integrate each part of the arc, including frames that pass the apex or reach terminal speed. */
+function stepVertical(s: MovementState, jumpHeld: boolean, t: MovementTuning, dt: number): number {
+  let speed = Math.max(s.velocity.y, -t.maxFallSpeed);
+  let distance = 0;
+  if (speed > 0) {
+    const gravity = jumpHeld ? t.riseGravity : t.releaseGravity;
+    const riseTime = Math.min(dt, speed / gravity);
+    const endSpeed = Math.max(0, speed - gravity * riseTime);
+    distance += (speed + endSpeed) * 0.5 * riseTime;
+    speed = endSpeed;
+    dt -= riseTime;
+  }
+  if (dt > 0 && speed > -t.maxFallSpeed) {
+    const fallTime = Math.min(dt, (speed + t.maxFallSpeed) / t.fallGravity);
+    const endSpeed = Math.max(-t.maxFallSpeed, speed - t.fallGravity * fallTime);
+    distance += (speed + endSpeed) * 0.5 * fallTime;
+    speed = endSpeed;
+    dt -= fallTime;
+  }
+  s.velocity.y = speed;
+  return distance + speed * dt;
 }
 
 function steer(s: MovementState, input: MovementInput, t: MovementTuning, dt: number, onFooting: boolean): void {
