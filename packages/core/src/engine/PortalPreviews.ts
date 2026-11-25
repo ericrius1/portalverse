@@ -97,6 +97,15 @@ const normal = new THREE.Vector3();
 const clip = new THREE.Vector4();
 const farCorner = new THREE.Vector4();
 const corner = new THREE.Vector3();
+const pixelQuad = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+const pixelClip = [
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+];
+const PIXEL_CLIP_Z = -1e-4;
 const crop = new THREE.Matrix4();
 const lensRel = new THREE.Vector3();
 const lensSpawnPos = new THREE.Vector3();
@@ -190,27 +199,44 @@ export function portalMapping(viewer: THREE.Vector3, aperture: Aperture, spawn: 
 export function portalPixels(aperture: Aperture, viewer: THREE.PerspectiveCamera, size: THREE.Vector2, out: THREE.Vector4) {
   if (!aperture.geometry.boundingBox) aperture.geometry.computeBoundingBox();
   const { min, max: maxB } = aperture.geometry.boundingBox!;
-  let left = size.x, top = size.y, right = 0, bottom = 0;
-  for (const x of [min.x, maxB.x]) {
-    for (const y of [min.y, maxB.y]) {
-      corner.set(x, y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
-      // Corners behind the eye cannot conservatively bound the visible polygon.
-      if (corner.z >= -viewer.near) return out.set(0, 0, size.x, size.y);
-      corner.applyMatrix4(viewer.projectionMatrix);
-      const px = (1 + corner.x) * size.x / 2;
-      const py = (1 - corner.y) * size.y / 2;
-      left = Math.min(left, px);
-      right = Math.max(right, px);
-      top = Math.min(top, py);
-      bottom = Math.max(bottom, py);
+  // Transform the 4 bounding corners into view space in winding order and clip against
+  // the eye plane so portals behind the camera never return full-screen bounds.
+  pixelQuad[0].set(min.x, min.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+  pixelQuad[1].set(maxB.x, min.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+  pixelQuad[2].set(maxB.x, maxB.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+  pixelQuad[3].set(min.x, maxB.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+
+  let clipCount = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = pixelQuad[i];
+    const b = pixelQuad[(i + 1) & 3];
+    const aIn = a.z < PIXEL_CLIP_Z;
+    const bIn = b.z < PIXEL_CLIP_Z;
+    if (aIn) pixelClip[clipCount++].copy(a);
+    if (aIn !== bIn) {
+      const t = (PIXEL_CLIP_Z - a.z) / (b.z - a.z);
+      pixelClip[clipCount++].lerpVectors(a, b, t);
     }
+  }
+  if (clipCount === 0) return out.set(0, 0, 0, 0);
+
+  let left = size.x, top = size.y, right = 0, bottom = 0;
+  for (let i = 0; i < clipCount; i++) {
+    corner.copy(pixelClip[i]).applyMatrix4(viewer.projectionMatrix);
+    const px = (1 + corner.x) * size.x / 2;
+    const py = (1 - corner.y) * size.y / 2;
+    left = Math.min(left, px);
+    right = Math.max(right, px);
+    top = Math.min(top, py);
+    bottom = Math.max(bottom, py);
   }
   // Round outward to whole pixels so the live view covers every pixel of the opening.
   left = Math.max(0, Math.floor(left));
   top = Math.max(0, Math.floor(top));
   right = Math.min(size.x, Math.ceil(right));
   bottom = Math.min(size.y, Math.ceil(bottom));
-  return out.set(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+  if (right <= left || bottom <= top) return out.set(0, 0, 0, 0);
+  return out.set(left, top, right - left, bottom - top);
 }
 
 /**
@@ -516,7 +542,9 @@ export class PortalPreviews {
 
       const mat = new THREE.MeshBasicNodeMaterial();
       mat.side = isOneWay(handle) ? THREE.FrontSide : THREE.DoubleSide;
-      mat.fog = true;
+      // Match live portal windows (`fog = false`) so distant depth-3 snapshots stay
+      // equally vibrant and never pop in saturation when promoted to depth-2 live.
+      mat.fog = false;
       mat.colorNode = buildSnapshotColorNode(snap, handle.aperture);
       this.snapshotMaterials.set(handle.aperture, mat);
 
@@ -641,7 +669,9 @@ export class PortalPreviews {
     const lens = createSnapshotLens(SNAPSHOT_RADIUS * 2.0);
 
     // The live view sits in the target's top-left corner at one texel per pixel of the pass that draws the opening.
-    const liveColor = texture(target.texture, screenCoordinate.sub(rect.xy).div(targetSize));
+    // Clamp inside the active sub-viewport so linear filtering never bleeds cleared texels at tiny portal edges.
+    const samplePx = clamp(screenCoordinate.sub(rect.xy), vec2(0.5), max(rect.zw.sub(0.5), vec2(0.5)));
+    const liveColor = texture(target.texture, samplePx.div(targetSize));
     const snapTexNode = texture(target.texture, lens.uv);
     const blended = mix(snapTexNode, liveColor, liveBlend);
     material.colorNode = mix(liveColor, blended, hasSnap);
@@ -919,7 +949,10 @@ export class PortalPreviews {
     const far = room.portals.find(p => p.aperture.userData.routeGate && p.portal.id !== arrival && !p.portal.remoteUrl);
     if (!far) return;
     const farRoom = this.destination(far.portal.targetWorldId, elapsed)?.room;
-    if (!farRoom) return;
+    if (!farRoom) {
+      this.nextSeenWithoutLive.add(far.aperture);
+      return;
+    }
 
     const turn = portalMapping(viewer.position, near.aperture, spawn,
       near.portal.position[1], near.portal.yaw ?? 0, this.nearMapping);
@@ -948,7 +981,13 @@ export class PortalPreviews {
 
     // The near room is drawn into its own window unless it fills the view, so sample
     // relative to wherever that pass starts on screen.
-    const view = this.view(far, fb, undefined, direct ? 0 : nb.x, direct ? 0 : nb.y);
+    const farSnap = this.getSnapshot(far.portal);
+    const view = this.view(far, fb, farSnap, direct ? 0 : nb.x, direct ? 0 : nb.y);
+    if (view.blendProgress < 1) {
+      view.blendProgress = Math.min(1, view.blendProgress + dt / LIVE_FADE_DURATION_S);
+      const t = view.blendProgress;
+      view.slot.liveBlend.value = t * t * (3 - 2 * t);
+    }
     far.aperture.material = view.slot.material;
     used.add(far.aperture);
     this.renderer.setRenderTarget(view.slot.target);

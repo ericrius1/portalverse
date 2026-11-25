@@ -533,6 +533,19 @@ describe('the portal two rooms ahead', () => {
     expect(ringAfter / ringBefore).toBeCloseTo(1, 2);
     expect(afterWindow.liveBlend.value).toBe(1);
     expect(alpineFar.group.scale.x).toBe(1);
+    // The portal we just stepped out of sits behind the camera and must not render full-screen.
+    expect(after.some(r => r.scene === eric.scene)).toBe(false);
+    previews.clear();
+  });
+
+  it('keeps snapshot materials un-fogged like live windows so depth-3 previews do not pop in saturation', async () => {
+    const fake = fakeRenderer();
+    const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(emptyRoom('jp-world')));
+    const room = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
+    await previews.prewarmSnapshots(['eric-world', 'jp-world'], room);
+    const exit = room.portals.find(p => p.portal.id === 'exit')!;
+    expect((exit.aperture.material as THREE.MeshBasicNodeMaterial).fog).toBe(false);
+    previews.disposeRoom(room);
     previews.clear();
   });
 });

@@ -9,11 +9,14 @@
  * from you as you walk past, springing back with a wobble.
  */
 import * as THREE from 'three/webgpu';
-import { abs, float, mix, positionWorld, sin, smoothstep, vec3 } from 'three/tsl';
+import { abs, color, float, max, mix, positionWorld, sin, smoothstep, texture, vec3 } from 'three/tsl';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { disposeObject, loadGLB, seededRandom } from '@portalverse/core/rooms/kit';
+import monsteraBaseUrl from './assets/monstera-base-mask.png?url';
+import monsteraRibUrl from './assets/monstera-rib-mask.png?url';
+import monsteraVeinUrl from './assets/monstera-vein-mask.png?url';
 
 const assets = import.meta.glob<string>('./assets/*.glb', { query: '?url', import: 'default', eager: true });
 const asset = (name: string): string => {
@@ -35,22 +38,131 @@ function groundHeight(x: number, z: number): number {
 }
 
 /**
- * Colours the portfolio painted on through mask images, which the models don't carry:
- * monstera leaves are plain white without them. Stems are a shade darker than leaves.
+ * Colours the portfolio painted on through mask images, which the models don't carry.
+ * Stems are a shade darker than leaves.
  */
 const RECOLOR: Record<string, string> = {
-  'Monstera Color': '#a8ae96',
   Elephant_Ear_1_Stem_Material: '#5a86b8',
   TexturedPlant_Stem_Blue: '#5a86b8',
 };
 
+/**
+ * Unlit TSL monstera material ported from JP's `portfolio-3` (`LeafModel.tsx` +
+ * `MONSTERA_MASK`): cuts the fenestrated leaf silhouette and layers central rib
+ * and side veins from the three grayscale mask textures.
+ */
+function createMonsteraMaterial(
+  baseMask: THREE.Texture,
+  ribMask: THREE.Texture,
+  veinMask: THREE.Texture,
+): THREE.MeshBasicNodeMaterial {
+  for (const tex of [baseMask, ribMask, veinMask]) {
+    tex.flipY = false;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.needsUpdate = true;
+  }
+  const baseV = texture(baseMask).r;
+  const ribV = texture(ribMask).r;
+  const veinV = texture(veinMask).r;
+  const blade = mix(color(new THREE.Color('#a8ae96')), color(new THREE.Color('#848872')), veinV);
+  const leafColor = mix(blade, color(new THREE.Color('#c8cab8')), ribV);
+  const leafAlpha = max(max(baseV, ribV), veinV);
+
+  const material = new THREE.MeshBasicNodeMaterial({
+    side: THREE.DoubleSide,
+    alphaTest: 0.45,
+  });
+  material.colorNode = leafColor;
+  material.opacityNode = smoothstep(float(0.35), float(0.65), leafAlpha);
+  return material;
+}
+
+/**
+ * Trim and curve `textured-plant.glb`'s stem so it meets the underside of the
+ * kalo leaf at the piko instead of extending past the leaf into the V-notch.
+ */
+function fixTaroStem(model: THREE.Object3D): void {
+  model.traverse(object => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mat = mesh.material as THREE.Material;
+    if (mat.name !== 'TexturedPlant_Stem_Blue' && !mesh.name.includes('Stem')) return;
+    const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos) return;
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      if (y < yMin) yMin = y;
+      if (y > yMax) yMax = y;
+    }
+    const span = Math.max(1e-4, yMax - yMin);
+    const targetTopY = 0.835;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      const t = THREE.MathUtils.clamp((y - yMin) / span, 0, 1);
+      pos.setY(i, yMin + t * (targetTopY - yMin));
+      pos.setZ(i, pos.getZ(i) + t * t * 0.125);
+    }
+    pos.needsUpdate = true;
+    mesh.geometry.computeBoundingBox();
+    mesh.geometry.computeBoundingSphere();
+  });
+}
+
+/**
+ * Relax `elephant-1.glb`'s tall stretched leaf proportions into a fuller heart
+ * shape and tuck the stem tip cleanly behind the leaf so it never punches through.
+ */
+function fixElephantEar(model: THREE.Object3D): void {
+  const pikoX = 0.03;
+  const pikoY = 5.3;
+  model.traverse(object => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos) return;
+    const mat = mesh.material as THREE.Material;
+    if (mat.name === 'Elephant_Ear_1_Stem_Material') {
+      let yMin = Infinity;
+      let yMax = -Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        if (y < yMin) yMin = y;
+        if (y > yMax) yMax = y;
+      }
+      const span = Math.max(1e-4, yMax - yMin);
+      const targetTopY = 5.2;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        const t = THREE.MathUtils.clamp((y - yMin) / span, 0, 1);
+        const pullBack = THREE.MathUtils.smoothstep(y, 3.2, yMax);
+        pos.setY(i, yMin + t * (targetTopY - yMin));
+        pos.setZ(i, pos.getZ(i) - pullBack * 0.065);
+      }
+    } else {
+      for (let i = 0; i < pos.count; i++) {
+        pos.setX(i, pikoX + (pos.getX(i) - pikoX) * 1.24);
+        pos.setY(i, pikoY + (pos.getY(i) - pikoY) * 0.72);
+      }
+    }
+    pos.needsUpdate = true;
+    mesh.geometry.computeBoundingBox();
+    mesh.geometry.computeBoundingSphere();
+  });
+}
+
 /** Flat, unlit versions of a model's materials: the garden's no-shading look. */
-function flatten(model: THREE.Object3D): THREE.Material[] {
-  const converted = new Map<THREE.Material, THREE.MeshBasicNodeMaterial>();
+function flatten(model: THREE.Object3D, override?: THREE.Material): THREE.Material[] {
+  const converted = new Map<THREE.Material, THREE.Material>();
   model.traverse(object => {
     const mesh = object as THREE.Mesh;
     if (!mesh.isMesh) return;
     mesh.frustumCulled = false; // bending moves leaves outside the bind-pose bounds
+    if (override) {
+      mesh.material = override;
+      return;
+    }
     const source = mesh.material as THREE.MeshStandardMaterial;
     let material = converted.get(source);
     if (!material) {
@@ -65,7 +177,7 @@ function flatten(model: THREE.Object3D): THREE.Material[] {
     }
     mesh.material = material;
   });
-  return [...converted.values()];
+  return override ? [override] : [...converted.values()];
 }
 
 interface BendBone {
@@ -86,13 +198,20 @@ interface Bendable {
   give: number;
 }
 
+/** Keep leaf-to-stem junction bones locked to their stem tips so bending never pulls them apart. */
+const RIGID_JUNCTION_BONES = new Set(['Plant_Leaf', 'TP_Leaf_Base']);
+
 /** Collect a placed plant's bones, sharing the bend evenly across each chain's depth. */
 function makeBendable(object: THREE.Object3D, base: THREE.Vector3, phase: number, give: number): Bendable {
   object.updateMatrixWorld(true);
   const bones = new Set<THREE.Bone>();
   object.traverse(child => {
     const mesh = child as THREE.SkinnedMesh;
-    if (mesh.isSkinnedMesh) for (const bone of mesh.skeleton.bones) bones.add(bone);
+    if (mesh.isSkinnedMesh) {
+      for (const bone of mesh.skeleton.bones) {
+        if (!RIGID_JUNCTION_BONES.has(bone.name)) bones.add(bone);
+      }
+    }
   });
   const depthOf = (bone: THREE.Object3D) => {
     let depth = 0;
@@ -153,6 +272,7 @@ export default defineRoom('jp-garden', {
     const templates: GLTF[] = [];
     const ownMaterials: THREE.Material[] = [];
     const ownGeometries: THREE.BufferGeometry[] = [];
+    const ownTextures: THREE.Texture[] = [];
 
     ctx.scene.background = new THREE.Color(SKY);
     ctx.scene.fog = new THREE.Fog(SKY, 30, 120);
@@ -199,12 +319,20 @@ export default defineRoom('jp-garden', {
       root.add(cloud);
     }
 
-    // Plants
+    // Plants & monstera mask textures
     const names = ['elephant-1', 'textured-plant', 'monstera-leaf-2', 'banana-leaf', 'fan-palm-2'] as const;
-    const loaded = await Promise.all(names.map(name => loadGLB(asset(name))));
+    const textureLoader = new THREE.TextureLoader();
+    const [loaded, monsteraMasks] = await Promise.all([
+      Promise.all(names.map(name => loadGLB(asset(name)))),
+      Promise.all([monsteraBaseUrl, monsteraRibUrl, monsteraVeinUrl].map(url => textureLoader.loadAsync(url))),
+    ]);
     templates.push(...loaded);
-    const [elephant, taro, monstera, banana, fanPalm] = loaded.map(gltf => {
-      ownMaterials.push(...flatten(gltf.scene));
+    ownTextures.push(...monsteraMasks);
+    const monsteraMaterial = createMonsteraMaterial(monsteraMasks[0], monsteraMasks[1], monsteraMasks[2]);
+    fixElephantEar(loaded[0].scene);
+    fixTaroStem(loaded[1].scene);
+    const [elephant, taro, monstera, banana, fanPalm] = loaded.map((gltf, i) => {
+      ownMaterials.push(...flatten(gltf.scene, i === 2 ? monsteraMaterial : undefined));
       return gltf.scene;
     });
     const plants: Bendable[] = [];
@@ -236,7 +364,7 @@ export default defineRoom('jp-garden', {
     };
 
     /** A clump of flat leaves standing up around (x, z). */
-    const rosette = (template: THREE.Object3D, x: number, z: number, count: number, scale: number) => {
+    const rosette = (template: THREE.Object3D, x: number, z: number, count: number, scale: number, lift = 0) => {
       let rest = rests.get(template);
       if (!rest) {
         rest = leafRest(template);
@@ -253,8 +381,9 @@ export default defineRoom('jp-garden', {
         const holder = new THREE.Group();
         holder.add(leaf);
         holder.quaternion.copy(standLeaf(rest, target));
-        holder.position.copy(center);
-        holder.scale.setScalar(scale * (0.85 + rand() * 0.3));
+        const leafScale = scale * (0.85 + rand() * 0.3);
+        holder.position.copy(center).addScaledVector(target, lift * leafScale);
+        holder.scale.setScalar(leafScale);
         root.add(holder);
         plants.push(makeBendable(holder, center, rand() * 6.3, 1.25));
       }
@@ -270,7 +399,14 @@ export default defineRoom('jp-garden', {
     for (let z = -ROOM_HALF_LENGTH + 5; z <= ROOM_HALF_LENGTH - 5; z += 9) {
       for (const side of [-1, 1]) {
         const kind = leaves[Math.floor(rand() * leaves.length)];
-        rosette(kind, side * (5 + rand() * 6), z + rand() * 4, 4 + Math.floor(rand() * 3), kind === fanPalm ? 1.3 : 1.9);
+        rosette(
+          kind,
+          side * (5 + rand() * 6),
+          z + rand() * 4,
+          4 + Math.floor(rand() * 3),
+          kind === fanPalm ? 1.3 : 1.9,
+          kind === monstera ? 0.38 : 0,
+        );
       }
     }
 
@@ -358,6 +494,7 @@ export default defineRoom('jp-garden', {
       for (const gltf of templates) disposeObject(gltf.scene);
       for (const geometry of ownGeometries) geometry.dispose();
       for (const material of ownMaterials) material.dispose();
+      for (const tex of ownTextures) tex.dispose();
     });
   },
 });

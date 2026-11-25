@@ -164,7 +164,6 @@ export class WorldEngine {
         const col = new THREE.Color(hexColor);
         this.transitRig.bodyMat.color.copy(col);
         this.transitRig.bodyMat.emissive.copy(col);
-        (this.transitRig.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
       },
     );
     this.playerView = { position: this.avatar.position };
@@ -531,7 +530,6 @@ export class WorldEngine {
     if (this.avatar.isFlying) {
       this.transitAvatarPos.y += Math.sin(this.elapsed * 3.0) * 0.14;
     }
-    this.transitRig.haloMesh.position.y = 1.82 + Math.sin(this.elapsed * 2.8) * 0.06;
 
     this.room?.update(dt, this.elapsed);
 
@@ -617,6 +615,10 @@ export class WorldEngine {
         }
         if (promoted) {
           portals = this.getAllPortals();
+          this.transitAvatarPos.copy(this.avatar.position);
+          if (this.avatar.isFlying) {
+            this.transitAvatarPos.y += Math.sin(this.elapsed * 3.0) * 0.14;
+          }
           this.room?.update(0, this.elapsed);
           for (const h of portals) h.update?.(0, this.elapsed);
         } else {

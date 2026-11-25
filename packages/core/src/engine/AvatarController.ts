@@ -6,7 +6,6 @@ import { createFloatingLabel } from './signage';
 interface RemoteAvatarVisual {
   group: THREE.Group;
   bodyMat: THREE.MeshStandardMaterial;
-  haloMesh: THREE.Mesh;
   label: { sprite: THREE.Sprite; dispose: () => void };
   targetPos: THREE.Vector3;
   targetYaw: number;
@@ -18,7 +17,6 @@ interface RemoteAvatarVisual {
 export interface StylizedAvatarRig {
   group: THREE.Group;
   bodyMat: THREE.MeshStandardMaterial;
-  haloMesh: THREE.Mesh;
   dispose: () => void;
 }
 
@@ -44,28 +42,14 @@ export function createStylizedAvatarRig(hexColor: string): StylizedAvatarRig {
   visor.position.set(0, 1.32, -0.24);
   group.add(visor);
 
-  const haloGeo = new THREE.TorusGeometry(0.46, 0.035, 10, 32);
-  const haloMat = new THREE.MeshBasicMaterial({
-    color: col,
-    transparent: true,
-    opacity: 0.85,
-  });
-  const haloMesh = new THREE.Mesh(haloGeo, haloMat);
-  haloMesh.rotation.x = Math.PI / 2;
-  haloMesh.position.y = 1.82;
-  group.add(haloMesh);
-
   return {
     group,
     bodyMat,
-    haloMesh,
     dispose: () => {
       bodyGeo.dispose();
       bodyMat.dispose();
       visorGeo.dispose();
       visorMat.dispose();
-      haloGeo.dispose();
-      haloMat.dispose();
     },
   };
 }
@@ -139,7 +123,6 @@ export class AvatarController {
     const col = new THREE.Color(hexColor);
     this.localRig.bodyMat.color.copy(col);
     this.localRig.bodyMat.emissive.copy(col);
-    (this.localRig.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
     this.onColorChange?.(hexColor);
   }
 
@@ -165,7 +148,6 @@ export class AvatarController {
       this.localRig.group.position.y += Math.sin(elapsed * 3.0) * 0.14;
     }
     this.localRig.group.rotation.y = this.yaw;
-    this.localRig.haloMesh.position.y = 1.82 + Math.sin(elapsed * 2.8) * 0.06;
   }
 
   snapCameraToTarget(): void {
@@ -238,14 +220,13 @@ export class AvatarController {
           accentColor: p.color,
           width: 2.4,
         });
-        label.sprite.position.set(0, 2.38, 0);
+        label.sprite.position.set(0, 2.02, 0);
         rig.group.add(label.sprite);
         rig.group.position.set(p.position[0], p.position[1], p.position[2]);
         this.remoteRoot.add(rig.group);
         vis = {
           group: rig.group,
           bodyMat: rig.bodyMat,
-          haloMesh: rig.haloMesh,
           label,
           targetPos: new THREE.Vector3(p.position[0], p.position[1], p.position[2]),
           targetYaw: p.yaw,
@@ -264,7 +245,6 @@ export class AvatarController {
           const col = new THREE.Color(p.color);
           vis.bodyMat.color.copy(col);
           vis.bodyMat.emissive.copy(col);
-          (vis.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
           vis.group.remove(vis.label.sprite);
           vis.label.dispose();
           const newLabel = createFloatingLabel({
@@ -272,7 +252,7 @@ export class AvatarController {
             accentColor: p.color,
             width: 2.4,
           });
-          newLabel.sprite.position.set(0, 2.38, 0);
+          newLabel.sprite.position.set(0, 2.02, 0);
           vis.group.add(newLabel.sprite);
           vis.label = newLabel;
           vis.name = p.name;
@@ -378,7 +358,6 @@ export class AvatarController {
       this.localRig.group.position.y += Math.sin(elapsed * 3.0) * 0.14;
     }
     this.localRig.group.rotation.y = this.yaw;
-    this.localRig.haloMesh.position.y = 1.82 + Math.sin(elapsed * 2.8) * 0.06;
 
     // Update camera (3rd person chase OR 1st person eye)
     const eyeY = this.position.y + 1.65;
@@ -415,7 +394,6 @@ export class AvatarController {
         Math.cos(vis.targetYaw - vis.group.rotation.y),
       );
       vis.group.rotation.y += dyaw * alpha;
-      vis.haloMesh.position.y = 1.82 + Math.sin(elapsed * 3.1) * 0.07;
     }
   }
 

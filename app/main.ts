@@ -184,18 +184,28 @@ async function boot(): Promise<void> {
     return latestDynamicPortals;
   }
 
+  let hudSyncTimer = 0;
+  let lastRosterKey = '';
+  function scheduleHudSync(updateRoster = false): void {
+    const run = () => {
+      hudWorldName.textContent = activeManifest.name;
+      const authorLabel = activeManifest.owner ? `Owner: ${activeManifest.owner}` : activeManifest.author;
+      hudWorldAuthor.textContent = `${authorLabel} · WebGPU`;
+      worldAccentDot.style.background = activeManifest.accentColor;
+      worldAccentDot.style.boxShadow = `0 0 14px ${activeManifest.accentColor}`;
+      if (updateRoster) renderPresenceRoster();
+    };
+    window.clearTimeout(hudSyncTimer);
+    hudSyncTimer = window.setTimeout(run, 0);
+  }
+
   const engine = new WorldEngine(viewport, identity.color, {
     loadLocalWorld: id => registry.getManifest(id)?.kind === 'local' ? registry.loadWorld(id) : undefined,
     onWorldLoaded: (manifest) => {
       activeManifest = manifest;
       activeWorldId = manifest.id;
-
-      hudWorldName.textContent = manifest.name;
-      const authorLabel = manifest.owner ? `Owner: ${manifest.owner}` : manifest.author;
-      hudWorldAuthor.textContent = `${authorLabel} · WebGPU`;
-      worldAccentDot.style.background = manifest.accentColor;
-      worldAccentDot.style.boxShadow = `0 0 14px ${manifest.accentColor}`;
-
+      // Defer DOM updates out of the crossing frame's rAF so WebGPU submits first.
+      scheduleHudSync(false);
       syncUrlBar();
     },
     onPortalPromoted: (manifest) => {
@@ -204,7 +214,7 @@ async function boot(): Promise<void> {
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
         engine.avatar.yaw,
       );
-      renderPresenceRoster();
+      scheduleHudSync(true);
     },
     onPortalProximity: (portal) => {
       if (!portal) {
@@ -275,6 +285,12 @@ async function boot(): Promise<void> {
               updatedAt: Date.now(),
             },
           ];
+
+    const rosterKey = displayList
+      .map(p => `${p.id}|${p.name}|${p.color}|${p.worldId}|${activeWorldId}`)
+      .join('\n');
+    if (rosterKey === lastRosterKey) return;
+    lastRosterKey = rosterKey;
 
     playerCountEl.textContent = String(displayList.length);
     playerListEl.innerHTML = '';
