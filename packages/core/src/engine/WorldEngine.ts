@@ -1,57 +1,120 @@
 import * as THREE from 'three/webgpu';
 import type {
   AvatarState,
-  HubStyle,
-  PlatformCollider,
+  PlayerView,
   PortalDefinition,
   PortalVisualHandle,
   SpawnPoint,
-  WorldContext,
   WorldManifest,
   WorldModule,
 } from '../types';
-import { AvatarController } from './AvatarController';
 import {
-  createArchwayPortal,
-  createBloomingFlowerPortal,
-  createMagicFountainPortal,
-} from './PortalMesh';
+  GATE_WIDTH,
+  RUN_SPEED,
+  WARP_RADIUS,
+  livePortalSlots,
+} from '../portal/roomLayout';
+import { RoomInstance } from './RoomInstance';
+import { PortalPreviews } from './PortalPreviews';
+import { PortalRipplePass } from './PortalRipplePass';
+import {
+  AvatarController,
+  createStylizedAvatarRig,
+  type StylizedAvatarRig,
+} from './AvatarController';
+import { createArchwayPortal } from './PortalMesh';
+import { portalWarp, smoothSpeed, warpSpeedFactor } from './portalWarp';
+import {
+  canOfferPortalPrompt,
+  carryThroughPortal,
+  crossingYawDelta,
+  beginCrossing,
+  resolveTransit,
+  viewerSide,
+  type CrossingSide,
+  type FrameMotion,
+} from './portalCrossing';
 
 export interface WorldEngineCallbacks {
-  onWorldLoaded?: (manifest: WorldManifest, hubStyle: HubStyle) => void;
-  onPortalHover?: (portal: PortalDefinition | null, screenX: number, screenY: number) => void;
+  loadLocalWorld?: (id: string) => Promise<WorldModule> | undefined;
+  onWorldLoaded?: (manifest: WorldManifest) => void;
+  onPortalPromoted?: (manifest: WorldManifest) => void;
   onPortalProximity?: (portal: PortalDefinition | null) => void;
-  onPortalEnter?: (portal: PortalDefinition) => void;
+  onPortalEnter?: (portal: PortalDefinition, crossed: boolean) => void;
   onFlightChange?: (flying: boolean) => void;
 }
 
+interface ActiveTransit {
+  handle: PortalVisualHandle;
+  sideSign: CrossingSide;
+  /** The camera reached the opening first, because the player is backing in. */
+  cameraLed?: boolean;
+}
+
+interface WalkThroughState {
+  handle: PortalVisualHandle;
+  sideSign: CrossingSide;
+  targetYaw: number;
+  dirX: number;
+  dirZ: number;
+  targetX: number;
+  targetZ: number;
+  startedAt: number;
+}
+
 export class WorldEngine {
-  readonly scene: THREE.Scene;
+  private readonly avatarScene = new THREE.Scene();
+  get scene(): THREE.Scene { return this.room?.scene ?? this.avatarScene; }
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGPURenderer;
   readonly avatar: AvatarController;
 
   private readonly container: HTMLElement;
   private readonly callbacks: WorldEngineCallbacks;
-  private readonly worldRoot = new THREE.Group();
+  private room?: RoomInstance;
+  private readonly previews?: PortalPreviews;
+  private readonly ripplePass: PortalRipplePass;
+  private readonly transitRig: StylizedAvatarRig;
+  private readonly transitAvatarPos = new THREE.Vector3();
+  private mountSequence = 0;
   private readonly dynamicPortalRoot = new THREE.Group();
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly pointerNdc = new THREE.Vector2(-99, -99);
+  /** Debug view of each portal's warp zone: a wireframe sphere and its equator on the floor. */
+  private readonly warpZones = new THREE.Group();
+  private readonly warpSphereGeometry = new THREE.SphereGeometry(WARP_RADIUS, 32, 16);
+  private readonly warpSphereMaterial = new THREE.MeshBasicMaterial({
+    color: '#facc15', wireframe: true, transparent: true, opacity: 0.3, depthWrite: false,
+  });
+  private readonly warpCircleGeometry = new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 96 }, (_, i) => {
+      const angle = (i / 96) * Math.PI * 2;
+      return new THREE.Vector3(Math.cos(angle) * WARP_RADIUS, 0, Math.sin(angle) * WARP_RADIUS);
+    }),
+  );
+  private readonly warpCircleMaterial = new THREE.LineBasicMaterial({ color: '#facc15' });
 
   private currentManifest: WorldManifest | null = null;
-  private currentHubStyle: HubStyle = 'fountains';
-  private staticPortals: PortalVisualHandle[] = [];
   private dynamicPortals: PortalVisualHandle[] = [];
-  private updateHooks: Array<(dt: number, elapsed: number) => void> = [];
-  private disposeHooks: Array<() => void> = [];
-  private platforms: PlatformCollider[] = [];
-  private terrainHeightFn: ((x: number, z: number) => number) | null = null;
-  private spawnOverride: SpawnPoint | null = null;
-
-  private hoveredPortal: PortalVisualHandle | null = null;
+  private transitPortal?: ActiveTransit;
+  private walkThrough?: WalkThroughState;
+  private readonly previousFeet = new THREE.Vector3();
+  private readonly previousCamera = new THREE.Vector3();
+  private readonly frameMotion: FrameMotion;
+  /** What the active room may read about the player. */
+  private readonly playerView: PlayerView;
+  private readonly scratchPlayerCenter = new THREE.Vector3();
+  private readonly scratchVecA = new THREE.Vector3();
+  private readonly transitAvatarState: {
+    rig: THREE.Group;
+    position: THREE.Vector3;
+    yaw: number;
+    visible: boolean;
+  };
+  private currentFramePortals: PortalVisualHandle[] = [];
+  private currentFrameDt = 0;
+  /** Player's horizontal speed, smoothed so stop-start steps count less than a steady run. */
+  private smoothedSpeed = 0;
+  private skipNextSpeedSample = true;
   private nearestPortal: PortalVisualHandle | null = null;
-  private pointerScreenX = 0;
-  private pointerScreenY = 0;
   private inputLocked = false;
   private portalCooldownUntil = 0;
   private animFrameId = 0;
@@ -63,9 +126,9 @@ export class WorldEngine {
     this.container = container;
     this.callbacks = callbacks;
 
-    this.scene = new THREE.Scene();
-    this.scene.add(this.worldRoot);
     this.scene.add(this.dynamicPortalRoot);
+    this.warpZones.visible = false;
+    this.avatarScene.add(this.warpZones);
 
     this.camera = new THREE.PerspectiveCamera(
       62,
@@ -75,11 +138,21 @@ export class WorldEngine {
     );
 
     this.renderer = new THREE.WebGPURenderer({ antialias: true });
+    if (callbacks.loadLocalWorld) this.previews = new PortalPreviews(this.renderer, callbacks.loadLocalWorld);
+    this.ripplePass = new PortalRipplePass(this.renderer);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
+
+    this.transitRig = createStylizedAvatarRig(initialAvatarColor);
+    this.transitAvatarState = {
+      rig: this.transitRig.group,
+      position: this.transitAvatarPos,
+      yaw: 0,
+      visible: true,
+    };
 
     this.avatar = new AvatarController(
       this.scene,
@@ -87,12 +160,22 @@ export class WorldEngine {
       this.renderer.domElement,
       initialAvatarColor,
       callbacks.onFlightChange,
+      (hexColor) => {
+        const col = new THREE.Color(hexColor);
+        this.transitRig.bodyMat.color.copy(col);
+        this.transitRig.bodyMat.emissive.copy(col);
+      },
     );
+    this.playerView = { position: this.avatar.position };
+    this.frameMotion = {
+      previousFeet: this.previousFeet,
+      feet: this.avatar.position,
+      previousCamera: this.previousCamera,
+      camera: this.camera.position,
+    };
 
     window.addEventListener('resize', this.handleResize);
     window.addEventListener('keydown', this.handleKeyDown);
-    this.renderer.domElement.addEventListener('pointermove', this.handlePointerMove);
-    this.renderer.domElement.addEventListener('click', this.handleClick);
   }
 
   /** Must be awaited before rendering any frame (Three.js WebGPURenderer requirement). */
@@ -111,95 +194,187 @@ export class WorldEngine {
     return this.currentManifest?.id ?? null;
   }
 
-  getCurrentHubStyle(): HubStyle {
-    return this.currentHubStyle;
+  /** Show or hide each portal's warp zone (debug). */
+  setWarpZonesVisible(visible: boolean): void {
+    this.warpZones.visible = visible;
   }
 
   syncRemotePlayers(players: AvatarState[], localPlayerId: string): void {
     this.avatar.syncRemotePlayers(players, localPlayerId);
   }
 
+  /**
+   * Make `module` the active room. Resolves with the spawn the player arrived at,
+   * or undefined when a later mount superseded this one.
+   */
   async mountWorld(
     module: WorldModule,
-    options?: { spawnId?: string; hubStyle?: HubStyle; extraPortals?: PortalDefinition[] },
-  ): Promise<void> {
-    this.unmountCurrentWorld();
-
-    this.currentManifest = module.manifest;
-    if (options?.hubStyle) {
-      this.currentHubStyle = options.hubStyle;
+    options?: { spawnId?: string; extraPortals?: PortalDefinition[]; fromPortal?: PortalDefinition; crossed?: boolean },
+  ): Promise<SpawnPoint | undefined> {
+    const sequence = ++this.mountSequence;
+    const source = this.getAllPortals().find(p => p.portal === options?.fromPortal);
+    const cached = this.previews?.prepare(module.manifest.id);
+    const room = await (cached ?? RoomInstance.mount(module, this.renderer));
+    if (sequence !== this.mountSequence) {
+      if (!cached) this.disposeRoom(room);
+      return undefined;
     }
 
-    this.spawnOverride = null;
-    this.platforms = [];
-    this.terrainHeightFn = null;
-
-    const worldSceneGroup = new THREE.Group();
-    this.worldRoot.add(worldSceneGroup);
-
-    const ctx: WorldContext = {
-      scene: this.scene,
-      renderer: this.renderer,
-      hubStyle: this.currentHubStyle,
-      addPortal: (portal) => {
-        const handle = createArchwayPortal(portal);
-        this.worldRoot.add(handle.group);
-        this.staticPortals.push(handle);
-        return handle;
-      },
-      registerCustomPortal: (handle) => {
-        this.worldRoot.add(handle.group);
-        this.staticPortals.push(handle);
-      },
-      onUpdate: (fn) => {
-        this.updateHooks.push(fn);
-      },
-      onDispose: (fn) => {
-        this.disposeHooks.push(fn);
-      },
-      addPlatform: (bounds) => {
-        this.platforms.push(bounds);
-      },
-      setTerrainHeight: (fn) => {
-        this.terrainHeightFn = fn;
-      },
-      configureSpawn: (spawn) => {
-        this.spawnOverride = spawn;
-      },
-      enterPortal: (portal) => {
-        this.triggerPortal(portal);
-      },
-    };
-
-    // Mount world module (adds lighting, terrain, geometry, custom portals)
-    await module.mount(ctx);
-
-    this.avatar.setWorldCollision(this.platforms, this.terrainHeightFn);
-
-    // Choose spawn: explicit non-default named spawn -> world mount override -> manifest default
-    const requestedSpawn =
-      options?.spawnId && options.spawnId !== 'default' ? module.manifest.spawns[options.spawnId] : undefined;
-    const spawn: SpawnPoint =
-      requestedSpawn ??
-      this.spawnOverride ??
-      module.manifest.spawns.default ?? { position: [0, 0, 10], yaw: 0 };
-
-    this.avatar.applySpawn(spawn);
-
-    // Brief portal reentry grace period so players don't immediately re-trigger a portal at spawn
-    this.portalCooldownUntil = performance.now() + 1800;
-
-    if (options?.extraPortals?.length) {
-      this.setDynamicPortals(options.extraPortals);
+    const arrival = room.spawn(options?.spawnId);
+    let sourceOrigin: THREE.Vector3 | undefined;
+    let yawDelta = 0;
+    if (source && options?.crossed) {
+      sourceOrigin = new THREE.Vector3().fromArray(source.portal.position);
+      const side = viewerSide(source, this.camera.position);
+      yawDelta = crossingYawDelta(source.portal.yaw ?? 0, side, arrival.yaw);
     }
 
-    this.callbacks.onWorldLoaded?.(module.manifest, this.currentHubStyle);
+    this.previews?.take(module.manifest.id);
+    this.installRoom(room, arrival, sourceOrigin, yawDelta, options?.extraPortals);
+    return arrival;
+  }
+
+  /** Preload and pin both next (exit) and previous (entrance) neighbor rooms of the active room. */
+  async preloadAdjacentRooms(): Promise<void> {
+    if (!this.room || !this.previews) return;
+    await this.previews.syncPinnedForRoom(this.room);
   }
 
   /**
-   * Synchronize dynamically spawned portals (e.g. from the "+ Link Portal" dialog or remote peers).
-   * Adapts visual style to match the active hub theme (magic fountain / blooming flower / archway).
+   * Capture POV-matched portal snapshots for every local room in the loop, used for
+   * portals too far away to draw live and for rooms still loading.
    */
+  async prewarmPortalSnapshots(
+    worldIds: string[],
+    onProgress?: (fraction: number) => void,
+  ): Promise<void> {
+    if (!this.room || !this.previews) return;
+    // Hide the local & remote avatar scene while capturing snapshots so no character
+    // appears baked into the initial room's portal preview (e.g. Eric's Room).
+    const prevAvatarVisible = this.avatarScene.visible;
+    this.avatarScene.visible = false;
+    try {
+      await this.previews.prewarmSnapshots(worldIds, this.room, onProgress);
+    } finally {
+      this.avatarScene.visible = prevAvatarVisible;
+    }
+    // Pre-allocate the persistent post-processing target and compile both the ripple
+    // composite pipeline and active room portal pipelines during the loading gate.
+    this.ripplePass.warmUp();
+    this.currentFramePortals = this.getAllPortals();
+    this.currentFrameDt = 0;
+    this.ripplePass.render(this.renderMainPass);
+  }
+
+  private installRoom(
+    room: RoomInstance,
+    arrival: SpawnPoint,
+    sourceOrigin?: THREE.Vector3,
+    yawDelta = 0,
+    extraPortals?: PortalDefinition[],
+  ): void {
+    const prevRoom = this.room;
+    // Keep the room we just left mounted as a preview when the new room links back to
+    // it, so turning around shows it live and crossing back costs no remount.
+    const shouldRetainPrev =
+      !!prevRoom &&
+      prevRoom !== room &&
+      room.portals.some(p => !p.portal.remoteUrl && p.portal.targetWorldId === prevRoom.module.manifest.id);
+
+    this.swapOutCurrentRoom(shouldRetainPrev);
+
+    this.room = room;
+    this.previews?.applySnapshotsToRoom(room);
+    room.scene.add(this.avatarScene);
+    this.currentManifest = room.module.manifest;
+    this.avatar.setWorldCollision(room.platforms, room.terrainHeight);
+
+    if (sourceOrigin) {
+      const landing = new THREE.Vector3().fromArray(arrival.position);
+      carryThroughPortal(this.avatar.position, sourceOrigin, yawDelta, landing);
+      carryThroughPortal(this.camera.position, sourceOrigin, yawDelta, landing);
+      this.avatar.yaw += yawDelta;
+      this.camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawDelta));
+      this.avatar.syncRigTransform(this.elapsed);
+      this.skipNextSpeedSample = true;
+    } else {
+      this.avatar.applySpawn(arrival);
+      this.skipNextSpeedSample = true;
+    }
+
+    room.activate(portal => this.requestPortalEntry(portal), this.playerView);
+
+    // Preload next & previous neighbors immediately so transitions never stall
+    void this.previews?.syncPinnedForRoom(room);
+
+    // Brief portal reentry grace period so players don't immediately re-trigger a portal at spawn
+    this.portalCooldownUntil = performance.now() + 900;
+
+    if (extraPortals?.length) {
+      this.setDynamicPortals(extraPortals);
+    }
+
+    this.callbacks.onWorldLoaded?.(room.module.manifest);
+  }
+
+  /**
+   * Promote a pre-mounted destination RoomInstance synchronously on the frame the
+   * camera crosses the portal plane, so the view never jumps or dips.
+   */
+  private promotePortalSync(handle: PortalVisualHandle, sideSign: CrossingSide): boolean {
+    const portal = handle.portal;
+    const room = this.previews?.takeReady(portal.targetWorldId);
+    if (!room) return false;
+
+    const arrival = room.spawn(portal.targetSpawnId);
+    const sourceOrigin = new THREE.Vector3().fromArray(portal.position);
+    const yawDelta = crossingYawDelta(portal.yaw ?? 0, sideSign, arrival.yaw);
+
+    this.mountSequence++;
+    this.installRoom(room, arrival, sourceOrigin, yawDelta);
+    this.callbacks.onPortalPromoted?.(room.module.manifest);
+    return true;
+  }
+
+  /**
+   * Enter a portal via E key or programmatic trigger. For local passage portals,
+   * smoothly walk the character through the circular opening with the camera following.
+   */
+  private requestPortalEntry(portal: PortalDefinition): void {
+    const now = performance.now();
+    if (now < this.portalCooldownUntil) return;
+    if (portal.remoteUrl) {
+      this.triggerPortal(portal, false);
+      return;
+    }
+    const handle = this.getAllPortals().find(p => p.portal === portal);
+    if (!handle || !handle.passage) {
+      this.triggerPortal(portal, false);
+      return;
+    }
+
+    // Eagerly pin the destination preview so crossing is synchronous and instant.
+    this.previews?.prepare(portal.targetWorldId);
+
+    const sideSign = viewerSide(handle, this.avatar.position);
+    const portalYaw = (portal.yaw ?? 0) + (sideSign < 0 ? Math.PI : 0);
+    // Forward direction through the portal in world XZ:
+    const dirX = -Math.sin(portalYaw);
+    const dirZ = -Math.cos(portalYaw);
+
+    this.walkThrough = {
+      handle,
+      sideSign,
+      targetYaw: portalYaw,
+      dirX,
+      dirZ,
+      targetX: portal.position[0] + dirX * 7.2,
+      targetZ: portal.position[2] + dirZ * 7.2,
+      startedAt: now,
+    };
+  }
+
+  /** Synchronize dynamically spawned portals using the circular archway style. */
   setDynamicPortals(portals: PortalDefinition[]): void {
     for (const handle of this.dynamicPortals) {
       this.dynamicPortalRoot.remove(handle.group);
@@ -207,60 +382,51 @@ export class WorldEngine {
     }
     this.dynamicPortals = [];
 
-    const isHub = this.currentManifest?.id === 'hub';
-    for (let i = 0; i < portals.length; i++) {
-      const p = portals[i];
-      let handle: PortalVisualHandle;
-      if (isHub && this.currentHubStyle === 'fountains') {
-        handle = createMagicFountainPortal(
-          { ...p, position: [p.position[0], 0, p.position[2]] },
-          { plumeHeight: 13.5, phase: i * 1.3 },
-        );
-      } else if (isHub && this.currentHubStyle === 'meadow') {
-        const y = this.terrainHeightFn ? this.terrainHeightFn(p.position[0], p.position[2]) : p.position[1];
-        handle = createBloomingFlowerPortal(
-          { ...p, position: [p.position[0], y, p.position[2]] },
-          { stemHeight: 3.4, phase: i * 1.1 },
-        );
-      } else {
-        handle = createArchwayPortal(p);
+    const slots = livePortalSlots(this.currentManifest);
+    let playerPortalsPlaced = 0;
+    for (const portal of portals) {
+      const isReturnPortal = Boolean(portal.remoteUrl && portal.id.startsWith('return-'));
+      if (!isReturnPortal) {
+        if (playerPortalsPlaced >= slots) continue;
+        playerPortalsPlaced++;
       }
+      const handle = createArchwayPortal(portal, { passage: true });
       this.dynamicPortalRoot.add(handle.group);
       this.dynamicPortals.push(handle);
     }
   }
 
   private getAllPortals(): PortalVisualHandle[] {
-    return [...this.staticPortals, ...this.dynamicPortals];
+    return [...(this.room?.portals ?? []), ...this.dynamicPortals];
   }
 
-  private triggerPortal(portal: PortalDefinition): void {
+  private triggerPortal(portal: PortalDefinition, crossed = false): boolean {
     const now = performance.now();
-    if (now < this.portalCooldownUntil) return;
-    this.portalCooldownUntil = now + 2000;
-    this.callbacks.onPortalEnter?.(portal);
+    if (!this.callbacks.onPortalEnter || now < this.portalCooldownUntil) return false;
+    this.portalCooldownUntil = now + 1500;
+    this.callbacks.onPortalEnter(portal, crossed);
+    return true;
   }
 
-  private unmountCurrentWorld(): void {
-    this.hoveredPortal = null;
+  private swapOutCurrentRoom(retainInPreviewCache: boolean): void {
     this.nearestPortal = null;
-    this.callbacks.onPortalHover?.(null, 0, 0);
+    this.transitPortal = undefined;
+    this.walkThrough = undefined;
     this.callbacks.onPortalProximity?.(null);
 
-    for (const fn of this.disposeHooks) {
-      try {
-        fn();
-      } catch {
-        // Ignore cleanup errors on rapid world switches
+    this.previews?.releaseViews();
+    this.avatarScene.removeFromParent();
+
+    if (this.room) {
+      const oldRoom = this.room;
+      this.room = undefined;
+      oldRoom.deactivate();
+      if (retainInPreviewCache && this.previews) {
+        this.previews.retain(oldRoom.module.manifest.id, oldRoom);
+      } else {
+        this.disposeRoom(oldRoom);
       }
     }
-    this.disposeHooks = [];
-    this.updateHooks = [];
-
-    for (const handle of this.staticPortals) {
-      handle.dispose?.();
-    }
-    this.staticPortals = [];
 
     for (const handle of this.dynamicPortals) {
       this.dynamicPortalRoot.remove(handle.group);
@@ -268,14 +434,50 @@ export class WorldEngine {
     }
     this.dynamicPortals = [];
 
-    // Clear all children attached to worldRoot & scene lighting added directly to scene
-    while (this.worldRoot.children.length > 0) {
-      this.worldRoot.remove(this.worldRoot.children[0]);
-    }
-    this.scene.fog = null;
-    this.scene.background = null;
     this.avatar.clearRemotePlayers();
   }
+
+  /** Place one warp-zone marker on each portal in the current room. */
+  private syncWarpZones(portals: PortalVisualHandle[]): void {
+    while (this.warpZones.children.length < portals.length) {
+      const zone = new THREE.Group();
+      const sphere = new THREE.Mesh(this.warpSphereGeometry, this.warpSphereMaterial);
+      const floorCircle = new THREE.LineLoop(this.warpCircleGeometry, this.warpCircleMaterial);
+      floorCircle.position.y = 0.03;
+      zone.add(sphere, floorCircle);
+      this.warpZones.add(zone);
+    }
+    this.warpZones.children.forEach((zone, i) => {
+      const handle = portals[i];
+      zone.visible = !!handle;
+      if (!handle) return;
+      const floorY = handle.portal.position[1];
+      zone.position.set(handle.triggerCenter.x, floorY, handle.triggerCenter.z);
+      zone.children[0].position.y = handle.triggerCenter.y - floorY;
+    });
+  }
+
+  /** Dispose a room, including the snapshot materials previews attached to its portals. */
+  private disposeRoom(room: RoomInstance): void {
+    if (this.previews) this.previews.disposeRoom(room);
+    else room.dispose();
+  }
+
+  private unmountCurrentWorld(): void {
+    this.swapOutCurrentRoom(false);
+    this.previews?.clear();
+  }
+
+  private readonly renderMainPass = (): void => {
+    const insidePortal = this.previews?.render(
+      this.currentFramePortals,
+      this.camera,
+      this.currentFrameDt,
+      this.elapsed,
+      this.transitAvatarState,
+    );
+    if (!insidePortal) this.renderer.render(this.scene, this.camera);
+  };
 
   private readonly loop = (now: number): void => {
     if (!this.running) return;
@@ -285,17 +487,57 @@ export class WorldEngine {
     this.lastTime = now;
     this.elapsed += dt;
 
-    this.avatar.update(dt, this.elapsed, this.inputLocked);
+    this.previousFeet.copy(this.avatar.position);
+    this.previousCamera.copy(this.camera.position);
 
-    for (const fn of this.updateHooks) {
-      fn(dt, this.elapsed);
+    if (this.walkThrough) {
+      const wt = this.walkThrough;
+      const feetLocal = wt.handle.group.worldToLocal(this.scratchVecA.copy(this.avatar.position));
+      const approaching = feetLocal.z * wt.sideSign > 0.2 && Math.abs(feetLocal.x) > 1.4;
+      const goalX = approaching ? wt.handle.portal.position[0] : wt.targetX;
+      const goalZ = approaching ? wt.handle.portal.position[2] : wt.targetZ;
+      const toX = goalX - this.avatar.position.x;
+      const toZ = goalZ - this.avatar.position.z;
+      const dist = Math.hypot(toX, toZ);
+      const speed = Math.max(RUN_SPEED, dist * 1.35);
+      if (dist > 0.05) {
+        const step = Math.min(dist, speed * dt);
+        this.avatar.position.x += (toX / dist) * step;
+        this.avatar.position.z += (toZ / dist) * step;
+      }
+      const floorY = this.avatar.sampleSurfaceHeight(this.avatar.position.x, this.avatar.position.z);
+      if (!this.avatar.isFlying) {
+        this.avatar.position.y += (floorY - this.avatar.position.y) * Math.min(1, dt * 10);
+      }
+      const desiredYaw = approaching ? Math.atan2(-toX, -toZ) : wt.targetYaw;
+      const dyaw = Math.atan2(
+        Math.sin(desiredYaw - this.avatar.yaw),
+        Math.cos(desiredYaw - this.avatar.yaw),
+      );
+      this.avatar.yaw += dyaw * Math.min(1, dt * 8);
+      this.avatar.pitch += (-0.12 - this.avatar.pitch) * Math.min(1, dt * 6);
+      this.avatar.update(dt, this.elapsed, true);
+
+      if (now - wt.startedAt > 6000) {
+        this.walkThrough = undefined;
+      }
+    } else {
+      this.avatar.update(dt, this.elapsed, this.inputLocked);
     }
 
-    const portals = this.getAllPortals();
+    // Keep transit avatar proxy animation synced with the live character
+    this.transitAvatarPos.copy(this.avatar.position);
+    if (this.avatar.isFlying) {
+      this.transitAvatarPos.y += Math.sin(this.elapsed * 3.0) * 0.14;
+    }
+
+    this.room?.update(dt, this.elapsed);
+
+    let portals = this.getAllPortals();
     let closest: PortalVisualHandle | null = null;
     let closestDist = Infinity;
 
-    const playerCenter = new THREE.Vector3(
+    const playerCenter = this.scratchPlayerCenter.set(
       this.avatar.position.x,
       this.avatar.position.y + 1.2,
       this.avatar.position.z,
@@ -319,14 +561,69 @@ export class WorldEngine {
       handle.setProximity?.(prox01);
       handle.update?.(dt, this.elapsed);
 
-      if (dist < closestDist) {
+      if (dist < closestDist && canOfferPortalPrompt(handle, this.avatar.position, this.avatar.yaw)) {
         closestDist = dist;
         closest = handle;
       }
 
-      // Walk or dive directly into a portal to enter automatically!
-      if (!this.inputLocked && dist < handle.triggerRadius) {
-        this.triggerPortal(handle.portal);
+      // Detect the character, or the chase camera when backing in, entering a portal opening
+      if (!this.inputLocked && !this.transitPortal) {
+        const ready = now >= this.portalCooldownUntil && dist < GATE_WIDTH + 2;
+        if (handle.passage) {
+          const start = beginCrossing(handle, this.frameMotion, this.avatar.firstPerson);
+          if (start?.by === 'feet' && ready) {
+            if (handle.portal.remoteUrl) {
+              // Remote portals hand off to another server as soon as the feet pass through.
+              this.triggerPortal(handle.portal, true);
+            } else {
+              this.transitPortal = { handle, sideSign: start.side };
+              this.previews?.prepare(handle.portal.targetWorldId);
+            }
+          } else if (start?.by === 'camera' && !handle.portal.remoteUrl) {
+            // No cooldown: a camera crossing needs real movement through the opening,
+            // and backing straight out again must switch straight back.
+            this.transitPortal = { handle, sideSign: start.side, cameraLed: true };
+            this.previews?.prepare(handle.portal.targetWorldId);
+          }
+        } else if (ready && dist < handle.triggerRadius) {
+          this.triggerPortal(handle.portal, true);
+        }
+      }
+    }
+
+    // Check active 3rd-person portal transit: promote synchronously as soon as the camera crosses.
+    if (this.transitPortal) {
+      const { handle, sideSign, cameraLed } = this.transitPortal;
+      const decision = resolveTransit(handle, sideSign, this.avatar.position, this.camera.position, {
+        walkingThrough: !!this.walkThrough,
+        firstPerson: this.avatar.firstPerson,
+      });
+
+      if (decision === 'cancel') {
+        // Player stepped back out before the camera crossed
+        this.transitPortal = undefined;
+      } else if (decision === 'promote') {
+        this.transitPortal = undefined;
+        this.walkThrough = undefined;
+        const promoted = this.promotePortalSync(handle, sideSign);
+        if (promoted && cameraLed) {
+          // The camera is in the new room but the feet are still behind the portal we
+          // came through. From here that is a crossing back in progress: it completes
+          // when the player backs fully in, or switches back if the camera returns.
+          const receiving = this.room?.portals.find(p => p.portal.id === handle.portal.targetSpawnId);
+          if (receiving) this.transitPortal = { handle: receiving, sideSign: 1 };
+        }
+        if (promoted) {
+          portals = this.getAllPortals();
+          this.transitAvatarPos.copy(this.avatar.position);
+          if (this.avatar.isFlying) {
+            this.transitAvatarPos.y += Math.sin(this.elapsed * 3.0) * 0.14;
+          }
+          this.room?.update(0, this.elapsed);
+          for (const h of portals) h.update?.(0, this.elapsed);
+        } else {
+          this.triggerPortal(handle.portal, true);
+        }
       }
     }
 
@@ -336,30 +633,31 @@ export class WorldEngine {
       this.callbacks.onPortalProximity?.(promptCandidate?.portal ?? null);
     }
 
-    // Hover raycast for clickable portals (magic fountains, blooming flowers, arches)
-    if (!this.inputLocked && portals.length > 0) {
-      this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-      let hitHandle: PortalVisualHandle | null = null;
-      let hitDistance = Infinity;
-
-      for (const handle of portals) {
-        const hits = this.raycaster.intersectObjects(handle.hitTargets, true);
-        if (hits.length > 0 && hits[0].distance < hitDistance) {
-          hitDistance = hits[0].distance;
-          hitHandle = handle;
-        }
-      }
-
-      if (hitHandle !== this.hoveredPortal) {
-        this.hoveredPortal?.setHovered?.(false);
-        this.hoveredPortal = hitHandle;
-        this.hoveredPortal?.setHovered?.(true);
-        this.renderer.domElement.style.cursor = hitHandle ? 'pointer' : 'grab';
-      }
-      this.callbacks.onPortalHover?.(hitHandle?.portal ?? null, this.pointerScreenX, this.pointerScreenY);
+    // Smoothed horizontal speed of the feet (skipping the frame a crossing moves them between rooms)
+    if (this.skipNextSpeedSample) {
+      this.skipNextSpeedSample = false;
+    } else if (dt > 1e-4) {
+      const instantSpeed = Math.hypot(
+        this.avatar.position.x - this.previousFeet.x,
+        this.avatar.position.z - this.previousFeet.z,
+      ) / dt;
+      this.smoothedSpeed = smoothSpeed(this.smoothedSpeed, Math.min(instantSpeed, 30), dt);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // Warp: strongest at a portal's centre, fading to nothing at its warp circle, plus up to 20% when moving.
+    const warp = portalWarp(portals, this.avatar.position) * warpSpeedFactor(this.smoothedSpeed);
+    const moveNorm = THREE.MathUtils.clamp(this.smoothedSpeed / RUN_SPEED, 0, 1);
+    this.ripplePass.update(dt, this.elapsed, warp, moveNorm);
+    if (this.warpZones.visible) this.syncWarpZones(portals);
+
+    this.avatar.updateCameraVisibility();
+    this.transitAvatarState.yaw = this.avatar.yaw;
+    this.transitAvatarState.visible = !this.avatar.firstPerson;
+    this.currentFramePortals = portals;
+    this.currentFrameDt = dt;
+
+    // Always render through the persistent post-processing buffer (zero buildup/teardown hitches)
+    this.ripplePass.render(this.renderMainPass);
   };
 
   private readonly handleResize = (): void => {
@@ -373,34 +671,25 @@ export class WorldEngine {
   private readonly handleKeyDown = (e: KeyboardEvent): void => {
     if (this.inputLocked) return;
     if (e.code === 'KeyE' && this.nearestPortal) {
-      this.triggerPortal(this.nearestPortal.portal);
-    }
-  };
-
-  private readonly handlePointerMove = (e: PointerEvent): void => {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    this.pointerScreenX = e.clientX;
-    this.pointerScreenY = e.clientY;
-  };
-
-  private readonly handleClick = (): void => {
-    if (this.inputLocked) return;
-    if (!this.avatar.wasLastPointerClick()) return;
-    if (this.hoveredPortal) {
-      this.triggerPortal(this.hoveredPortal.portal);
+      this.requestPortalEntry(this.nearestPortal.portal);
     }
   };
 
   dispose(): void {
+    this.mountSequence++;
     this.running = false;
+    this.walkThrough = undefined;
+    this.transitPortal = undefined;
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDown);
-    this.renderer.domElement.removeEventListener('pointermove', this.handlePointerMove);
-    this.renderer.domElement.removeEventListener('click', this.handleClick);
     this.unmountCurrentWorld();
+    this.ripplePass.dispose();
+    this.warpSphereGeometry.dispose();
+    this.warpSphereMaterial.dispose();
+    this.warpCircleGeometry.dispose();
+    this.warpCircleMaterial.dispose();
+    this.transitRig.dispose();
     this.avatar.dispose();
     this.renderer.dispose();
   }

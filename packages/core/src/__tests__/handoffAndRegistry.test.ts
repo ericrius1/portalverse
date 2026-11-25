@@ -20,9 +20,8 @@ const payload: PortalHandoffPayload = {
   fromWorldId: 'eric-world',
   fromWorldName: "Eric's Room — Ünïcødé",
   returnUrl: 'https://eric.example.com/?world=eric-world',
-  targetWorldId: 'hub',
+  targetWorldId: 'jp-world',
   targetSpawnId: 'from-eric',
-  targetHubStyle: 'meadow',
   sentAt: 1_700_000_000_000,
 };
 
@@ -56,14 +55,14 @@ describe('portal handoff encode/decode', () => {
     },
   );
 
-  it('sanitizes strings/colors and drops invalid hub styles', () => {
+  it('sanitizes strings/colors and drops unknown fields such as the retired hub style', () => {
     const decoded = decodePortalHandoff(
       toBase64Url(
         JSON.stringify({
           ...payload,
           playerName: '<img src=x onerror=alert(1)>',
           playerColor: 'javascript:alert(1)',
-          targetHubStyle: 'volcano',
+          targetHubStyle: 'meadow',
           sentAt: 'yesterday',
         }),
       ),
@@ -71,7 +70,7 @@ describe('portal handoff encode/decode', () => {
     expect(decoded).not.toBeNull();
     expect(decoded!.playerName).not.toMatch(/[<>]/);
     expect(decoded!.playerColor).toBe('#38bdf8');
-    expect(decoded!.targetHubStyle).toBeUndefined();
+    expect(decoded).not.toHaveProperty('targetHubStyle');
     expect(decoded!.sentAt).toBe(0);
   });
 
@@ -99,42 +98,39 @@ describe('remote + shareable URLs', () => {
     },
   );
 
-  it("builds clean shareable links for Eric's and JP's rooms and hub styles", () => {
+  it("builds clean shareable links for Eric's and JP's rooms", () => {
     expect(buildShareableWorldUrl('https://portalverse.dev/', { worldId: 'eric-world' })).toBe(
       'https://portalverse.dev/?world=eric-world',
     );
-    expect(buildShareableWorldUrl('https://portalverse.dev/?handoff=old&world=hub#x', { worldId: 'jp-world' })).toBe(
+    expect(buildShareableWorldUrl('https://portalverse.dev/?handoff=old&world=fishpond#x', { worldId: 'jp-world' })).toBe(
       'https://portalverse.dev/?world=jp-world',
     );
-    expect(buildShareableWorldUrl('https://portalverse.dev/', { worldId: 'hub', hubStyle: 'meadow' })).toBe(
-      'https://portalverse.dev/?world=hub&hubStyle=meadow',
-    );
     expect(
-      buildShareableWorldUrl('https://portalverse.dev/?debug=1', { worldId: 'hub', hubStyle: 'nexus', spawnId: 'from-jp' }),
-    ).toBe('https://portalverse.dev/?debug=1&world=hub&hubStyle=nexus&spawn=from-jp');
+      buildShareableWorldUrl('https://portalverse.dev/?debug=1', { worldId: 'fishpond', spawnId: 'exit' }),
+    ).toBe('https://portalverse.dev/?debug=1&world=fishpond&spawn=exit');
     expect(buildShareableWorldUrl('/', { worldId: 'jp-world' })).toBe('/?world=jp-world');
   });
 
   it('parses routes back out of a location, including hash handoffs', () => {
     expect(readRouteFromLocation('?world=jp-world')).toEqual({ worldId: 'jp-world' });
-    expect(readRouteFromLocation('?world=hub&hubStyle=meadow&spawn=from-eric')).toEqual({
-      worldId: 'hub',
-      hubStyle: 'meadow',
+    expect(readRouteFromLocation('?world=fishpond&spawn=from-eric')).toEqual({
+      worldId: 'fishpond',
       spawnId: 'from-eric',
     });
-    expect(readRouteFromLocation('?world=hub&hubStyle=lava')).toEqual({ worldId: 'hub' });
+    // Old hub links still open the named room; the retired style param is ignored.
+    expect(readRouteFromLocation('?world=jp-world&hubStyle=meadow')).toEqual({ worldId: 'jp-world' });
     expect(readRouteFromLocation('?world=%3Cscript%3E')).toEqual({});
     expect(readRouteFromLocation('', '')).toEqual({});
 
     const encoded = encodePortalHandoff(payload);
     expect(readRouteFromLocation(`?handoff=${encoded}`).handoff).toEqual(payload);
-    expect(readRouteFromLocation('?world=hub', `#handoff=${encoded}`).handoff).toEqual(payload);
+    expect(readRouteFromLocation('?world=jp-world', `#handoff=${encoded}`).handoff).toEqual(payload);
     expect(readRouteFromLocation('?handoff=garbage').handoff).toBeUndefined();
   });
 
   it('round-trips a shareable URL through readRouteFromLocation', () => {
-    const url = new URL(buildShareableWorldUrl('https://x.dev/', { worldId: 'hub', hubStyle: 'fountains' }));
-    expect(readRouteFromLocation(url.search, url.hash)).toEqual({ worldId: 'hub', hubStyle: 'fountains' });
+    const url = new URL(buildShareableWorldUrl('https://x.dev/', { worldId: 'laser-lab', spawnId: 'entrance' }));
+    expect(readRouteFromLocation(url.search, url.hash)).toEqual({ worldId: 'laser-lab', spawnId: 'entrance' });
   });
 });
 
@@ -189,7 +185,6 @@ function worldModule(id: string): WorldModule {
 const registryFile: RegistryFile = {
   version: 1,
   defaultWorldId: 'hub',
-  defaultHubStyle: 'meadow',
   worlds: [manifest('hub'), manifest('eric-world', { name: "Eric's Room" }), manifest('jp-world', { name: "JP's Room" })],
 };
 
@@ -197,7 +192,6 @@ describe('WorldRegistry', () => {
   it('exposes defaults and manifests from the registry file', () => {
     const reg = new WorldRegistry(registryFile, {});
     expect(reg.getDefaultWorldId()).toBe('hub');
-    expect(reg.getDefaultHubStyle()).toBe('meadow');
     expect(reg.listWorlds().map((w) => w.id)).toEqual(['hub', 'eric-world', 'jp-world']);
     expect(reg.getManifest('jp-world')?.name).toBe("JP's Room");
     expect(reg.getManifest('nope')).toBeUndefined();
@@ -205,9 +199,22 @@ describe('WorldRegistry', () => {
 
   it('accepts the real repo registry.json', () => {
     const reg = new WorldRegistry(registryJson as unknown as RegistryFile, {});
-    expect(reg.getDefaultWorldId()).toBe('hub');
+    expect(reg.getDefaultWorldId()).toBe('eric-world');
+    expect(reg.listWorlds().map((w) => w.id)).toEqual([
+      'eric-world',
+      'jp-world',
+      'jp-garden',
+      'fishpond',
+      'jp-reef',
+      'jp-loft',
+      'laser-lab',
+      'alpine-sled',
+    ]);
     expect(reg.getManifest('eric-world')?.name).toBe("Eric's Room");
-    expect(reg.getManifest('jp-world')?.name).toBe("JP's Room");
+    expect(reg.getManifest('jp-world')?.name).toBe("JP's Solarpunk Meadow");
+    expect(reg.getManifest('fishpond')?.name).toBe('Kāneʻohe Fishpond');
+    expect(reg.getManifest('laser-lab')?.name).toBe('Laser Forcefield Arena');
+    expect(reg.getManifest('alpine-sled')?.name).toBe('Alpine Snow Run');
   });
 
   it('caches loaded modules and dedupes concurrent loads', async () => {

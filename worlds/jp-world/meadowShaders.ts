@@ -16,19 +16,17 @@ import {
   dot,
   normalize,
   max,
-  abs,
   smoothstep,
   clamp,
   attribute,
   positionLocal,
   positionWorld,
-  normalWorld,
   cameraPosition,
 } from 'three/tsl';
 
 /**
- * Shared meadow terrain height function used across the Solarpunk Meadow hub
- * so grass roots, wildflowers, blooming portal flowers, and player feet align seamlessly.
+ * Meadow terrain height function for JP's Solarpunk Meadow
+ * so grass roots, wildflowers, and player feet align seamlessly.
  */
 export function sampleMeadowHeight(x: number, z: number): number {
   const r = Math.hypot(x, z);
@@ -286,52 +284,4 @@ export function createMeadowGroundMaterial(): THREE.MeshStandardNodeMaterial {
   })();
 
   return material;
-}
-
-/**
- * Translucent, sun-lit TSL petal material for the giant blooming portal flowers
- * in the Solarpunk Meadow — glowing veins, soft subsurface-style backlight, and
- * extra radiance when hovered or approached.
- */
-export function createBloomingPetalMaterial(
-  hexBase = '#f472b6',
-  hexTip = '#fef08a',
-): {
-  material: THREE.MeshStandardNodeMaterial;
-  uniforms: {
-    baseCol: { value: THREE.Color };
-    tipCol: { value: THREE.Color };
-    bloomGlow: { value: number };
-  };
-} {
-  const baseCol = uniform(new THREE.Color(hexBase));
-  const tipCol = uniform(new THREE.Color(hexTip));
-  const bloomGlow = uniform(0.25);
-
-  const material = new THREE.MeshStandardNodeMaterial({
-    roughness: 0.34,
-    metalness: 0.05,
-    side: THREE.DoubleSide,
-  });
-
-  material.colorNode = Fn(() => {
-    const u = uv();
-    const vein = pow(abs(sin(u.x.mul(18.8495))), 6.0).mul(0.18);
-    const grad = smoothstep(float(0.05), float(0.95), u.y);
-    const col = mix(baseCol, tipCol, grad).add(tipCol.mul(vein));
-    return vec4(col, 1.0);
-  })();
-
-  material.emissiveNode = Fn(() => {
-    const u = uv();
-    const viewDir = normalize(cameraPosition.sub(positionWorld));
-    const ndotv = max(abs(dot(normalWorld, viewDir)), 0.0);
-    const fresnel = pow(float(1.0).sub(ndotv), 2.2);
-    const heartGlow = smoothstep(float(0.65), float(0.0), u.y);
-    const pulse = sin(time.mul(2.1).add(u.y.mul(3.0))).mul(0.12).add(0.88);
-    const rim = mix(baseCol, tipCol, u.y).mul(fresnel.mul(0.7).add(heartGlow.mul(0.65)));
-    return rim.mul(bloomGlow.mul(pulse));
-  })();
-
-  return { material, uniforms: { baseCol, tipCol, bloomGlow } };
 }

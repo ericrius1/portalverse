@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
+import { roomBuildBudget } from './scripts/roomBuildBudget';
 import { resolve } from 'node:path';
 
 export default defineConfig({
+  plugins: [roomBuildBudget()],
   resolve: {
     alias: {
       '@portalverse/core': resolve(__dirname, 'packages/core/src'),

@@ -9,19 +9,55 @@
   <body>
     <div id="viewport"></div>
 
+    <!-- Yuna-style Round Loading Gate (preload + click to enter) -->
+    <div id="loading-gate" class="loading-gate" aria-busy="true" aria-label="Loading Portalverse">
+      <div class="gate-panel gate-panel-top"></div>
+      <div class="gate-panel gate-panel-bottom"></div>
+      <button
+        type="button"
+        id="loading-medallion"
+        class="gate-medallion"
+        disabled
+        aria-label="Loading Portalverse"
+      >
+        <span class="gate-medallion-base"></span>
+        <span class="gate-medallion-fill"></span>
+        <svg class="gate-progress-svg" viewBox="0 0 220 220" aria-hidden="true">
+          <defs>
+            <linearGradient id="gate-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#38bdf8" />
+              <stop offset="55%" stop-color="#818cf8" />
+              <stop offset="100%" stop-color="#f472b6" />
+            </linearGradient>
+          </defs>
+          <circle class="gate-ring-track" cx="110" cy="110" r="102" />
+          <circle class="gate-ring-arc" id="loading-ring-arc" cx="110" cy="110" r="102" />
+        </svg>
+        <span class="gate-emblem" aria-hidden="true">
+          <svg class="gate-portal-icon gate-portal-dim" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="46" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 5" />
+            <circle cx="60" cy="60" r="35" fill="none" stroke="currentColor" stroke-width="2.5" />
+            <circle cx="60" cy="60" r="22" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.65" />
+          </svg>
+          <svg class="gate-portal-icon gate-portal-lit" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="46" fill="none" stroke="url(#gate-ring-grad)" stroke-width="1.8" stroke-dasharray="5 5" />
+            <circle cx="60" cy="60" r="35" fill="none" stroke="url(#gate-ring-grad)" stroke-width="3" />
+            <circle cx="60" cy="60" r="22" fill="none" stroke="#e0f2fe" stroke-width="1.4" opacity="0.85" />
+          </svg>
+        </span>
+        <span class="gate-title">PORTALVERSE</span>
+        <span class="gate-enter-label">
+          <span class="gate-status-text" id="loading-status-text">0%</span>
+          <span class="gate-enter-text" aria-hidden="true">ENTER</span>
+        </span>
+        <span class="gate-phase-text" id="loading-phase-text">INITIALIZING WEBGPU</span>
+      </button>
+    </div>
+
     <!-- Warp Transition Overlay -->
     <div id="warp-overlay" aria-hidden="true">
       <div class="warp-ring"></div>
       <div id="warp-label" class="warp-label">Entering World...</div>
-    </div>
-
-    <!-- Hover Tooltip for Clickable Portals (Fountains / Blooming Flowers / Arches) -->
-    <div id="hover-tooltip" class="hover-tooltip glass hidden">
-      <span class="tooltip-dot" id="tooltip-dot"></span>
-      <div>
-        <div class="tooltip-title" id="tooltip-title">Eric's Room</div>
-        <div class="tooltip-sub" id="tooltip-sub">Click or fly in to enter</div>
-      </div>
     </div>
 
     <!-- HUD -->
@@ -30,27 +66,14 @@
         <div class="world-badge glass">
           <span class="world-dot" id="world-accent-dot"></span>
           <div>
-            <div class="world-title" id="hud-world-name">Portal Hub</div>
-            <div class="world-sub" id="hud-world-author">Shared Metaverse · WebGPU</div>
+            <div class="world-title" id="hud-world-name">Eric's Room</div>
+            <div class="world-sub" id="hud-world-author">Owner: ericrius1 · WebGPU</div>
           </div>
           <span class="net-pill" id="hud-net-status" data-state="connecting">Connecting</span>
         </div>
 
-        <!-- Portal Representation Switcher (shown in Portal Hub) -->
-        <div class="hub-style-switcher glass" id="hub-style-switcher" role="group" aria-label="Portal Hub Style">
-          <button class="style-chip active" data-hub-style="fountains" title="High above glowing blue magic fountains">
-            ✦ Fountains
-          </button>
-          <button class="style-chip" data-hub-style="meadow" title="Solarpunk wildflower meadow with blooming petal portals">
-            ✿ Meadow
-          </button>
-          <button class="style-chip" data-hub-style="nexus" title="Starlight obsidian archway plaza">
-            ◎ Nexus
-          </button>
-        </div>
-
         <div class="hud-actions">
-          <button class="btn glass" id="btn-share-link" title="Copy direct shareable link to this room/hub">Share Link</button>
+          <button class="btn glass" id="btn-share-link" title="Copy direct shareable link to this room">Share Link</button>
           <button class="btn glass" id="btn-worlds" title="Rooms & Direct Links (M)">Rooms</button>
           <button class="btn btn-primary glass" id="btn-link-portal" title="Spawn Portal (P)">+ Link Portal</button>
           <button class="btn glass" id="btn-profile" title="Avatar Settings">Avatar</button>
@@ -76,11 +99,14 @@
         <div class="controls-bar glass">
           <span><kbd>WASD</kbd> Move / Fly</span>
           <span><kbd>Drag</kbd> Look</span>
-          <span><kbd>Click Portal</kbd> Enter</span>
+          <span><kbd>E</kbd> Enter Portal</span>
           <span><kbd>Space</kbd> / <kbd>C</kbd> Up / Down</span>
-          <span><kbd>F</kbd> <span id="flight-status-label">Flight: On</span></span>
+          <span><kbd>F</kbd> <span id="flight-status-label">Flight: Off</span></span>
           <span><kbd>V</kbd> Camera</span>
           <span><kbd>P</kbd> Link Portal</span>
+          <label class="debug-toggle" title="Debug: show each portal's warp zone">
+            <input type="checkbox" id="debug-warp-zones" /> Warp zones
+          </label>
         </div>
       </footer>
     </div>
@@ -149,7 +175,7 @@
           <button class="icon-btn" data-close-modal>&times;</button>
         </div>
         <p class="modal-desc">
-          Jump straight into any room or copy a direct shareable link for Eric's Room, JP's Room, or the Portal Hub.
+          Jump straight into any room in the promenade loop or copy a direct shareable link.
         </p>
         <div id="world-directory-list" class="world-cards"></div>
       </div>

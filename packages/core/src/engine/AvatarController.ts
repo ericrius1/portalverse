@@ -1,3 +1,4 @@
+import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
 import type { AvatarState, PlatformCollider, SpawnPoint, Vec3Tuple } from '../types';
 import { createFloatingLabel } from './signage';
@@ -5,7 +6,6 @@ import { createFloatingLabel } from './signage';
 interface RemoteAvatarVisual {
   group: THREE.Group;
   bodyMat: THREE.MeshStandardMaterial;
-  haloMesh: THREE.Mesh;
   label: { sprite: THREE.Sprite; dispose: () => void };
   targetPos: THREE.Vector3;
   targetYaw: number;
@@ -14,12 +14,13 @@ interface RemoteAvatarVisual {
   dispose: () => void;
 }
 
-function createStylizedAvatarRig(hexColor: string): {
+export interface StylizedAvatarRig {
   group: THREE.Group;
   bodyMat: THREE.MeshStandardMaterial;
-  haloMesh: THREE.Mesh;
   dispose: () => void;
-} {
+}
+
+export function createStylizedAvatarRig(hexColor: string): StylizedAvatarRig {
   const group = new THREE.Group();
   const col = new THREE.Color(hexColor);
 
@@ -41,28 +42,14 @@ function createStylizedAvatarRig(hexColor: string): {
   visor.position.set(0, 1.32, -0.24);
   group.add(visor);
 
-  const haloGeo = new THREE.TorusGeometry(0.46, 0.035, 10, 32);
-  const haloMat = new THREE.MeshBasicMaterial({
-    color: col,
-    transparent: true,
-    opacity: 0.85,
-  });
-  const haloMesh = new THREE.Mesh(haloGeo, haloMat);
-  haloMesh.rotation.x = Math.PI / 2;
-  haloMesh.position.y = 1.82;
-  group.add(haloMesh);
-
   return {
     group,
     bodyMat,
-    haloMesh,
     dispose: () => {
       bodyGeo.dispose();
       bodyMat.dispose();
       visorGeo.dispose();
       visorMat.dispose();
-      haloGeo.dispose();
-      haloMat.dispose();
     },
   };
 }
@@ -76,18 +63,21 @@ export class AvatarController {
   firstPerson = false;
 
   private readonly keys = new Set<string>();
+  private readonly desiredCamPos = new THREE.Vector3();
   private isDraggingLook = false;
   private dragMoved = false;
   private lastPointerX = 0;
   private lastPointerY = 0;
   private onGround = true;
 
-  private localRig: ReturnType<typeof createStylizedAvatarRig>;
+  private localRig: StylizedAvatarRig;
+  private localColor: string;
   private readonly remoteMap = new Map<string, RemoteAvatarVisual>();
   private readonly remoteRoot = new THREE.Group();
   private platforms: PlatformCollider[] = [];
   private terrainHeightFn: ((x: number, z: number) => number) | null = null;
   private onFlightChange?: (flying: boolean) => void;
+  private onColorChange?: (hexColor: string) => void;
 
   private readonly domElement: HTMLElement;
   private readonly scene: THREE.Scene;
@@ -99,11 +89,14 @@ export class AvatarController {
     domElement: HTMLElement,
     initialColor: string,
     onFlightChange?: (flying: boolean) => void,
+    onColorChange?: (hexColor: string) => void,
   ) {
     this.scene = scene;
     this.camera = camera;
     this.domElement = domElement;
+    this.localColor = initialColor;
     this.onFlightChange = onFlightChange;
+    this.onColorChange = onColorChange;
 
     this.localRig = createStylizedAvatarRig(initialColor);
     this.scene.add(this.localRig.group);
@@ -121,11 +114,16 @@ export class AvatarController {
     return !this.dragMoved;
   }
 
+  getLocalColor(): string {
+    return this.localColor;
+  }
+
   setLocalColor(hexColor: string): void {
+    this.localColor = hexColor;
     const col = new THREE.Color(hexColor);
     this.localRig.bodyMat.color.copy(col);
     this.localRig.bodyMat.emissive.copy(col);
-    (this.localRig.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
+    this.onColorChange?.(hexColor);
   }
 
   setWorldCollision(platforms: PlatformCollider[], terrainHeightFn: ((x: number, z: number) => number) | null): void {
@@ -140,8 +138,42 @@ export class AvatarController {
     this.velocityY = 0;
     this.setFlying(Boolean(spawn.flying));
     this.snapToGroundIfWalking();
+    this.syncRigTransform();
+    this.snapCameraToTarget();
+  }
+
+  syncRigTransform(elapsed = 0): void {
     this.localRig.group.position.copy(this.position);
+    if (this.isFlying) {
+      this.localRig.group.position.y += Math.sin(elapsed * 3.0) * 0.14;
+    }
     this.localRig.group.rotation.y = this.yaw;
+  }
+
+  snapCameraToTarget(): void {
+    const eyeY = this.position.y + 1.65;
+    if (this.firstPerson) {
+      this.camera.position.set(this.position.x, eyeY, this.position.z);
+      const lookX = this.position.x - Math.sin(this.yaw) * Math.cos(this.pitch) * 10;
+      const lookY = eyeY + Math.sin(this.pitch) * 10;
+      const lookZ = this.position.z - Math.cos(this.yaw) * Math.cos(this.pitch) * 10;
+      this.camera.lookAt(lookX, lookY, lookZ);
+    } else {
+      const camDist = this.isFlying ? 7.2 : 5.6;
+      const camX = this.position.x + Math.sin(this.yaw) * Math.cos(this.pitch) * camDist;
+      const camY = Math.max(
+        this.sampleSurfaceHeight(this.position.x, this.position.z) + 0.65,
+        eyeY - Math.sin(this.pitch) * camDist + 1.15,
+      );
+      const camZ = this.position.z + Math.cos(this.yaw) * Math.cos(this.pitch) * camDist;
+      this.camera.position.set(camX, camY, camZ);
+      const lookAhead = this.isFlying ? 12 : 4;
+      this.camera.lookAt(
+        this.position.x - Math.sin(this.yaw) * lookAhead,
+        eyeY + Math.sin(this.pitch) * lookAhead * 0.7,
+        this.position.z - Math.cos(this.yaw) * lookAhead,
+      );
+    }
   }
 
   setFlying(flying: boolean): void {
@@ -152,6 +184,11 @@ export class AvatarController {
 
   toggleFlight(): void {
     this.setFlying(!this.isFlying);
+  }
+
+  updateCameraVisibility(): void {
+    const horizontalDistance = Math.hypot(this.camera.position.x - this.position.x, this.camera.position.z - this.position.z);
+    this.localRig.group.visible = !this.firstPerson && horizontalDistance > 0.55;
   }
 
   toggleCameraView(): void {
@@ -183,14 +220,13 @@ export class AvatarController {
           accentColor: p.color,
           width: 2.4,
         });
-        label.sprite.position.set(0, 2.38, 0);
+        label.sprite.position.set(0, 2.02, 0);
         rig.group.add(label.sprite);
         rig.group.position.set(p.position[0], p.position[1], p.position[2]);
         this.remoteRoot.add(rig.group);
         vis = {
           group: rig.group,
           bodyMat: rig.bodyMat,
-          haloMesh: rig.haloMesh,
           label,
           targetPos: new THREE.Vector3(p.position[0], p.position[1], p.position[2]),
           targetYaw: p.yaw,
@@ -209,7 +245,6 @@ export class AvatarController {
           const col = new THREE.Color(p.color);
           vis.bodyMat.color.copy(col);
           vis.bodyMat.emissive.copy(col);
-          (vis.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
           vis.group.remove(vis.label.sprite);
           vis.label.dispose();
           const newLabel = createFloatingLabel({
@@ -217,7 +252,7 @@ export class AvatarController {
             accentColor: p.color,
             width: 2.4,
           });
-          newLabel.sprite.position.set(0, 2.38, 0);
+          newLabel.sprite.position.set(0, 2.02, 0);
           vis.group.add(newLabel.sprite);
           vis.label = newLabel;
           vis.name = p.name;
@@ -264,7 +299,7 @@ export class AvatarController {
           (this.keys.has('Space') ? 1 : 0) -
           (this.keys.has('KeyC') || this.keys.has('KeyQ') || this.keys.has('ControlLeft') ? 1 : 0);
 
-        // Fly along camera 3D look direction when holding W/S so diving into fountains feels effortless!
+        // Fly along the camera's 3D look direction when holding W/S.
         const cosPitch = Math.cos(this.pitch);
         const moveX = fwdX * cosPitch * forward + rightX * strafe;
         const moveY = Math.sin(this.pitch) * forward + verticalInput;
@@ -282,7 +317,7 @@ export class AvatarController {
         }
         this.velocityY = 0;
       } else {
-        const moveSpeed = sprint ? 14.5 : 8.2;
+        const moveSpeed = sprint ? RUN_SPEED : 8.2;
         let dx = fwdX * forward + rightX * strafe;
         let dz = fwdZ * forward + rightZ * strafe;
         const len = Math.hypot(dx, dz);
@@ -323,7 +358,6 @@ export class AvatarController {
       this.localRig.group.position.y += Math.sin(elapsed * 3.0) * 0.14;
     }
     this.localRig.group.rotation.y = this.yaw;
-    this.localRig.haloMesh.position.y = 1.82 + Math.sin(elapsed * 2.8) * 0.06;
 
     // Update camera (3rd person chase OR 1st person eye)
     const eyeY = this.position.y + 1.65;
@@ -341,7 +375,8 @@ export class AvatarController {
         eyeY - Math.sin(this.pitch) * camDist + 1.15,
       );
       const camZ = this.position.z + Math.cos(this.yaw) * Math.cos(this.pitch) * camDist;
-      this.camera.position.lerp(new THREE.Vector3(camX, camY, camZ), Math.min(1, clampedDt * 12));
+      this.desiredCamPos.set(camX, camY, camZ);
+      this.camera.position.lerp(this.desiredCamPos, Math.min(1, clampedDt * 12));
       const lookAhead = this.isFlying ? 12 : 4;
       this.camera.lookAt(
         this.position.x - Math.sin(this.yaw) * lookAhead,
@@ -359,7 +394,6 @@ export class AvatarController {
         Math.cos(vis.targetYaw - vis.group.rotation.y),
       );
       vis.group.rotation.y += dyaw * alpha;
-      vis.haloMesh.position.y = 1.82 + Math.sin(elapsed * 3.1) * 0.07;
     }
   }
 

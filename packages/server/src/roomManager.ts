@@ -1,3 +1,4 @@
+import { SIDE_PORTALS } from '../../core/src/portal/roomLayout';
 import type {
   AvatarState,
   ClientNetMessage,
@@ -24,6 +25,7 @@ export interface RoomManagerOptions {
    */
   knownWorldIds?: string[];
   defaultWorldId?: string;
+  livePortalLimits?: ReadonlyMap<string, number>;
   maxPortalsPerWorld?: number;
   /** Max distinct worlds that may hold dynamic portals (memory guard). */
   maxWorldsWithPortals?: number;
@@ -39,7 +41,7 @@ interface Session {
   avatar: AvatarState;
 }
 
-export const DEFAULT_MAX_PORTALS_PER_WORLD = 24;
+export const DEFAULT_MAX_PORTALS_PER_WORLD = SIDE_PORTALS;
 export const DEFAULT_POSITION_LIMIT = 5000;
 
 function clamp(value: number, min: number, max: number): number {
@@ -75,6 +77,7 @@ export class RoomManager {
   private readonly worldNames: Record<string, string>;
   private readonly knownWorlds: Set<string> | null;
   private readonly defaultWorldId: string;
+  private readonly livePortalLimits: ReadonlyMap<string, number>;
   private readonly maxPortalsPerWorld: number;
   private readonly maxWorldsWithPortals: number;
   private readonly positionLimit: number;
@@ -85,6 +88,7 @@ export class RoomManager {
     this.worldNames = { ...(options.worldNames ?? {}) };
     this.knownWorlds = options.knownWorldIds ? new Set(options.knownWorldIds) : null;
     this.defaultWorldId = options.defaultWorldId ?? 'hub';
+    this.livePortalLimits = options.livePortalLimits ?? new Map();
     this.maxPortalsPerWorld = options.maxPortalsPerWorld ?? DEFAULT_MAX_PORTALS_PER_WORLD;
     this.maxWorldsWithPortals = options.maxWorldsWithPortals ?? 64;
     this.positionLimit = options.positionLimit ?? DEFAULT_POSITION_LIMIT;
@@ -304,9 +308,10 @@ export class RoomManager {
     if (existing && existing.createdBy !== session.avatar.id && this.isCreatorOnline(existing)) {
       return [this.error(conn, 'portal_exists', `Portal "${clean.id}" belongs to someone else`)];
     }
-    if (!existing && worldPortals.size >= this.maxPortalsPerWorld) {
+    const available = Math.min(this.maxPortalsPerWorld, this.livePortalLimits.get(worldId) ?? SIDE_PORTALS);
+    if (!existing && worldPortals.size >= available) {
       return [
-        this.error(conn, 'portal_limit', `A world can hold at most ${this.maxPortalsPerWorld} dynamic portals`),
+        this.error(conn, 'portal_limit', `A world can hold at most ${available} dynamic portals`),
       ];
     }
     worldPortals.set(clean.id, clean);

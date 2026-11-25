@@ -2,8 +2,6 @@ import type * as THREE from 'three/webgpu';
 
 export type Vec3Tuple = [number, number, number];
 
-export type HubStyle = 'fountains' | 'meadow' | 'nexus';
-
 export interface SpawnPoint {
   position: Vec3Tuple;
   /** Facing angle in radians around the Y axis (0 = facing -Z). */
@@ -25,8 +23,6 @@ export interface PortalDefinition {
   targetWorldId: string;
   /** Destination spawn key in the target world's manifest. */
   targetSpawnId?: string;
-  /** Optional target hub style if jumping into the hub. */
-  targetHubStyle?: HubStyle;
   /** Optional external URL for true federated cross-server portals. */
   remoteUrl?: string;
   /** Primary vortex/magic color hex string (e.g. "#22d3ee"). */
@@ -37,6 +33,11 @@ export interface PortalDefinition {
   triggerRadius?: number;
   /** Optional ID of the player who dynamically spawned this portal. */
   createdBy?: string;
+  /**
+   * Only enter from the front (+Z) face, like the route gates. Walking through
+   * from behind passes harmlessly through the ring. Local to this client.
+   */
+  oneWay?: boolean;
 }
 
 export interface WorldManifest {
@@ -51,13 +52,14 @@ export interface WorldManifest {
   /** Allow toggling 3D free-flight in this world (default true). */
   allowFlight?: boolean;
   spawns: Record<string, SpawnPoint>;
+  /** Side portals placed by the room builder (reserved across all variants). */
+  customPortalSlots?: number;
   portals?: PortalDefinition[];
 }
 
 export interface RegistryFile {
   version: number;
   defaultWorldId: string;
-  defaultHubStyle: HubStyle;
   worlds: WorldManifest[];
 }
 
@@ -87,7 +89,6 @@ export interface PortalHandoffPayload {
   returnUrl?: string;
   targetWorldId?: string;
   targetSpawnId?: string;
-  targetHubStyle?: HubStyle;
   sentAt: number;
 }
 
@@ -196,14 +197,14 @@ export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export interface PortalVisualHandle {
   portal: PortalDefinition;
   group: THREE.Group;
-  /** Hitbox mesh(es) tested for mouse hover & click-to-enter. */
-  hitTargets: THREE.Object3D[];
-  /** World-space center used for proximity/dive triggering. */
+  /** Planar XY opening, with UVs spanning its bounds and local +Z facing out. */
+  passage?: boolean;
+  aperture: THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+  /** World-space center used for proximity triggering. */
   triggerCenter: THREE.Vector3;
   triggerRadius: number;
-  /** Optional vertical cylinder bounds [minY, maxY] for tall portals like magic fountains. */
+  /** Optional vertical cylinder bounds [minY, maxY] for tall custom portals. */
   triggerYRange?: [number, number];
-  setHovered?: (hovered: boolean) => void;
   setProximity?: (proximity01: number) => void;
   update?: (dt: number, elapsed: number) => void;
   dispose?: () => void;
@@ -218,14 +219,31 @@ export interface PlatformCollider {
   topY: number;
 }
 
+/** What a room can read about the local player while it is the active room. */
+export interface PlayerView {
+  /** The player's feet, in this room's coordinates. Live and read-only: never modify it. */
+  readonly position: THREE.Vector3;
+}
+
 export interface WorldContext {
+  /** Each mount is independent. Preview mounts run scene animation without player input. */
+  readonly mode: 'active' | 'preview';
+  /**
+   * The local player while this room is active, or null while it's a preview seen
+   * through a portal. Read it in `onUpdate` each frame; it changes as rooms switch.
+   */
+  readonly player: PlayerView | null;
+  /**
+   * Install player-only behavior each time this instance becomes the active room.
+   * Return a cleanup function to stop it when the player leaves and the room goes
+   * back to being a preview (rooms you just left stay mounted for instant return).
+   */
+  onActivate: (fn: () => void | (() => void)) => void;
   scene: THREE.Scene;
   renderer: THREE.WebGPURenderer;
-  /** Active hub representation style when mounting the portal hub. */
-  hubStyle: HubStyle;
   /** Place a default archway portal prefab in the current world. */
   addPortal: (portal: PortalDefinition) => PortalVisualHandle;
-  /** Register a custom-rendered portal (e.g. magic fountain jet or blooming flower portal). */
+  /** Register a custom-rendered portal (reserve it with `customPortalSlots` first). */
   registerCustomPortal: (handle: PortalVisualHandle) => void;
   /** Register an animated object/callback updated every frame. */
   onUpdate: (fn: (dt: number, elapsed: number) => void) => void;
@@ -235,7 +253,7 @@ export interface WorldContext {
   addPlatform: (bounds: PlatformCollider) => void;
   /** Optional procedural terrain height function for rolling hills/meadows. */
   setTerrainHeight: (fn: (x: number, z: number) => number) => void;
-  /** Override player spawn/flight mode on mount (e.g. high above fountains). */
+  /** Override the default player spawn/flight mode on mount. */
   configureSpawn: (spawn: SpawnPoint) => void;
   /** Trigger entering a portal programmatically. */
   enterPortal: (portal: PortalDefinition) => void;

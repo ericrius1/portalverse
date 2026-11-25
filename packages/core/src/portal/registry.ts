@@ -1,5 +1,5 @@
-import type { HubStyle, RegistryFile, WorldManifest, WorldModule } from '../types';
-import { isHubStyle, sanitizeHttpUrl, sanitizeId } from './handoff';
+import type { RegistryFile, WorldManifest, WorldModule } from '../types';
+import { sanitizeHttpUrl, sanitizeId } from './handoff';
 
 export type LocalWorldLoader = () => Promise<{ default: WorldModule } | WorldModule>;
 
@@ -29,7 +29,6 @@ export class WorldRegistry {
   private readonly loaders = new Map<string, LocalWorldLoader>();
   private readonly loaded = new Map<string, Promise<WorldModule>>();
   private readonly defaultWorldId: string;
-  private readonly defaultHubStyle: HubStyle;
 
   constructor(registryFile: RegistryFile, localLoaders: Record<string, LocalWorldLoader>) {
     for (const manifest of registryFile.worlds ?? []) {
@@ -44,17 +43,10 @@ export class WorldRegistry {
     this.defaultWorldId = this.manifests.has(registryFile.defaultWorldId)
       ? registryFile.defaultWorldId
       : (firstLocal?.id ?? registryFile.defaultWorldId);
-    this.defaultHubStyle = isHubStyle(registryFile.defaultHubStyle)
-      ? registryFile.defaultHubStyle
-      : 'fountains';
   }
 
   getDefaultWorldId(): string {
     return this.defaultWorldId;
-  }
-
-  getDefaultHubStyle(): HubStyle {
-    return this.defaultHubStyle;
   }
 
   listWorlds(): WorldManifest[] {
