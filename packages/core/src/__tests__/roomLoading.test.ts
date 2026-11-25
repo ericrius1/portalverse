@@ -4,6 +4,7 @@ import catalog from '../../../../registry.json';
 import type { RegistryFile, WorldModule } from '../types';
 import { defineRoom } from '../portal/defineRoom';
 import { PortalPreviews } from '../engine/PortalPreviews';
+import { PortalRipplePass } from '../engine/PortalRipplePass';
 import { RoomInstance } from '../engine/RoomInstance';
 
 const emptyRoom = (id: string): WorldModule => defineRoom(id, { mount: () => {} });
@@ -19,16 +20,17 @@ function gate() {
 function fakeRenderer() {
   let current: THREE.RenderTarget | null = null;
   const renders: THREE.Object3D[] = [];
+  const targets: Array<THREE.RenderTarget | null> = [];
   const compileAsync = vi.fn(async (_scene: THREE.Object3D, _camera: THREE.Camera) => {});
   const renderer = {
     coordinateSystem: THREE.WebGPUCoordinateSystem,
     getDrawingBufferSize: (out: THREE.Vector2) => out.set(1600, 900),
     getRenderTarget: () => current,
     setRenderTarget: (target: THREE.RenderTarget | null) => { current = target; },
-    render: (scene: THREE.Object3D) => { renders.push(scene); },
+    render: (scene: THREE.Object3D) => { renders.push(scene); targets.push(current); },
     compileAsync,
   } as unknown as THREE.WebGPURenderer;
-  return { renderer, renders, compileAsync, target: () => current };
+  return { renderer, renders, targets, compileAsync, target: () => current };
 }
 
 describe('preparing a room as it loads', () => {
@@ -56,6 +58,30 @@ describe('preparing a room as it loads', () => {
     const room = await ready;
     expect(fake.compileAsync.mock.calls[0][0]).toBe(room.scene);
     previews.clear();
+  });
+
+  // three.js yields during a precompile and, each time, leaves the renderer on the compile's target.
+  it('puts the render target back after a precompile that yields', async () => {
+    const fake = fakeRenderer();
+    fake.compileAsync.mockImplementation(async () => {
+      const compileTarget = fake.target();
+      await flush();
+      fake.renderer.setRenderTarget(compileTarget);
+    });
+    const previews = new PortalPreviews(fake.renderer, id => Promise.resolve(emptyRoom(id)), { idle: now });
+    await previews.prepare('jp-world');
+    expect(fake.target()).toBeNull();
+    previews.clear();
+  });
+
+  it('draws the finished frame to the screen even while a precompile holds another target', () => {
+    const fake = fakeRenderer();
+    const pass = new PortalRipplePass(fake.renderer);
+    const stray = new THREE.RenderTarget(1, 1);
+    fake.renderer.setRenderTarget(stray);
+    pass.render(() => {});
+    expect(fake.targets.at(-1)).toBeNull();
+    pass.dispose();
   });
 
   it('compiles objects outside the camera view, then restores culling', async () => {

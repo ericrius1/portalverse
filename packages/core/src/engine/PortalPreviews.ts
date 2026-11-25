@@ -486,21 +486,19 @@ export class PortalPreviews {
         object.frustumCulled = false;
         culled.push(object);
       });
+      const previous = this.renderer.getRenderTarget();
       try {
         this.compileTarget ??= createSceneTarget(1, 1);
         this.compileCamera.coordinateSystem = this.renderer.coordinateSystem;
         this.compileCamera.updateProjectionMatrix();
-        const previous = this.renderer.getRenderTarget();
-        let pending: Promise<unknown>;
         this.renderer.setRenderTarget(this.compileTarget);
-        try {
-          // three.js records the target before its first await, so it can be restored at once.
-          pending = this.renderer.compileAsync(room.scene, this.compileCamera);
-        } finally {
-          this.renderer.setRenderTarget(previous);
-        }
+        const pending = this.renderer.compileAsync(room.scene, this.compileCamera);
+        // three.js has recorded the target by now. Frames keep drawing while it compiles.
+        this.renderer.setRenderTarget(previous);
         await pending;
       } finally {
+        // Each time three.js yields and resumes, it leaves the renderer on the compile target.
+        this.renderer.setRenderTarget(previous);
         for (const object of culled) object.frustumCulled = true;
       }
     };
