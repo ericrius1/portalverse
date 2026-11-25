@@ -4,6 +4,3 @@ dist
 .vercel
 .vite
 coverage
-app
-worlds
-scripts

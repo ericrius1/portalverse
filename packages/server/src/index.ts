@@ -1,7 +1,7 @@
 import { livePortalSlots } from '../../core/src/portal/roomLayout';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFileSync, realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import type { RegistryFile, ServerNetMessage } from '../../core/src/types';
@@ -20,6 +20,8 @@ export interface PortalverseServerOptions {
   heartbeatMs?: number;
   /** Silence startup logs (tests). */
   quiet?: boolean;
+  /** Optional directory containing built Vite frontend assets (e.g. `dist`). */
+  staticDir?: string;
 }
 
 export interface PortalverseServer {
@@ -33,6 +35,78 @@ export interface PortalverseServer {
 
 const DEFAULT_PORT = 3001;
 const DEFAULT_HOST = '0.0.0.0';
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.hdr': 'application/octet-stream',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ktx2': 'image/ktx2',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.wasm': 'application/wasm',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+function defaultStaticDir(): string | undefined {
+  const dir = fileURLToPath(new URL('../../../dist', import.meta.url));
+  return existsSync(join(dir, 'index.html')) ? dir : undefined;
+}
+
+function serveFile(res: ServerResponse, filePath: string, method: string, cacheControl: string): void {
+  const stat = statSync(filePath);
+  const contentType = MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Content-Length': stat.size,
+    'Cache-Control': cacheControl,
+  });
+  if (method === 'HEAD') {
+    res.end();
+    return;
+  }
+  createReadStream(filePath).pipe(res);
+}
+
+function tryServeStatic(staticRoot: string, pathname: string, method: string, res: ServerResponse): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return false;
+  }
+  const rel = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
+  const candidate = resolve(staticRoot, rel);
+  const insideRoot = candidate === staticRoot || candidate.startsWith(staticRoot + sep);
+  if (insideRoot && existsSync(candidate) && statSync(candidate).isFile()) {
+    const isHashedAsset = decoded.startsWith('/assets/');
+    serveFile(
+      res,
+      candidate,
+      method,
+      isHashedAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
+    );
+    return true;
+  }
+  // Never rewrite missing /api/* or /assets/* requests to index.html.
+  if (decoded.startsWith('/api/') || decoded.startsWith('/assets/') || extname(rel)) {
+    return false;
+  }
+  const indexPath = join(staticRoot, 'index.html');
+  if (existsSync(indexPath)) {
+    serveFile(res, indexPath, method, 'no-cache');
+    return true;
+  }
+  return false;
+}
 
 function loadRegistry(): RegistryFile | undefined {
   try {
@@ -68,6 +142,7 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
   const host = options.host ?? DEFAULT_HOST;
   const heartbeatMs = options.heartbeatMs ?? 30_000;
   const registry = options.registry ?? loadRegistry();
+  const staticRoot = options.staticDir ? resolve(options.staticDir) : undefined;
   const startedAt = Date.now();
 
   const worldNames: Record<string, string> = {};
@@ -111,16 +186,6 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
       sendJson(res, 405, { ok: false, error: 'method_not_allowed' });
       return;
     }
-    if (pathname === '/') {
-      sendJson(res, 200, {
-        ok: true,
-        service: 'portalverse-multiplayer',
-        wsPath: '/ws',
-        health: '/api/health',
-        totalPlayers: roomManager.getTotalPlayers(),
-      });
-      return;
-    }
     if (pathname === '/api/health') {
       sendJson(res, 200, {
         ok: true,
@@ -132,6 +197,19 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
     }
     if (pathname === '/api/worlds') {
       sendJson(res, 200, { worlds: roomManager.getWorldSummaries() });
+      return;
+    }
+    if (staticRoot && tryServeStatic(staticRoot, pathname, method, res)) {
+      return;
+    }
+    if (pathname === '/') {
+      sendJson(res, 200, {
+        ok: true,
+        service: 'portalverse-multiplayer',
+        wsPath: '/ws',
+        health: '/api/health',
+        totalPlayers: roomManager.getTotalPlayers(),
+      });
       return;
     }
     sendJson(res, 404, { ok: false, error: 'not_found' });
@@ -238,6 +316,7 @@ if (isMainModule()) {
   const app = createPortalverseServer({
     port: Number.isFinite(port) ? port : DEFAULT_PORT,
     host: process.env.HOST ?? DEFAULT_HOST,
+    staticDir: process.env.STATIC_DIR || defaultStaticDir(),
   });
   app.start().catch((err) => {
     console.error('[portalverse] failed to start server:', err);

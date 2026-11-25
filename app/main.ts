@@ -66,10 +66,6 @@ function resolveMultiplayerUrl(): string | null {
       // Ignore malformed override
     }
   }
-  // Static Vercel preview has no built-in /ws server unless ?ws= or VITE_WS_URL is supplied.
-  if (window.location.hostname.endsWith('.vercel.app')) {
-    return null;
-  }
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${proto}//${window.location.host}/ws`;
 }
