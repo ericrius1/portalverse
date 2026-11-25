@@ -105,7 +105,18 @@ describe('portal perspective', () => {
 
 it('links the rooms in catalog order and back to the start', () => {
   const rooms = (catalog as unknown as RegistryFile).worlds;
-  const order = ['eric-world', 'jp-world', 'jp-garden', 'fishpond', 'jp-reef', 'jp-loft', 'laser-lab', 'alpine-sled'];
+  const order = [
+    'eric-world',
+    'jp-world',
+    'jp-garden',
+    'fishpond',
+    'jp-reef',
+    'jp-loft',
+    'laser-lab',
+    'alpine-sled',
+    'eric-biolum-grove',
+    'eric-sun-observatory',
+  ];
   expect(rooms.filter(r => r.kind === 'local').map(r => r.id)).toEqual(order);
   for (let i = 0; i < order.length; i++) {
     const gates = routeGates(order[i], rooms);

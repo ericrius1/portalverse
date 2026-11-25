@@ -83,13 +83,17 @@ Pick the workflow that fits your session:
   - **Gemini 4 Neon**: Three.js WebGPU + TSL shaders (`packages/core/src/shaders/`), 3D world design (`worlds/`), animations, and HUD (`app/`).
 - **Cross-model review:** Before merging a PR into `main`, delegate a quick review to the opposite model.
 
-## 4. Playing Together Over the Internet
+## 4. Playing Together & Auto-Deploying (Railway)
 
-Because Vite proxies `/ws` and `/api` through port `5173`, exposing a single URL (via Tailscale, Cloudflare Tunnel, or a small VPS deploy) gives both of you full 3D + live multiplayer on one link:
+Portalverse runs full-stack (Vite WebGPU frontend + authoritative `/ws` multiplayer server on one origin) on **Railway** and **auto-deploys whenever Eric or JP pushes/merges to `main`**:
 
-- **Share Eric's Room:** `<your-url>/?world=eric-world`
-- **Share JP's Meadow:** `<your-url>/?world=jp-world`
-- **Share any room, arriving at its far end:** `<your-url>/?world=fishpond&spawn=exit`
+- **Live Main URL:** `https://portalverse-server-production.up.railway.app`
+- **Health / Presence API:** `https://portalverse-server-production.up.railway.app/api/health`
+- **Share Eric's Room:** `https://portalverse-server-production.up.railway.app/?world=eric-world`
+- **Share JP's Meadow:** `https://portalverse-server-production.up.railway.app/?world=jp-world`
+- **Share any room, arriving at its far end:** `https://portalverse-server-production.up.railway.app/?world=fishpond&spawn=exit`
+
+To deploy changes, run `pnpm run build && pnpm test`, merge cleanly into `main`, and `git push origin main` — Railway automatically rebuilds and redeploys within ~1 minute (no Railway CLI login or Vercel account required). See [AGENTS.md](./AGENTS.md) for the full agent checklist.
 
 The Rooms menu (`M`) copies a link to every room.
 

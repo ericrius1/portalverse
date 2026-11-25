@@ -137,6 +137,38 @@
           "yaw": 0
         }
       }
+    },
+    {
+      "id": "eric-biolum-grove",
+      "name": "Bioluminescent Redwood Grove",
+      "owner": "ericrius1",
+      "author": "Eric (ericrius1)",
+      "description": "Nocturnal redwood cathedral under shimmering TSL aurora curtains, glowing mushrooms that react as you pass, and drifting firefly spores.",
+      "accentColor": "#34d399",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 0],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "eric-sun-observatory",
+      "name": "Golden Cloud Observatory",
+      "owner": "ericrius1",
+      "author": "Eric (ericrius1)",
+      "description": "Floating marble-and-brass celestial bridge above a sunset sea of TSL clouds, crowned by colossal rotating brass armillary rings.",
+      "accentColor": "#f59e0b",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 0],
+          "yaw": 0
+        }
+      }
     }
   ]
 }

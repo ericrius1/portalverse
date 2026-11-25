@@ -456,17 +456,18 @@ describe('the portal two rooms ahead', () => {
   const lantern = v(2.5, 2.85, -ROUTE_LENGTH / 2 + 20); // 20 m into Laser, seen from its exit
   const W = 1920, H = 1080;
 
-  async function ericLookingAtAlpine() {
+  async function ericLookingAtPrevRoom() {
     const fake = fakeRenderer(W, H);
     const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
     const eric = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
     eric.activate(() => {});
     // With snapshots captured, any fallback to them at the crossing would show as a crossfade.
     await previews.prewarmSnapshots(rooms.map(room => room.id), eric);
-    const alpine = (await previews.prepare('alpine-sled'))!;
-    const laser = (await previews.prepare('laser-lab'))!;
-    const alpineFar = alpine.portals.find(p => p.portal.id === 'entrance')!;
-    expect(alpineFar.portal.targetWorldId).toBe('laser-lab');
+    const prevId = eric.portals.find(p => p.portal.id === 'entrance')!.portal.targetWorldId;
+    const nearRoom = (await previews.prepare(prevId))!;
+    const nearFar = nearRoom.portals.find(p => p.portal.id === 'entrance')!;
+    const farId = nearFar.portal.targetWorldId;
+    const farRoom = (await previews.prepare(farId))!;
 
     const viewer = new THREE.PerspectiveCamera(62, W / H, 0.1, 450);
     viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
@@ -481,49 +482,49 @@ describe('the portal two rooms ahead', () => {
       previews.render(handles, viewer, 1 / 60, 1);
       return fake.renders;
     };
-    return { previews, eric, alpine, laser, alpineFar, viewer, place, frame };
+    return { previews, eric, prevId, nearRoom, farRoom, nearFar, viewer, place, frame };
   }
 
   it('draws the far portal live while you walk toward the near one', async () => {
-    const { previews, eric, laser, alpineFar, place, frame } = await ericLookingAtAlpine();
+    const { previews, eric, farRoom, nearFar, place, frame } = await ericLookingAtPrevRoom();
     place(0, ROUTE_LENGTH / 2 - 20);
     const renders = frame(eric.portals);
-    const farWindow = windowFor(previews, alpineFar.aperture)!;
-    expect(renders.some(r => r.scene === laser.scene)).toBe(true);
-    expect(alpineFar.aperture.material).toBe(farWindow.material);
+    const farWindow = windowFor(previews, nearFar.aperture)!;
+    expect(renders.some(r => r.scene === farRoom.scene)).toBe(true);
+    expect(nearFar.aperture.material).toBe(farWindow.material);
     expect(farWindow.liveBlend.value).toBe(1);
-    expect(alpineFar.group.scale.x).toBe(1);
+    expect(nearFar.group.scale.x).toBe(1);
     previews.clear();
   });
 
   it.each([0, 1.5])('keeps it steady through the crossing, %s m off-centre', async lateral => {
-    const { previews, eric, alpine, laser, alpineFar, viewer, place, frame } = await ericLookingAtAlpine();
+    const { previews, eric, prevId, nearRoom, farRoom, nearFar, viewer, place, frame } = await ericLookingAtPrevRoom();
 
     // Just before the near threshold, in Eric's room.
     place(lateral, ROUTE_LENGTH / 2 - 0.01);
     const before = frame(eric.portals);
-    const beforeWindow = windowFor(previews, alpineFar.aperture)!;
-    const lanternBefore = screenPixel(lantern, before.find(r => r.scene === laser.scene)!.viewProjection, beforeWindow.bounds);
-    // The near room fills the view here, so Alpine is drawn straight to the screen.
-    const alpineRender = before.find(r => r.scene === alpine.scene)!;
-    expect(alpineRender.target).toBeNull();
+    const beforeWindow = windowFor(previews, nearFar.aperture)!;
+    const lanternBefore = screenPixel(lantern, before.find(r => r.scene === farRoom.scene)!.viewProjection, beforeWindow.bounds);
+    // The near room fills the view here, so it is drawn straight to the screen.
+    const nearRender = before.find(r => r.scene === nearRoom.scene)!;
+    expect(nearRender.target).toBeNull();
     const fullScreen = new THREE.Vector4(0, 0, W, H);
-    const ringCenter = alpineFar.aperture.getWorldPosition(new THREE.Vector3());
-    const ringTop = alpineFar.group.localToWorld(v(0, PORTAL_CENTER_Y + PORTAL_RADIUS, 0));
-    const ringBefore = screenPixel(ringCenter, alpineRender.viewProjection, fullScreen)
-      .distanceTo(screenPixel(ringTop, alpineRender.viewProjection, fullScreen));
+    const ringCenter = nearFar.aperture.getWorldPosition(new THREE.Vector3());
+    const ringTop = nearFar.group.localToWorld(v(0, PORTAL_CENTER_Y + PORTAL_RADIUS, 0));
+    const ringBefore = screenPixel(ringCenter, nearRender.viewProjection, fullScreen)
+      .distanceTo(screenPixel(ringTop, nearRender.viewProjection, fullScreen));
 
-    // The engine promotes Alpine as the camera crosses, then the same frame renders from inside it.
+    // The engine promotes the near room as the camera crosses, then the same frame renders from inside it.
     previews.releaseViews();
-    const active = previews.takeReady('alpine-sled')!;
-    expect(active).toBe(alpine);
+    const active = previews.takeReady(prevId)!;
+    expect(active).toBe(nearRoom);
     eric.deactivate();
     previews.retain('eric-world', eric);
-    alpine.activate(() => {});
+    nearRoom.activate(() => {});
     place(lateral, ROUTE_LENGTH / 2 + 0.01 - ROUTE_LENGTH);
-    const after = frame(alpine.portals);
-    const afterWindow = windowFor(previews, alpineFar.aperture)!;
-    const lanternAfter = screenPixel(lantern, after.find(r => r.scene === laser.scene)!.viewProjection, afterWindow.bounds);
+    const after = frame(nearRoom.portals);
+    const afterWindow = windowFor(previews, nearFar.aperture)!;
+    const lanternAfter = screenPixel(lantern, after.find(r => r.scene === farRoom.scene)!.viewProjection, afterWindow.bounds);
     viewer.updateMatrixWorld();
     const viewerVp = viewer.projectionMatrix.clone().multiply(viewer.matrixWorldInverse);
     const ringAfter = screenPixel(ringCenter, viewerVp, fullScreen).distanceTo(screenPixel(ringTop, viewerVp, fullScreen));
@@ -532,7 +533,7 @@ describe('the portal two rooms ahead', () => {
     expect(lanternAfter.distanceTo(lanternBefore)).toBeLessThan(0.25);
     expect(ringAfter / ringBefore).toBeCloseTo(1, 2);
     expect(afterWindow.liveBlend.value).toBe(1);
-    expect(alpineFar.group.scale.x).toBe(1);
+    expect(nearFar.group.scale.x).toBe(1);
     // The portal we just stepped out of sits behind the camera and must not render full-screen.
     expect(after.some(r => r.scene === eric.scene)).toBe(false);
     previews.clear();

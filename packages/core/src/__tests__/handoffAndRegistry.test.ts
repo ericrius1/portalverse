@@ -209,12 +209,16 @@ describe('WorldRegistry', () => {
       'jp-loft',
       'laser-lab',
       'alpine-sled',
+      'eric-biolum-grove',
+      'eric-sun-observatory',
     ]);
     expect(reg.getManifest('eric-world')?.name).toBe("Eric's Room");
     expect(reg.getManifest('jp-world')?.name).toBe("JP's Solarpunk Meadow");
     expect(reg.getManifest('fishpond')?.name).toBe('Kāneʻohe Fishpond');
     expect(reg.getManifest('laser-lab')?.name).toBe('Laser Forcefield Arena');
     expect(reg.getManifest('alpine-sled')?.name).toBe('Alpine Snow Run');
+    expect(reg.getManifest('eric-biolum-grove')?.name).toBe('Bioluminescent Redwood Grove');
+    expect(reg.getManifest('eric-sun-observatory')?.name).toBe('Golden Cloud Observatory');
   });
 
   it('caches loaded modules and dedupes concurrent loads', async () => {

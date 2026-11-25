@@ -6,7 +6,7 @@ Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through t
 
 ## Features
 
-- **8-Room Seamless Circular Loop** (`registry.json`):
+- **10-Room Seamless Circular Loop** (`registry.json`):
   1. **Eric's Room (`worlds/eric-world/index.ts`)** — Cyan holographic studio (`ericrius1`).
   2. **JP's Solarpunk Meadow (`worlds/jp-world/index.ts`)** — Sunlit meadow with 26,000 Bezier-elastica grass blades, California wildflowers, and solar arches.
   3. **Breezy Plant Garden (`worlds/jp-garden/index.ts`)** — Giant flat-coloured tropical plants from JP's portfolio garden, swaying in the breeze and bending away as you pass.
@@ -15,6 +15,8 @@ Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through t
   6. **Night Loft (`worlds/jp-loft/index.ts`)** — An open-plan loft above the night city, with warm lamps and a shiba that follows you around.
   7. **Laser Forcefield Arena (`worlds/laser-lab/index.ts`)** — Pitch-black light-show gallery with sweeping volumetric TSL laser fans, pulsing scanline forcefield walls, and floating prisms.
   8. **Alpine Snow Run (`worlds/alpine-sled/index.ts`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow.
+  9. **Bioluminescent Redwood Grove (`worlds/eric-biolum-grove/index.ts`)** — Nocturnal redwood cathedral under TSL aurora curtains, player-reactive glowing mushrooms, and drifting firefly spores.
+  10. **Golden Cloud Observatory (`worlds/eric-sun-observatory/index.ts`)** — Floating marble-and-brass celestial bridge above a sunset TSL cloud sea, crowned by colossal rotating brass armillary rings.
 - **Seamless Circular Portals & 3rd-Person Traversal**:
   - Perspective-correct live portal windows at screen resolution, two rooms deep along the loop, so the portal at the far end of the next room is already live and stays steady as you walk through. Portals beyond that show snapshots.
   - A distance-compressed lens that keeps distant doors small, zero-dip 3rd-person walk-through crossings (forward or backing in) with mirrored character transit, and an organic liquid-membrane warp that builds as you walk into a portal's warp zone, strongest at the ring and a little stronger when you're moving.
