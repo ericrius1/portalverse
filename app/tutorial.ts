@@ -48,9 +48,9 @@ const STEPS: TutorialStepDef[] = [
   },
   {
     id: 'jump-fly',
-    title: 'Jump or Fly',
-    descHtml: 'Press <kbd>Space</kbd> to jump, or press <kbd>F</kbd> to toggle free-flight (<kbd>Space</kbd> up, <kbd>C</kbd> down).',
-    hint: () => 'Press Space to jump or F to fly',
+    title: 'Take Flight & Land',
+    descHtml: 'Press <kbd>Space</kbd> to jump, then press <kbd>Space</kbd> again in mid-air to fly! Use <kbd>Q</kbd> to rise and hold <kbd>E</kbd> to go down and land.',
+    hint: (t) => (t.didFly ? 'Flying! Try Q to rise, then hold E to descend & land' : 'Jump with Space, then press Space again in mid-air'),
   },
   {
     id: 'camera',
@@ -99,6 +99,7 @@ export class InteractiveTutorial {
   lookAccum = 0;
   moveDist = 0;
   didSprint = false;
+  didFly = false;
   private startWorldId = '';
 
   constructor(els: TutorialElements, onCompleteOrSkip?: () => void) {
@@ -131,6 +132,7 @@ export class InteractiveTutorial {
     this.lookAccum = 0;
     this.moveDist = 0;
     this.didSprint = false;
+    this.didFly = false;
     this.startWorldId = worldId;
     this.els.card.classList.remove('hidden', 'tutorial-done', 'tutorial-step-flash');
     this.els.btnSkip.classList.remove('hidden');
@@ -186,7 +188,11 @@ export class InteractiveTutorial {
         return;
       }
     } else if (step.id === 'jump-fly') {
-      if (s.velocityY > 1.0 || s.isFlying) {
+      if (s.isFlying) {
+        this.didFly = true;
+      }
+      // Complete once the player has taken off and either climbed up or landed back down.
+      if (this.didFly && (!s.isFlying || s.y >= 3.2)) {
         this.completeCurrentStep();
         return;
       }
@@ -195,10 +201,15 @@ export class InteractiveTutorial {
     this.updateHintText();
   }
 
-  notifyFlightToggle(): void {
+  notifyFlightToggle(flying: boolean): void {
     if (!this.active || this.advancing) return;
     if (STEPS[this.stepIndex]?.id === 'jump-fly') {
-      this.completeCurrentStep();
+      if (flying) {
+        this.didFly = true;
+        this.updateHintText();
+      } else if (this.didFly) {
+        this.completeCurrentStep();
+      }
     }
   }
 

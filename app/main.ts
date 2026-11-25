@@ -280,8 +280,8 @@ async function boot(): Promise<void> {
       void handlePortalTransition(portal, crossed);
     },
     onFlightChange: (flying) => {
-      flightStatusLabel.textContent = flying ? 'Flight: On' : 'Flight: Off';
-      if (gateExited) tutorial.notifyFlightToggle();
+      flightStatusLabel.textContent = flying ? 'Flying (Hold E to Land)' : 'Fly';
+      if (gateExited) tutorial.notifyFlightToggle(flying);
     },
     onCameraViewChange: (firstPerson) => {
       cameraViewLabel.textContent = firstPerson ? 'View: FPS' : 'View: 3rd';

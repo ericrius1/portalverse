@@ -640,7 +640,8 @@ export class WorldEngine {
       }
     }
 
-    const promptCandidate = closest && closestDist < closest.triggerRadius + 4.2 ? closest : null;
+    const promptCandidate =
+      !this.avatar.isFlying && closest && closestDist < closest.triggerRadius + 4.2 ? closest : null;
     if (promptCandidate !== this.nearestPortal) {
       this.nearestPortal = promptCandidate;
       this.callbacks.onPortalProximity?.(promptCandidate?.portal ?? null);
@@ -683,7 +684,8 @@ export class WorldEngine {
 
   private readonly handleKeyDown = (e: KeyboardEvent): void => {
     if (this.inputLocked) return;
-    if (e.code === 'KeyE' && this.nearestPortal) {
+    // While flying, E descends and lands (matching Earth repo); fly directly through portals instead.
+    if (e.code === 'KeyE' && !this.avatar.isFlying && this.nearestPortal) {
       this.requestPortalEntry(this.nearestPortal.portal);
     }
   };

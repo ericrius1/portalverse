@@ -54,6 +54,37 @@ export function createStylizedAvatarRig(hexColor: string): StylizedAvatarRig {
   };
 }
 
+// Earth-style flight & jump feel tuned for Portalverse rooms:
+// Space jumps (held = higher); pressing Space again while airborne takes off into flight.
+// While flying: WASD steers along view, Q (or Space) rises, E sinks (hold E onto floor to land),
+// Shift boosts smoothly and carries forward glide momentum when released.
+const FLY_START_SPEED = 6.5;
+const FLY_CRUISE_SPEED = 16.5;
+const FLY_BOOST_SPEED = 31.0;
+const FLY_CRUISE_RAMP = 2.4;
+const FLY_BOOST_RAMP = 1.8;
+const FLY_BOOST_DECEL = 1.6;
+const FLY_ACCEL_RATE = 4.2;
+const FLY_COAST_SLOW = 5.0;
+const FLY_COAST_FAST = 1.6;
+const FLY_TAKEOFF_UP = 7.2;
+const FLY_ARMED_HEIGHT = 4.5;
+const FLY_AUTO_LAND_HEIGHT = 1.8;
+
+const JUMP_VELOCITY = 7.8;
+const JUMP_GRAVITY = 20.0;
+const JUMP_HOLD_FROM = 0.06;
+const JUMP_HOLD_UNTIL = 0.34;
+
+function damp(current: number, target: number, rate: number, dt: number): number {
+  return current + (target - current) * (1 - Math.exp(-rate * dt));
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
 export class AvatarController {
   readonly position = new THREE.Vector3(0, 0, 10);
   yaw = 0;
@@ -65,6 +96,15 @@ export class AvatarController {
 
   private readonly keys = new Set<string>();
   private readonly desiredCamPos = new THREE.Vector3();
+  private readonly flyVel = new THREE.Vector3();
+  private readonly takeoffDrift = new THREE.Vector3();
+  private readonly stride = new THREE.Vector2();
+  private takeoffDriftW = 0;
+  private cruiseT = 0;
+  private boostT = 0;
+  private flyArmed = false;
+  private jumpedInAir = false;
+  private jumpT = 9;
   private inputLocked = false;
   private isDraggingLook = false;
   private dragMoved = false;
@@ -124,6 +164,8 @@ export class AvatarController {
     this.inputLocked = locked;
     if (locked) {
       this.keys.clear();
+      this.flyVel.set(0, 0, 0);
+      this.stride.set(0, 0);
       this.isDraggingLook = false;
       this.exitPointerLock();
     }
@@ -222,14 +264,68 @@ export class AvatarController {
     }
   }
 
-  setFlying(flying: boolean): void {
+  setFlying(flying: boolean, carryVelocity?: THREE.Vector3): void {
+    const changed = this.isFlying !== flying;
     this.isFlying = flying;
-    this.velocityY = 0;
-    this.onFlightChange?.(flying);
+    this.flyArmed = false;
+    this.takeoffDriftW = 0;
+    this.cruiseT = 0;
+    this.boostT = 0;
+    if (flying) {
+      this.jumpedInAir = false;
+      this.onGround = false;
+      this.velocityY = 0;
+      if (carryVelocity) {
+        this.flyVel.copy(carryVelocity);
+      } else {
+        this.flyVel.set(0, 0, 0);
+      }
+    } else {
+      this.flyVel.set(0, 0, 0);
+      if (carryVelocity) {
+        this.stride.set(carryVelocity.x, carryVelocity.z);
+        this.velocityY = carryVelocity.y;
+        this.onGround = false;
+      } else {
+        this.stride.set(0, 0);
+        this.velocityY = 0;
+      }
+      this.jumpedInAir = false;
+    }
+    if (changed) {
+      this.onFlightChange?.(flying);
+    }
   }
 
   toggleFlight(): void {
-    this.setFlying(!this.isFlying);
+    if (this.isFlying) {
+      this.setFlying(false);
+    } else {
+      this.takeOff();
+    }
+  }
+
+  private takeOff(): void {
+    const carry = new THREE.Vector3(this.stride.x, FLY_TAKEOFF_UP, this.stride.y);
+    this.setFlying(true, carry);
+    this.takeoffDrift.copy(carry);
+    this.takeoffDriftW = 1;
+  }
+
+  private triggerJumpOrFly(): void {
+    if (this.isFlying) return;
+    const air = !this.onGround || this.velocityY > 0.1;
+    // Pressing Space again while airborne off a jump launches straight into flight (Earth repo feel).
+    if (air && this.jumpedInAir) {
+      this.takeOff();
+      return;
+    }
+    if (!air) {
+      this.velocityY = JUMP_VELOCITY;
+      this.onGround = false;
+      this.jumpedInAir = true;
+      this.jumpT = 0;
+    }
   }
 
   updateCameraVisibility(): void {
@@ -341,29 +437,93 @@ export class AvatarController {
       const rightZ = -Math.sin(this.yaw);
 
       if (this.isFlying) {
-        const flySpeed = sprint ? 26 : 13.5;
-        const verticalInput =
-          (this.keys.has('Space') ? 1 : 0) -
-          (this.keys.has('KeyC') || this.keys.has('KeyQ') || this.keys.has('ControlLeft') ? 1 : 0);
+        // Earth-style flight: WASD steers along view, Q (or Space) rises, E sinks & lands onto floor,
+        // Shift boosts smoothly (holding Shift alone flies forward where you look).
+        const riseInput = this.keys.has('KeyQ') || this.keys.has('Space') ? 1 : 0;
+        const sinkInput = this.keys.has('KeyE') || this.keys.has('KeyC') || this.keys.has('ControlLeft') ? 1 : 0;
+        const verticalInput = riseInput - sinkInput;
 
-        // Fly along the camera's 3D look direction when holding W/S.
+        let fwdInput = forward;
+        const moving = Math.abs(fwdInput) > 0.05 || Math.abs(strafe) > 0.05 || Math.abs(verticalInput) > 0.05;
+        if (sprint && !moving) fwdInput = 1;
+
+        this.cruiseT = sprint
+          ? FLY_CRUISE_RAMP
+          : THREE.MathUtils.clamp(this.cruiseT + (moving ? clampedDt : -clampedDt * 1.6), 0, FLY_CRUISE_RAMP);
+        this.boostT = THREE.MathUtils.clamp(
+          this.boostT + (sprint ? clampedDt / FLY_BOOST_RAMP : -clampedDt / FLY_BOOST_DECEL),
+          0,
+          1,
+        );
+
+        const cruiseK = smoothstep(0, 1, this.cruiseT / FLY_CRUISE_RAMP);
+        const boostK = smoothstep(0, 1, this.boostT);
+        const cruiseSpeed = FLY_START_SPEED + (FLY_CRUISE_SPEED - FLY_START_SPEED) * cruiseK;
+        let targetSpeed = cruiseSpeed + (FLY_BOOST_SPEED - cruiseSpeed) * boostK;
+
+        const floorNow = this.sampleSurfaceHeight(this.position.x, this.position.z);
+        const heightAboveFloor = Math.max(0, this.position.y - floorNow);
+        // Holding E alone to descend eases gently as the floor nears.
+        if (verticalInput < -0.3 && Math.abs(fwdInput) < 0.1 && Math.abs(strafe) < 0.1 && !sprint) {
+          targetSpeed = Math.min(targetSpeed, 4.0 + 0.45 * heightAboveFloor);
+        }
+
         const cosPitch = Math.cos(this.pitch);
-        const moveX = fwdX * cosPitch * forward + rightX * strafe;
-        const moveY = Math.sin(this.pitch) * forward + verticalInput;
-        const moveZ = fwdZ * cosPitch * forward + rightZ * strafe;
-        const moveLen = Math.hypot(moveX, moveY, moveZ);
+        let dirX = fwdX * cosPitch * fwdInput + rightX * strafe;
+        let dirY = Math.sin(this.pitch) * fwdInput + verticalInput;
+        let dirZ = fwdZ * cosPitch * fwdInput + rightZ * strafe;
+        const dirLen = Math.hypot(dirX, dirY, dirZ);
+        if (dirLen > 1) {
+          dirX /= dirLen;
+          dirY /= dirLen;
+          dirZ /= dirLen;
+        }
 
-        if (moveLen > 0.001) {
-          this.position.x += (moveX / moveLen) * flySpeed * clampedDt;
-          this.position.y += (moveY / moveLen) * flySpeed * clampedDt;
-          this.position.z += (moveZ / moveLen) * flySpeed * clampedDt;
+        const wantX = dirX * targetSpeed;
+        const wantY = dirY * targetSpeed;
+        const wantZ = dirZ * targetSpeed;
+        const prevSpeed = this.flyVel.length();
+        const wantSpeed = Math.hypot(wantX, wantY, wantZ);
+        const rate =
+          prevSpeed > wantSpeed + 0.05
+            ? FLY_COAST_SLOW + (FLY_COAST_FAST - FLY_COAST_SLOW) * smoothstep(4, 24, prevSpeed)
+            : FLY_ACCEL_RATE;
+
+        this.flyVel.x = damp(this.flyVel.x, wantX, rate, clampedDt);
+        this.flyVel.y = damp(this.flyVel.y, wantY, rate, clampedDt);
+        this.flyVel.z = damp(this.flyVel.z, wantZ, rate, clampedDt);
+
+        if (this.takeoffDriftW > 0) {
+          this.flyVel.lerp(this.takeoffDrift, this.takeoffDriftW);
+          this.takeoffDriftW = this.takeoffDriftW < 0.01 ? 0 : this.takeoffDriftW * Math.exp(-clampedDt / 0.55);
         }
+
+        this.position.x += this.flyVel.x * clampedDt;
+        this.position.y += this.flyVel.y * clampedDt;
+        this.position.z += this.flyVel.z * clampedDt;
+
         const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
-        if (this.position.y < floorY + 0.5) {
-          this.position.y = floorY + 0.5;
+        const overFloor = this.position.y - floorY;
+        if (overFloor > FLY_ARMED_HEIGHT) this.flyArmed = true;
+
+        // Holding E onto the floor lands cleanly on foot.
+        if (verticalInput < -0.5 && overFloor <= 0.35) {
+          this.position.y = floorY;
+          this.setFlying(false);
+          this.onGround = true;
+        } else if (this.flyArmed && this.flyVel.y < -0.5 && overFloor < FLY_AUTO_LAND_HEIGHT) {
+          // Diving down near the ground after flying high releases flight and lands smoothly with momentum.
+          const carry = this.flyVel.clone();
+          this.position.y = Math.max(this.position.y, floorY);
+          this.setFlying(false, carry);
+        } else if (overFloor < 0.35 && verticalInput >= 0) {
+          // Gentle hover cushion while skimming low without holding E.
+          this.position.y = floorY + 0.35;
+          if (this.flyVel.y < 0) this.flyVel.y = 0;
         }
-        this.velocityY = 0;
+        this.velocityY = this.isFlying ? this.flyVel.y : this.velocityY;
       } else {
+        this.jumpT += clampedDt;
         const moveSpeed = sprint ? RUN_SPEED : 8.2;
         let dx = fwdX * forward + rightX * strafe;
         let dz = fwdZ * forward + rightZ * strafe;
@@ -371,16 +531,26 @@ export class AvatarController {
         if (len > 0.001) {
           dx /= len;
           dz /= len;
-          this.position.x += dx * moveSpeed * clampedDt;
-          this.position.z += dz * moveSpeed * clampedDt;
         }
+        const wantX = dx * moveSpeed;
+        const wantZ = dz * moveSpeed;
+        const carried = !this.onGround && this.stride.length() > RUN_SPEED + 0.5;
+        const strideRate = carried ? 1.4 : len > 0.01 ? 11.0 : 12.0;
+        this.stride.x = damp(this.stride.x, wantX, strideRate, clampedDt);
+        this.stride.y = damp(this.stride.y, wantZ, strideRate, clampedDt);
 
-        if (this.keys.has('Space') && this.onGround) {
-          this.velocityY = 8.4;
-          this.onGround = false;
+        this.position.x += this.stride.x * clampedDt;
+        this.position.z += this.stride.y * clampedDt;
+
+        // Holding Space briefly through the initial rise extends jump height (Earth repo feel).
+        const holdingJump =
+          this.velocityY > 0 &&
+          this.jumpT > JUMP_HOLD_FROM &&
+          this.jumpT < JUMP_HOLD_UNTIL &&
+          this.keys.has('Space');
+        if (!holdingJump) {
+          this.velocityY -= JUMP_GRAVITY * clampedDt;
         }
-
-        this.velocityY -= 21.0 * clampedDt;
         this.position.y += this.velocityY * clampedDt;
 
         const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
@@ -388,6 +558,7 @@ export class AvatarController {
           this.position.y = floorY;
           this.velocityY = 0;
           this.onGround = true;
+          this.jumpedInAir = false;
         } else {
           this.onGround = false;
         }
@@ -469,8 +640,9 @@ export class AvatarController {
       return;
     }
     this.keys.add(e.code);
-    if (e.code === 'KeyV') this.toggleCameraView();
-    if (e.code === 'KeyF') this.toggleFlight();
+    if (e.code === 'Space' && !e.repeat) this.triggerJumpOrFly();
+    if (e.code === 'KeyV' && !e.repeat) this.toggleCameraView();
+    if (e.code === 'KeyF' && !e.repeat) this.toggleFlight();
   };
 
   private readonly handleKeyUp = (e: KeyboardEvent): void => {

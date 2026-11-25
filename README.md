@@ -40,11 +40,11 @@ The repo pins pnpm 12.23.0 through `packageManager` in `package.json`, and CI in
 ### Controls
 
 - **Look (FPS + Pointer Lock):** Click the 3D scene to lock your mouse and look around (`Esc` unlocks cursor for menus)
-- **Move / Fly:** `WASD` or Arrow keys
-- **Sprint:** Hold `Shift` while moving (the two circular gates are 5 sprint seconds apart)
-- **Enter Portal:** Walk/fly straight through any circular portal, or press `E` while facing it nearby
-- **Ascend / Descend (Flight) / Jump:** `Space` / `C` (or `Q`)
-- **Toggle Flight Mode:** `F`
+- **Move / Steer in Flight:** `WASD` or Arrow keys
+- **Sprint / Flight Boost:** Hold `Shift` (sprint on foot, smooth boost in flight)
+- **Jump & Fly:** `Space` to jump (hold for higher); press `Space` again while in the air to take off into flight!
+- **Rise / Descend & Land:** `Q` (or `Space`) rises up while flying; hold `E` to descend and land onto the ground
+- **Enter Portal:** Walk or fly straight through any circular portal (or press `E` nearby on foot)
 - **Toggle 1st / 3rd Person Camera:** `V` (defaults to 1st-person FPS)
 - **Controls & Interactive Tutorial:** `H` or `?` (or choose **Interactive Tutorial** on the loading gate)
 - **Debug — Warp zones:** tick the checkbox in the controls bar to see each portal's warp zone (a wireframe sphere, and the floor circle the warp is measured on)
