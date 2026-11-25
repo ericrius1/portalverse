@@ -14,7 +14,7 @@ Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through t
   5. **Alpine Snow Run (`worlds/alpine-sled/index.ts`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow.
 - **Seamless Circular Portals & 3rd-Person Traversal**:
   - Perspective-correct live portal windows at screen resolution, two rooms deep along the loop, so the portal at the far end of the next room is already live and stays steady as you walk through. Portals beyond that show snapshots.
-  - Shared forced-perspective scaling for distant doors, zero-dip 3rd-person walk-through crossings with mirrored character transit, and a brief organic liquid-membrane wobble post-process triggered as the portal fills the screen.
+  - A distance-compressed lens that keeps distant doors small, zero-dip 3rd-person walk-through crossings (forward or backing in) with mirrored character transit, and an organic liquid-membrane warp that builds as you walk into a portal's warp zone, strongest at the ring and a little stronger when you're moving.
 - **Round Preload Gate**:
   - Preloads WebGPU, adjacent rooms, portal snapshots, and post-processing pipelines behind a circular click-to-enter curtain gate for stutter-free room transitions.
 - **Direct Shareable Links & Real-Time Co-op (`M` / `P`)**:
@@ -41,6 +41,7 @@ The repo pins pnpm 12.23.0 through `packageManager` in `package.json`, and CI in
 - **Ascend / Descend (Flight) / Jump:** `Space` / `C` (or `Q`)
 - **Toggle Flight Mode:** `F`
 - **Toggle 1st / 3rd Person Camera:** `V`
+- **Debug — Warp zones:** tick the checkbox in the controls bar to see each portal's warp zone (a wireframe sphere, and the floor circle the warp is measured on)
 - **Spawn Live Portal:** `P`
 - **Rooms & Direct Share Links:** `M`
 

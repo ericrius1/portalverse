@@ -7,6 +7,11 @@ export const PORTAL_RADIUS = 2.85;
 export const PORTAL_CENTER_Y = 2.85;
 export const GATE_WIDTH = PORTAL_RADIUS * 2;
 export const GATE_HEIGHT = PORTAL_CENTER_Y + PORTAL_RADIUS;
+/**
+ * Radius of each portal's warp zone: a circle on the floor around the portal's centre
+ * (the equator of its debug sphere). The screen warp starts at its edge and peaks at the centre.
+ */
+export const WARP_RADIUS = 4.5;
 export const PORTAL_LENS_EXACT_DIST = 12;
 export const PORTAL_LENS_REF_DIST = 15.5;
 const PORTAL_LENS_SPAN =

@@ -22,6 +22,7 @@ import {
 } from '@portalverse/core/portal/handoff';
 
 const STORAGE_PROFILE_KEY = 'portalverse.profile.v1';
+const STORAGE_WARP_ZONES_KEY = 'portalverse.debug.warpZones';
 
 function loadOrCreateIdentity(): PlayerIdentity {
   try {
@@ -90,6 +91,7 @@ async function boot(): Promise<void> {
   const portalPromptText = document.getElementById('portal-prompt-text')!;
   const toastStack = document.getElementById('toast-stack')!;
   const flightStatusLabel = document.getElementById('flight-status-label')!;
+  const warpZonesToggle = document.getElementById('debug-warp-zones') as HTMLInputElement;
 
   const btnShareLink = document.getElementById('btn-share-link')!;
   const btnWorlds = document.getElementById('btn-worlds')!;
@@ -218,6 +220,19 @@ async function boot(): Promise<void> {
     onFlightChange: (flying) => {
       flightStatusLabel.textContent = flying ? 'Flight: On' : 'Flight: Off';
     },
+  });
+
+  // Debug: show each portal's warp zone, remembered between reloads.
+  const readWarpZones = (): boolean => {
+    try { return localStorage.getItem(STORAGE_WARP_ZONES_KEY) === '1'; } catch { return false; }
+  };
+  warpZonesToggle.checked = readWarpZones();
+  engine.setWarpZonesVisible(warpZonesToggle.checked);
+  warpZonesToggle.addEventListener('change', () => {
+    engine.setWarpZonesVisible(warpZonesToggle.checked);
+    try { localStorage.setItem(STORAGE_WARP_ZONES_KEY, warpZonesToggle.checked ? '1' : '0'); } catch { /* storage unavailable */ }
+    // Hand the keyboard back to the game; focused inputs swallow movement keys.
+    warpZonesToggle.blur();
   });
 
   const net = new MultiplayerClient({

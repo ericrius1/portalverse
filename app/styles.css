@@ -582,6 +582,22 @@ kbd {
   margin-right: 4px;
 }
 
+/* Debug toggles in the controls bar (the HUD ignores the pointer elsewhere) */
+.debug-toggle {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-toggle input {
+  margin: 0;
+  accent-color: #facc15;
+  cursor: pointer;
+}
+
 /* Toasts */
 .toast-stack {
   position: fixed;

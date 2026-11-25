@@ -9,9 +9,8 @@ import type {
 } from '../types';
 import {
   GATE_WIDTH,
-  PORTAL_CENTER_Y,
-  PORTAL_RADIUS,
   RUN_SPEED,
+  WARP_RADIUS,
   livePortalSlots,
 } from '../portal/roomLayout';
 import { RoomInstance } from './RoomInstance';
@@ -22,7 +21,8 @@ import {
   createStylizedAvatarRig,
   type StylizedAvatarRig,
 } from './AvatarController';
-import { createArchwayPortal, isOneWay } from './PortalMesh';
+import { createArchwayPortal } from './PortalMesh';
+import { portalWarp, smoothSpeed, warpSpeedFactor } from './portalWarp';
 import {
   canOfferPortalPrompt,
   carryThroughPortal,
@@ -33,8 +33,6 @@ import {
   type CrossingSide,
   type FrameMotion,
 } from './portalCrossing';
-
-const RIPPLE_START_FOV_FRACTION = 0.75;
 
 export interface WorldEngineCallbacks {
   loadLocalWorld?: (id: string) => Promise<WorldModule> | undefined;
@@ -79,20 +77,29 @@ export class WorldEngine {
   private readonly transitAvatarPos = new THREE.Vector3();
   private mountSequence = 0;
   private readonly dynamicPortalRoot = new THREE.Group();
+  /** Debug view of each portal's warp zone: a wireframe sphere and its equator on the floor. */
+  private readonly warpZones = new THREE.Group();
+  private readonly warpSphereGeometry = new THREE.SphereGeometry(WARP_RADIUS, 32, 16);
+  private readonly warpSphereMaterial = new THREE.MeshBasicMaterial({
+    color: '#facc15', wireframe: true, transparent: true, opacity: 0.3, depthWrite: false,
+  });
+  private readonly warpCircleGeometry = new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 96 }, (_, i) => {
+      const angle = (i / 96) * Math.PI * 2;
+      return new THREE.Vector3(Math.cos(angle) * WARP_RADIUS, 0, Math.sin(angle) * WARP_RADIUS);
+    }),
+  );
+  private readonly warpCircleMaterial = new THREE.LineBasicMaterial({ color: '#facc15' });
 
   private currentManifest: WorldManifest | null = null;
   private dynamicPortals: PortalVisualHandle[] = [];
   private transitPortal?: ActiveTransit;
-  private exitedPortalId?: string;
   private walkThrough?: WalkThroughState;
   private readonly previousFeet = new THREE.Vector3();
   private readonly previousCamera = new THREE.Vector3();
   private readonly frameMotion: FrameMotion;
-  private readonly previousCamPos = new THREE.Vector3();
   private readonly scratchPlayerCenter = new THREE.Vector3();
   private readonly scratchVecA = new THREE.Vector3();
-  private readonly scratchVecB = new THREE.Vector3();
-  private readonly scratchVecC = new THREE.Vector3();
   private readonly transitAvatarState: {
     rig: THREE.Group;
     position: THREE.Vector3;
@@ -101,7 +108,8 @@ export class WorldEngine {
   };
   private currentFramePortals: PortalVisualHandle[] = [];
   private currentFrameDt = 0;
-  private smoothedCamSpeed = 0;
+  /** Player's horizontal speed, smoothed so stop-start steps count less than a steady run. */
+  private smoothedSpeed = 0;
   private skipNextSpeedSample = true;
   private nearestPortal: PortalVisualHandle | null = null;
   private inputLocked = false;
@@ -116,6 +124,8 @@ export class WorldEngine {
     this.callbacks = callbacks;
 
     this.scene.add(this.dynamicPortalRoot);
+    this.warpZones.visible = false;
+    this.avatarScene.add(this.warpZones);
 
     this.camera = new THREE.PerspectiveCamera(
       62,
@@ -181,6 +191,11 @@ export class WorldEngine {
     return this.currentManifest?.id ?? null;
   }
 
+  /** Show or hide each portal's warp zone (debug). */
+  setWarpZonesVisible(visible: boolean): void {
+    this.warpZones.visible = visible;
+  }
+
   syncRemotePlayers(players: AvatarState[], localPlayerId: string): void {
     this.avatar.syncRemotePlayers(players, localPlayerId);
   }
@@ -212,7 +227,7 @@ export class WorldEngine {
     }
 
     this.previews?.take(module.manifest.id);
-    this.installRoom(room, arrival, options?.spawnId, sourceOrigin, yawDelta, options?.extraPortals);
+    this.installRoom(room, arrival, sourceOrigin, yawDelta, options?.extraPortals);
     return arrival;
   }
 
@@ -251,7 +266,6 @@ export class WorldEngine {
   private installRoom(
     room: RoomInstance,
     arrival: SpawnPoint,
-    arrivalSpawnId?: string,
     sourceOrigin?: THREE.Vector3,
     yawDelta = 0,
     extraPortals?: PortalDefinition[],
@@ -279,11 +293,9 @@ export class WorldEngine {
       this.avatar.yaw += yawDelta;
       this.camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawDelta));
       this.avatar.syncRigTransform(this.elapsed);
-      this.exitedPortalId = arrivalSpawnId;
       this.skipNextSpeedSample = true;
     } else {
       this.avatar.applySpawn(arrival);
-      this.exitedPortalId = undefined;
       this.skipNextSpeedSample = true;
     }
 
@@ -316,7 +328,7 @@ export class WorldEngine {
     const yawDelta = crossingYawDelta(portal.yaw ?? 0, sideSign, arrival.yaw);
 
     this.mountSequence++;
-    this.installRoom(room, arrival, portal.targetSpawnId, sourceOrigin, yawDelta);
+    this.installRoom(room, arrival, sourceOrigin, yawDelta);
     this.callbacks.onPortalPromoted?.(room.module.manifest);
     return true;
   }
@@ -422,6 +434,26 @@ export class WorldEngine {
     this.avatar.clearRemotePlayers();
   }
 
+  /** Place one warp-zone marker on each portal in the current room. */
+  private syncWarpZones(portals: PortalVisualHandle[]): void {
+    while (this.warpZones.children.length < portals.length) {
+      const zone = new THREE.Group();
+      const sphere = new THREE.Mesh(this.warpSphereGeometry, this.warpSphereMaterial);
+      const floorCircle = new THREE.LineLoop(this.warpCircleGeometry, this.warpCircleMaterial);
+      floorCircle.position.y = 0.03;
+      zone.add(sphere, floorCircle);
+      this.warpZones.add(zone);
+    }
+    this.warpZones.children.forEach((zone, i) => {
+      const handle = portals[i];
+      zone.visible = !!handle;
+      if (!handle) return;
+      const floorY = handle.portal.position[1];
+      zone.position.set(handle.triggerCenter.x, floorY, handle.triggerCenter.z);
+      zone.children[0].position.y = handle.triggerCenter.y - floorY;
+    });
+  }
+
   /** Dispose a room, including the snapshot materials previews attached to its portals. */
   private disposeRoom(room: RoomInstance): void {
     if (this.previews) this.previews.disposeRoom(room);
@@ -429,7 +461,6 @@ export class WorldEngine {
   }
 
   private unmountCurrentWorld(): void {
-    this.exitedPortalId = undefined;
     this.swapOutCurrentRoom(false);
     this.previews?.clear();
   }
@@ -444,53 +475,6 @@ export class WorldEngine {
     );
     if (!insidePortal) this.renderer.render(this.scene, this.camera);
   };
-
-  /**
-   * Symmetric raised-cosine bell-curve intensity peaking at 1.0 right on the
-   * portal threshold and tapering smoothly to 0 at 75% portal vertical FOV on
-   * both entry (approaching) and exit (coming out of the threshold).
-   */
-  private computeWaveBellIntensity(portals: PortalVisualHandle[]): number {
-    const dStart =
-      PORTAL_RADIUS /
-      (RIPPLE_START_FOV_FRACTION * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)));
-    this.camera.getWorldDirection(this.scratchVecC);
-    let maxBell = 0;
-
-    for (const handle of portals) {
-      if (!handle.passage || handle.portal.remoteUrl) continue;
-      const camLocal = handle.group.worldToLocal(this.scratchVecA.copy(this.camera.position));
-      const absZ = Math.abs(camLocal.z);
-      if (absZ >= dStart) {
-        if (handle.portal.id === this.exitedPortalId) {
-          this.exitedPortalId = undefined;
-        }
-        continue;
-      }
-
-      const absX = Math.abs(camLocal.x);
-      if (absX >= PORTAL_RADIUS + 1.4) continue;
-      if (camLocal.y < -0.5 || camLocal.y > PORTAL_CENTER_Y + PORTAL_RADIUS + 1.4) continue;
-
-      const isExiting = handle.portal.id === this.exitedPortalId;
-      if (!isExiting) {
-        if (isOneWay(handle) && camLocal.z < 0) continue;
-        handle.aperture.getWorldPosition(this.scratchVecB);
-        this.scratchVecB.sub(this.camera.position);
-        const len = this.scratchVecB.length();
-        if (len > 0.05 && this.scratchVecC.dot(this.scratchVecB) / len < 0.25) continue;
-      }
-
-      const latMask = 1 - THREE.MathUtils.smoothstep(absX, PORTAL_RADIUS * 0.85, PORTAL_RADIUS + 1.4);
-      const u = THREE.MathUtils.clamp(absZ / dStart, 0, 1);
-      const raisedCos = 0.5 + 0.5 * Math.cos(u * Math.PI);
-      const bell = raisedCos * raisedCos * (3 - 2 * raisedCos);
-      const contrib = bell * latMask;
-      if (contrib > maxBell) maxBell = contrib;
-    }
-
-    return maxBell;
-  }
 
   private readonly loop = (now: number): void => {
     if (!this.running) return;
@@ -643,21 +627,22 @@ export class WorldEngine {
       this.callbacks.onPortalProximity?.(promptCandidate?.portal ?? null);
     }
 
-    // Track smoothed camera speed (ignoring single-frame portal coordinate swaps)
+    // Smoothed horizontal speed of the feet (skipping the frame a crossing moves them between rooms)
     if (this.skipNextSpeedSample) {
       this.skipNextSpeedSample = false;
     } else if (dt > 1e-4) {
-      const instantSpeed = this.camera.position.distanceTo(this.previousCamPos) / dt;
-      this.smoothedCamSpeed += (Math.min(instantSpeed, 30) - this.smoothedCamSpeed) * Math.min(1, dt * 10);
+      const instantSpeed = Math.hypot(
+        this.avatar.position.x - this.previousFeet.x,
+        this.avatar.position.z - this.previousFeet.z,
+      ) / dt;
+      this.smoothedSpeed = smoothSpeed(this.smoothedSpeed, Math.min(instantSpeed, 30), dt);
     }
-    this.previousCamPos.copy(this.camera.position);
 
-    // Continuous organic wave: intensity follows symmetric bell curve around threshold,
-    // starting subtly at 75% portal FOV and amplifying smoothly with movement speed.
-    const bellIntensity = this.computeWaveBellIntensity(portals);
-    const moveNorm = THREE.MathUtils.clamp(this.smoothedCamSpeed / RUN_SPEED, 0, 1);
-    const moveAmp = 0.48 + 0.52 * moveNorm;
-    this.ripplePass.update(dt, this.elapsed, bellIntensity * moveAmp, moveNorm);
+    // Warp: strongest at a portal's centre, fading to nothing at its warp circle, plus up to 20% when moving.
+    const warp = portalWarp(portals, this.avatar.position) * warpSpeedFactor(this.smoothedSpeed);
+    const moveNorm = THREE.MathUtils.clamp(this.smoothedSpeed / RUN_SPEED, 0, 1);
+    this.ripplePass.update(dt, this.elapsed, warp, moveNorm);
+    if (this.warpZones.visible) this.syncWarpZones(portals);
 
     this.avatar.updateCameraVisibility();
     this.transitAvatarState.yaw = this.avatar.yaw;
@@ -694,6 +679,10 @@ export class WorldEngine {
     window.removeEventListener('keydown', this.handleKeyDown);
     this.unmountCurrentWorld();
     this.ripplePass.dispose();
+    this.warpSphereGeometry.dispose();
+    this.warpSphereMaterial.dispose();
+    this.warpCircleGeometry.dispose();
+    this.warpCircleMaterial.dispose();
     this.transitRig.dispose();
     this.avatar.dispose();
     this.renderer.dispose();
