@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three/webgpu';
-import type { WorldModule } from '../types';
+import catalog from '../../../../registry.json';
+import type { RegistryFile, WorldModule } from '../types';
 import { defineRoom } from '../portal/defineRoom';
 import { PortalPreviews } from '../engine/PortalPreviews';
 import { RoomInstance } from '../engine/RoomInstance';
@@ -115,5 +116,159 @@ describe('preparing a room as it loads', () => {
     await flush();
     expect(disposed).toHaveBeenCalledTimes(1);
     expect(fake.renders).toHaveLength(0);
+  });
+});
+
+/** Catalog ids in loop order; `at(0)` is the first room and negative steps wrap. */
+const order = (catalog as unknown as RegistryFile).worlds.filter(w => w.kind === 'local').map(w => w.id);
+const at = (step: number) => order[(step + order.length) % order.length];
+
+/** Previews whose rooms record when they load and unload. */
+function loop() {
+  const loads: string[] = [];
+  const disposed: string[] = [];
+  const holds = new Map<string, Promise<void>>();
+  const failures = new Set<string>();
+  const fake = fakeRenderer();
+  const previews = new PortalPreviews(fake.renderer, id => {
+    loads.push(id);
+    if (failures.delete(id)) return Promise.reject(new Error('offline'));
+    const module = defineRoom(id, {
+      mount: async ctx => {
+        ctx.onDispose(() => disposed.push(id));
+        await holds.get(id);
+      },
+    });
+    return Promise.resolve(module);
+  }, { idle: now });
+  const home = (id: string) => RoomInstance.mount(emptyRoom(id), fake.renderer);
+  const camera = new THREE.PerspectiveCamera();
+  /** Step into a neighbouring room the way the engine does: keep the old one, take the new one. */
+  const cross = (from: RoomInstance, id: string) => {
+    const to = previews.takeReady(id)!;
+    previews.retain(from.module.manifest.id, from);
+    return { to, synced: previews.syncPinnedForRoom(to) };
+  };
+  const frame = async (elapsed: number) => {
+    previews.render([], camera, 1 / 60, elapsed);
+    await settle();
+  };
+  return { previews, loads, disposed, holds, failures, home, cross, frame };
+}
+
+async function settle() {
+  for (let i = 0; i < 20; i++) await flush();
+}
+
+describe('the room window', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('loads neighbours at once and the outer rooms one at a time', async () => {
+    const { previews, loads, holds, home } = loop();
+    const outer = gate();
+    holds.set(at(5), outer.closed);
+    await previews.syncPinnedForRoom(await home(at(3)));
+    expect(previews.takeReady(at(2))).toBeDefined();
+    await settle();
+    expect(loads).toEqual([at(4), at(2), at(5)]);
+    outer.open();
+    await settle();
+    expect(loads).toEqual([at(4), at(2), at(5), at(1)]);
+    previews.clear();
+  });
+
+  it('queues the side you are heading toward first', async () => {
+    const { previews, loads, home } = loop();
+    await previews.syncPinnedForRoom(await home(at(3)), -1);
+    await settle();
+    expect(loads.slice(2)).toEqual([at(1), at(5)]);
+    previews.clear();
+  });
+
+  it('drops a room 4 s after it leaves the window', async () => {
+    const { previews, disposed, home, cross, frame } = loop();
+    const first = await home(at(3));
+    await previews.syncPinnedForRoom(first);
+    await settle();
+    await frame(0);
+    await cross(first, at(4)).synced;
+    await frame(3);
+    expect(disposed).toEqual([]);
+    await frame(5);
+    expect(disposed).toEqual([at(1)]);
+    previews.clear();
+  });
+
+  it('keeps rooms when you step back within 4 s', async () => {
+    const { previews, loads, disposed, home, cross, frame } = loop();
+    const first = await home(at(3));
+    await previews.syncPinnedForRoom(first);
+    await settle();
+    await frame(0);
+    const { to: second, synced } = cross(first, at(4));
+    await synced;
+    await frame(1);
+    await cross(second, at(3)).synced;
+    await frame(10);
+    expect(loads.filter(id => id === at(1))).toHaveLength(1);
+    expect(disposed).not.toContain(at(1));
+    previews.clear();
+  });
+
+  it('never mounts rooms left in the queue by a jump', async () => {
+    const { previews, loads, holds, home } = loop();
+    const slow = gate();
+    holds.set(at(5), slow.closed);
+    await previews.syncPinnedForRoom(await home(at(3)));
+    await settle();
+    const jumped = previews.syncPinnedForRoom(await home(at(8)));
+    await jumped;
+    slow.open();
+    await settle();
+    expect(loads).not.toContain(at(1));
+    expect(loads.slice(3).sort()).toEqual([at(6), at(7), at(9), at(10)].sort());
+    previews.clear();
+  });
+
+  it('carries on past a room that fails to load, and retries it later', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { previews, loads, failures, home } = loop();
+    failures.add(at(5));
+    const room = await home(at(3));
+    await previews.syncPinnedForRoom(room);
+    await settle();
+    expect(loads).toContain(at(1));
+    clock.mockReturnValue(7000);
+    await previews.syncPinnedForRoom(room);
+    await settle();
+    expect(loads.filter(id => id === at(5))).toHaveLength(2);
+    previews.clear();
+  });
+
+  it('knows which rooms belong to a window', () => {
+    const { previews } = loop();
+    expect(previews.keeps(at(3), at(1))).toBe(true);
+    expect(previews.keeps(at(3), at(0))).toBe(false);
+  });
+
+  it('does not let a visible portal jump the queue', async () => {
+    const { previews, loads, holds, home } = loop();
+    const outer = gate();
+    holds.set(at(5), outer.closed);
+    const room = await home(at(3));
+    await previews.syncPinnedForRoom(room);
+    await settle();
+    // Looking out through the previous room toward the queued room two steps back.
+    const near = room.portals.find(p => p.portal.id === 'entrance')!;
+    near.group.updateMatrixWorld(true);
+    const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 450);
+    camera.position.set(0, 3, 20);
+    camera.lookAt(0, 3, 40);
+    previews.render(room.portals, camera, 1 / 60, 1);
+    await settle();
+    expect(loads).not.toContain(at(1));
+    outer.open();
+    previews.clear();
   });
 });

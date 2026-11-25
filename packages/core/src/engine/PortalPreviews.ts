@@ -16,7 +16,8 @@ import {
   vec2,
   vec4,
 } from 'three/tsl';
-import type { PortalDefinition, PortalVisualHandle, SpawnPoint, WorldModule } from '../types';
+import catalog from '../../../../registry.json';
+import type { PortalDefinition, PortalVisualHandle, RegistryFile, SpawnPoint, WorldModule } from '../types';
 import {
   PORTAL_CENTER_Y,
   PORTAL_LENS_REF_DIST,
@@ -26,14 +27,21 @@ import {
 import { RoomInstance } from './RoomInstance';
 import { isOneWay } from './PortalMesh';
 import { createSceneTarget } from './sceneTarget';
+import { roomWindow, type Heading } from './roomWindow';
 
 type Aperture = PortalVisualHandle['aperture'];
 type LocalLoader = (worldId: string) => Promise<WorldModule> | undefined;
 
 export interface PortalPreviewOptions {
+  /** Local room ids in loop order. Defaults to the catalog. */
+  order?: readonly string[];
   /** Resolves when there is spare time for the next step of background loading. */
   idle?: () => Promise<void>;
 }
+
+const catalogOrder = (catalog as unknown as RegistryFile).worlds
+  .filter(world => world.kind === 'local')
+  .map(world => world.id);
 
 function nextIdle(): Promise<void> {
   return new Promise(resolve => {
@@ -97,8 +105,6 @@ interface WindowView {
 const SNAPSHOT_SIZE = 512;
 const SNAPSHOT_RADIUS = 6.2;
 const SNAPSHOT_REF_DISTANCE = PORTAL_LENS_REF_DIST;
-/** Rooms kept mounted at once. Above this, rooms away from the player are unloaded and remounted when needed. */
-const MAX_HOT_ROOMS = 10;
 const LIVE_FADE_DURATION_S = 0.55;
 
 const up = new THREE.Vector3(0, 1, 0);
@@ -400,6 +406,10 @@ export class PortalPreviews {
   private nextSeenWithoutLive = new Set<Aperture>();
   private lastElapsed = 0;
   private readonly idle: () => Promise<void>;
+  private readonly order: readonly string[];
+  /** Outer rooms of the window still waiting to load, in order. */
+  private queue: string[] = [];
+  private loadingQueue = false;
   /** The room the player is in, which this cache doesn't own but keeps supplied with snapshots. */
   private activeRoom?: RoomInstance;
   private readonly compileCamera = new THREE.PerspectiveCamera();
@@ -415,6 +425,7 @@ export class PortalPreviews {
     options: PortalPreviewOptions = {},
   ) {
     this.idle = options.idle ?? nextIdle;
+    this.order = options.order ?? catalogOrder;
     this.farProxy.matrixAutoUpdate = false;
   }
 
@@ -525,26 +536,71 @@ export class PortalPreviews {
   }
 
   /**
-   * Preload and pin both adjacent rooms (next exit + previous entrance) of the
-   * active room, while unpinning rooms further away so GPU memory stays bounded.
+   * Centre the room window on the player's room. Its neighbours load at once and
+   * the outer rooms queue behind them, one at a time. Rooms outside the window are
+   * unpinned, so they unload once they've gone unseen for a few seconds.
+   * Resolves when the neighbours are ready.
    */
-  syncPinnedForRoom(room: RoomInstance): Promise<void> {
-    const keepKeys = new Set<string>();
-    const pending: Array<Promise<unknown>> = [];
-    for (const h of room.portals) {
-      if (h.portal.remoteUrl) continue;
-      if (h.portal.id === 'exit' || h.portal.id === 'entrance') {
-        keepKeys.add(h.portal.targetWorldId);
-        const ready = this.prepare(h.portal.targetWorldId);
-        if (ready) pending.push(ready.catch(() => {}));
+  syncPinnedForRoom(room: RoomInstance, heading: Heading = 1): Promise<void> {
+    this.activeRoom = room;
+    const center = room.module.manifest.id;
+    const window = roomWindow(this.order, center, heading);
+    const neighbours = new Set(window.filter(entry => entry.distance === 1).map(entry => entry.id));
+    for (const { portal } of room.portals) {
+      if (!portal.remoteUrl && (portal.id === 'exit' || portal.id === 'entrance')) {
+        neighbours.add(portal.targetWorldId);
       }
     }
-    for (const [key, dest] of this.destinations) {
-      if (!keepKeys.has(key) && this.destinations.size > MAX_HOT_ROOMS) {
+    neighbours.delete(center);
+
+    const keep = new Set([...neighbours, ...window.map(entry => entry.id)]);
+    for (const [id, dest] of this.destinations) {
+      if (keep.has(id)) {
+        dest.pinned = true;
+      } else if (dest.pinned) {
         dest.pinned = false;
+        dest.lastSeen = this.lastElapsed;
       }
     }
+
+    const pending = [...neighbours].map(id => this.prepare(id)?.catch(() => {}));
+    this.queue = window
+      .map(entry => entry.id)
+      .filter(id => !neighbours.has(id) && this.needsLoad(id));
+    void this.loadQueued();
     return Promise.all(pending).then(() => {});
+  }
+
+  /** Whether `id` is one of the rooms kept loaded around `centerId`. */
+  keeps(centerId: string, id: string): boolean {
+    return roomWindow(this.order, centerId).some(entry => entry.id === id);
+  }
+
+  private needsLoad(id: string): boolean {
+    const dest = this.destinations.get(id);
+    return !dest || (!!dest.retryAfter && performance.now() >= dest.retryAfter);
+  }
+
+  /** Load queued rooms one after another, each starting when there's spare time. */
+  private async loadQueued(): Promise<void> {
+    if (this.loadingQueue) return;
+    this.loadingQueue = true;
+    try {
+      while (this.queue.length) {
+        await this.idle();
+        // Read the queue only now: the player may have moved on while we waited.
+        const id = this.queue.shift();
+        if (id === undefined) break;
+        await this.prepare(id)?.catch(() => {});
+      }
+    } finally {
+      this.loadingQueue = false;
+    }
+  }
+
+  /** A destination a portal wants to show. Queued rooms wait their turn. */
+  private request(id: string, elapsed: number): Destination | undefined {
+    return this.queue.includes(id) ? undefined : this.destination(id, elapsed);
   }
 
   /** Synchronously take ownership of an already-mounted preview room (zero-frame-delay promotion). */
@@ -844,13 +900,6 @@ export class PortalPreviews {
     this.viewProjection.multiplyMatrices(viewer.projectionMatrix, viewer.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.viewProjection, viewer.coordinateSystem);
 
-    // Eagerly preload both adjacent rooms in the loop for instant crossings in either direction.
-    for (const h of handles) {
-      if (h.portal.id === 'exit' || h.portal.id === 'entrance') {
-        this.destination(h.portal.targetWorldId, elapsed);
-      }
-    }
-
     const visible = handles.filter(({ portal, aperture }) => {
       if (portal.remoteUrl) return false;
       aperture.updateWorldMatrix(true, false);
@@ -866,7 +915,7 @@ export class PortalPreviews {
     try {
       for (const handle of visible) {
         const { portal, aperture } = handle;
-        const dest = this.destination(portal.targetWorldId, elapsed);
+        const dest = this.request(portal.targetWorldId, elapsed);
         const room = dest?.room;
         if (!room) {
           this.nextSeenWithoutLive.add(aperture);
@@ -1006,7 +1055,7 @@ export class PortalPreviews {
     if (arrival !== 'entrance' && arrival !== 'exit') return;
     const far = room.portals.find(p => p.aperture.userData.routeGate && p.portal.id !== arrival && !p.portal.remoteUrl);
     if (!far) return;
-    const farRoom = this.destination(far.portal.targetWorldId, elapsed)?.room;
+    const farRoom = this.request(far.portal.targetWorldId, elapsed)?.room;
     if (!farRoom) {
       this.nextSeenWithoutLive.add(far.aperture);
       return;
@@ -1055,6 +1104,7 @@ export class PortalPreviews {
 
   clear(): void {
     this.generation++;
+    this.queue = [];
     this.activeRoom = undefined;
     this.compileTarget?.dispose();
     this.compileTarget = undefined;

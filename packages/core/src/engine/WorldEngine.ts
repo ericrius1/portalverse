@@ -18,6 +18,7 @@ import {
 import { RoomInstance } from './RoomInstance';
 import { PortalPreviews } from './PortalPreviews';
 import { PortalRipplePass } from './PortalRipplePass';
+import type { Heading } from './roomWindow';
 import {
   AvatarController,
   createStylizedAvatarRig,
@@ -65,6 +66,9 @@ interface WalkThroughState {
   targetZ: number;
   startedAt: number;
 }
+
+/** Which way along the room loop a portal takes you. */
+const headingThrough = (portal?: PortalDefinition): Heading => (portal?.id === 'entrance' ? -1 : 1);
 
 export class WorldEngine {
   private readonly avatarScene = new THREE.Scene();
@@ -246,11 +250,11 @@ export class WorldEngine {
     }
 
     this.previews?.take(module.manifest.id);
-    this.installRoom(room, arrival, sourceOrigin, yawDelta, options?.extraPortals);
+    this.installRoom(room, arrival, headingThrough(options?.fromPortal), sourceOrigin, yawDelta, options?.extraPortals);
     return arrival;
   }
 
-  /** Preload and pin both next (exit) and previous (entrance) neighbor rooms of the active room. */
+  /** Wait for the next (exit) and previous (entrance) rooms; the rest of the window loads behind them. */
   async preloadAdjacentRooms(): Promise<void> {
     if (!this.room || !this.previews) return;
     await this.previews.syncPinnedForRoom(this.room);
@@ -282,17 +286,20 @@ export class WorldEngine {
   private installRoom(
     room: RoomInstance,
     arrival: SpawnPoint,
+    heading: Heading,
     sourceOrigin?: THREE.Vector3,
     yawDelta = 0,
     extraPortals?: PortalDefinition[],
   ): void {
     const prevRoom = this.room;
-    // Keep the room we just left mounted as a preview when the new room links back to
-    // it, so turning around shows it live and crossing back costs no remount.
+    // Keep the room we just left mounted as a preview when it's still in the window or
+    // the new room links back to it, so turning around costs no remount.
+    const prevId = prevRoom?.module.manifest.id;
     const shouldRetainPrev =
-      !!prevRoom &&
+      !!prevId &&
       prevRoom !== room &&
-      room.portals.some(p => !p.portal.remoteUrl && p.portal.targetWorldId === prevRoom.module.manifest.id);
+      (!!this.previews?.keeps(room.module.manifest.id, prevId) ||
+        room.portals.some(p => !p.portal.remoteUrl && p.portal.targetWorldId === prevId));
 
     this.swapOutCurrentRoom(shouldRetainPrev);
 
@@ -318,8 +325,8 @@ export class WorldEngine {
 
     room.activate(portal => this.requestPortalEntry(portal), this.playerView);
 
-    // Preload next & previous neighbors immediately so transitions never stall
-    void this.previews?.syncPinnedForRoom(room);
+    // Move the room window: neighbours load immediately so transitions never stall
+    void this.previews?.syncPinnedForRoom(room, heading);
 
     // Brief portal reentry grace period so players don't immediately re-trigger a portal at spawn
     this.portalCooldownUntil = performance.now() + 900;
@@ -345,7 +352,7 @@ export class WorldEngine {
     const yawDelta = crossingYawDelta(portal.yaw ?? 0, sideSign, arrival.yaw);
 
     this.mountSequence++;
-    this.installRoom(room, arrival, sourceOrigin, yawDelta);
+    this.installRoom(room, arrival, headingThrough(portal), sourceOrigin, yawDelta);
     this.callbacks.onPortalPromoted?.(room.module.manifest);
     return true;
   }
