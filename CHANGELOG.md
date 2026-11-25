@@ -2,6 +2,32 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
+## Honey in da Hood Ya Heard room — `feat/honey-hood-room` (2026-11-25)
+
+### Added
+
+- **Eleventh room, `worlds/honey-hood/`**, between `eric-sun-observatory` and `eric-world` in the loop: a winding road through tall trees that drip honey into puddles lasting 3.5 s, golden plants, a red fire hydrant off the road near the middle, and a giant fuzzy bee in a blue jacket and red tie. Every few seconds a bird appears; the bee chases it down and eats it.
+
+### Design & engineering decisions
+
+- **The bee is just above a held jump**
+  - *Why*: The brief asked for it to be just out of jump height. Its lowest point stays at about 5.8 m, above the roughly 5.5 m a jumping player reaches.
+  - *Tradeoff*: Flight stays on, so players can still fly up to it (`allowFlight` is not enforced by the engine yet).
+- **The road bends, the walkable ground does not**
+  - *Why*: Rooms must keep the central corridor flat and clear. Trees, plants and the hydrant stay outside it, and the road is flat decoration.
+- **Behaviour lives in `logic.ts`**
+  - *Why*: Road shape, placement, honey timing and the hunt are tested without a browser.
+- **Each client runs its own bee and birds**
+  - *Tradeoff*: Players in the room together see different hunts. Syncing them would need server and protocol changes.
+- **All geometry is procedural**, so the room adds no asset files.
+- **The road is paved with tiles that light up underfoot**
+  - *Why*: To make walking the road playful.
+  - *Decision*: Each slab spans the road and is about 5 m long. The one under your feet lights at once and fades over 1.5 s, with a soft light rising about 1 m from its edges. Jumping or flying over a tile does not light it. The slabs share one mesh and their light another.
+  - *Why the size and rising light*: Small tiles underfoot were off screen in first person, where the ground nearer than about 2.7 m is out of view.
+  - *Tradeoff*: Only your own steps light tiles; other players' steps do not.
+- **The fire hydrant talks**
+  - *Decision*: Within 5 m a speech bubble pops up reading はちみつタイム ("honey time"), and it goes away past 6 m.
+
 ## Stutter when crossing portals — `fix/portal-crossing-stutter` (2026-11-25)
 
 ### Fixed

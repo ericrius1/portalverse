@@ -169,6 +169,22 @@
           "yaw": 0
         }
       }
+    },
+    {
+      "id": "honey-hood",
+      "name": "Honey in da Hood Ya Heard",
+      "owner": "simplesessions",
+      "author": "simplesessions",
+      "description": "A twisty road through honey-dripping trees, golden plants, a fire hydrant, and a giant bee in a blue jacket who eats passing birds.",
+      "accentColor": "#fbbf24",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 0],
+          "yaw": 0
+        }
+      }
     }
   ]
 }
