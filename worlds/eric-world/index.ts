@@ -26,12 +26,12 @@ export default defineRoom('eric-world', {
     root.add(hemi, key);
 
     // Crisp cyan holographic studio floor
-    const floorGeo = new THREE.BoxGeometry(36, 0.8, 80);
+    const floorGeo = new THREE.BoxGeometry(36, 0.8, 92);
     const floorMat = createStudioGridFloorMaterial('#061526', '#22d3ee', 2.0);
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.position.y = -0.4;
     root.add(floor);
-    ctx.addPlatform({ minX: -18, maxX: 18, minZ: -40, maxZ: 40, topY: 0 });
+    ctx.addPlatform({ minX: -18, maxX: 18, minZ: -46, maxZ: 46, topY: 0 });
 
     // Open-air architectural studio corner pillars & glowing overhead beam frame
     const pillarGeo = new THREE.BoxGeometry(0.9, 10.5, 0.9);

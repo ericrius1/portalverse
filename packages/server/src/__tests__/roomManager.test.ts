@@ -116,6 +116,7 @@ describe('protocol: sanitizePortalDefinition', () => {
         label: 'L'.repeat(80),
         subtitle: 'S'.repeat(90),
         targetHubStyle: 'meadow',
+        oneWay: true,
         remoteUrl: 'https://friend.example.com/?world=hub',
         colorA: '#ABCDEF',
         evil: '<script>',
@@ -125,7 +126,9 @@ describe('protocol: sanitizePortalDefinition', () => {
     expect(p).not.toBeNull();
     expect(p!.label).toHaveLength(40);
     expect(p!.subtitle).toHaveLength(60);
-    expect(p!.targetHubStyle).toBe('meadow');
+    // Retired and client-only fields never reach other players.
+    expect(p).not.toHaveProperty('targetHubStyle');
+    expect(p).not.toHaveProperty('oneWay');
     expect(p!.remoteUrl).toBe('https://friend.example.com/?world=hub');
     expect(p!.colorA).toBe('#abcdef');
     expect(p!.createdBy).toBe('eric');
@@ -145,8 +148,7 @@ describe('protocol: sanitizePortalDefinition', () => {
     expect(sanitizePortalDefinition(portal('p1', { remoteUrl }))).toBeNull();
   });
 
-  it('rejects bad hub styles, colors, positions and ids', () => {
-    expect(sanitizePortalDefinition(portal('p1', { targetHubStyle: 'lava' }))).toBeNull();
+  it('rejects bad colors, positions and ids', () => {
     expect(sanitizePortalDefinition(portal('p1', { colorB: 'blue' }))).toBeNull();
     expect(sanitizePortalDefinition(portal('p1', { position: [0, Infinity, 0] }))).toBeNull();
     expect(sanitizePortalDefinition(portal('p1', { position: [0, 0] }))).toBeNull();
@@ -477,7 +479,7 @@ describe('HTTP + WebSocket server (ephemeral port)', () => {
     expect(body).toMatchObject({ ok: true, totalPlayers: 0 });
     expect(typeof body.uptimeMs).toBe('number');
     expect(body.worlds.map((w: { worldId: string }) => w.worldId)).toEqual(
-      expect.arrayContaining(['hub', 'eric-world', 'jp-world']),
+      expect.arrayContaining(['eric-world', 'jp-world', 'fishpond', 'laser-lab', 'alpine-sled']),
     );
 
     const worlds = await (await fetch(`${urls.http}/api/worlds`)).json();
@@ -492,34 +494,34 @@ describe('HTTP + WebSocket server (ephemeral port)', () => {
 
   it('syncs Eric and JP across rooms over real sockets', async () => {
     const urls = await boot();
-    const eric = await join(urls.ws, 'eric', 'Eric', 'hub');
+    const eric = await join(urls.ws, 'eric', 'Eric', 'eric-world');
     expect(eric.welcome.playerId).toBe('eric');
 
-    const jp = await join(urls.ws, 'jp', 'JP', 'hub');
+    const jp = await join(urls.ws, 'jp', 'JP', 'eric-world');
     expect(jp.welcome.players.map((p) => p.id)).toEqual(['eric']);
     await eric.s.next('player_joined', (m) => m.player.id === 'jp');
     const joinEvent = await eric.s.next('roster_update', (m) => !!m.event?.includes('JP joined'));
-    expect(joinEvent.event).toBe('JP joined the metaverse in Portal Hub');
+    expect(joinEvent.event).toBe("JP joined the metaverse in Eric's Room");
 
     eric.s.send({ type: 'state', position: [3, 1, 4], yaw: 0.2, velocityY: 0 });
     const state = await jp.s.next('player_state');
     expect(state).toMatchObject({ playerId: 'eric', position: [3, 1, 4] });
 
-    eric.s.send({ type: 'spawn_portal', worldId: 'hub', portal: portal('eric-to-jp') });
+    eric.s.send({ type: 'spawn_portal', worldId: 'eric-world', portal: portal('eric-to-jp') });
     const spawned = await jp.s.next('portal_spawned');
     expect(spawned.portal).toMatchObject({ id: 'eric-to-jp', createdBy: 'eric' });
 
     jp.s.send({ type: 'switch_world', worldId: 'jp-world', position: [0, 0, 10], yaw: 0 });
     const jpWelcome = await jp.s.next('welcome');
     expect(jpWelcome.worldId).toBe('jp-world');
-    expect(await eric.s.next('player_left')).toMatchObject({ playerId: 'jp', worldId: 'hub' });
+    expect(await eric.s.next('player_left')).toMatchObject({ playerId: 'jp', worldId: 'eric-world' });
     const travel = await eric.s.next('roster_update', (m) => m.event === "JP entered JP's Solarpunk Meadow");
     expect(travel.roster.find((a) => a.id === 'jp')?.worldId).toBe('jp-world');
 
     const health = await (await fetch(`${urls.http}/api/health`)).json();
     expect(health.totalPlayers).toBe(2);
-    expect(health.worlds.find((w: { worldId: string }) => w.worldId === 'hub')).toEqual({
-      worldId: 'hub',
+    expect(health.worlds.find((w: { worldId: string }) => w.worldId === 'eric-world')).toEqual({
+      worldId: 'eric-world',
       playerCount: 1,
       dynamicPortalCount: 1,
     });

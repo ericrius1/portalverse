@@ -8,7 +8,6 @@ import {
   uv,
   time,
   sin,
-  cos,
   atan,
   length,
   mix,
@@ -21,7 +20,6 @@ import {
   abs,
   exp,
   clamp,
-  positionLocal,
   positionWorld,
   normalWorld,
   cameraPosition,
@@ -35,8 +33,8 @@ export interface PortalVortexUniforms {
 }
 
 /**
- * Swirling WebGPU TSL portal event-horizon shader used inside arches, blooming
- * solarpunk petals, and magic fountain basins.
+ * Swirling WebGPU TSL portal event-horizon shader shown inside a portal opening
+ * until a live destination view or snapshot replaces it.
  */
 export function createPortalVortexMaterial(
   hexA = '#22d3ee',
@@ -90,7 +88,7 @@ export function createPortalVortexMaterial(
 }
 
 /**
- * Traveling holographic energy band shader for portal arches, astrolabes, and fountain rings.
+ * Traveling holographic energy band shader for portal rings.
  */
 export function createEnergyRingMaterial(
   hexA = '#38bdf8',
@@ -123,123 +121,7 @@ export function createEnergyRingMaterial(
 }
 
 /**
- * Glowing blue magic fountain plume shader — rising liquid magic arcs with upward-streaming
- * bioluminescent foam streaks, Fresnel glow, and vertex wave shimmer.
- */
-export function createMagicFountainPlumeMaterial(
-  hexCore = '#38bdf8',
-  hexGlow = '#60a5fa',
-): {
-  material: THREE.MeshBasicNodeMaterial;
-  uniforms: {
-    colorCore: { value: THREE.Color };
-    colorGlow: { value: THREE.Color };
-    hover: { value: number };
-    phase: { value: number };
-  };
-} {
-  const colorCore = uniform(new THREE.Color(hexCore));
-  const colorGlow = uniform(new THREE.Color(hexGlow));
-  const hover = uniform(0.0);
-  const phase = uniform(0.0);
-
-  const material = new THREE.MeshBasicNodeMaterial();
-  material.transparent = true;
-  material.side = THREE.DoubleSide;
-  material.depthWrite = false;
-  material.blending = THREE.AdditiveBlending;
-
-  material.positionNode = Fn(() => {
-    const pos = positionLocal.toVar();
-    const h = uv().y;
-    const flutter = sin(h.mul(10.0).sub(time.mul(7.0)).add(phase)).mul(0.09).mul(h);
-    const sway = cos(h.mul(6.0).sub(time.mul(4.5)).add(phase)).mul(0.07).mul(h);
-    pos.x.addAssign(flutter);
-    pos.z.addAssign(sway);
-    return pos;
-  })();
-
-  const fragFn = Fn(() => {
-    const u = uv();
-    const flowY = u.y.mul(4.5).sub(time.mul(3.6)).add(phase);
-    const streak1 = sin(u.x.mul(25.1327).add(sin(flowY.mul(2.0)))).mul(0.5).add(0.5);
-    const streak2 = sin(flowY.mul(6.0).add(u.x.mul(12.566))).mul(0.5).add(0.5);
-    const surge = sin(u.y.mul(5.0).sub(time.mul(5.2)).add(phase)).mul(0.5).add(0.5);
-
-    const viewDir = normalize(cameraPosition.sub(positionWorld));
-    const ndotv = max(abs(dot(normalWorld, viewDir)), 0.0);
-    const fresnel = pow(float(1.0).sub(ndotv), 1.8);
-
-    const fadeEnds = smoothstep(float(0.0), float(0.14), u.y).mul(smoothstep(float(1.0), float(0.72), u.y));
-    const foam = pow(streak1.mul(streak2), 1.4).add(surge.mul(0.45)).add(fresnel.mul(0.8));
-
-    const col = mix(colorGlow, colorCore, clamp(foam, 0.0, 1.0))
-      .add(vec3(0.7, 0.93, 1.0).mul(pow(surge, 3.0).mul(0.65)))
-      .mul(float(1.15).add(hover.mul(0.95)));
-
-    const alpha = clamp(fadeEnds.mul(float(0.28).add(foam.mul(0.58)).add(hover.mul(0.2))), 0.0, 0.95);
-    return vec4(col, alpha);
-  });
-
-  const fragOut = fragFn();
-  material.colorNode = fragOut.xyz;
-  material.opacityNode = fragOut.w;
-
-  return { material, uniforms: { colorCore, colorGlow, hover, phase } };
-}
-
-/**
- * Luminous rippling water surface for the Fountains Grid sky-plaza basins.
- */
-export function createMagicWaterPoolMaterial(hexDeep = '#041428', hexShimmer = '#38bdf8'): THREE.MeshStandardNodeMaterial {
-  const deepCol = uniform(new THREE.Color(hexDeep));
-  const shimmerCol = uniform(new THREE.Color(hexShimmer));
-
-  const material = new THREE.MeshStandardNodeMaterial({
-    roughness: 0.12,
-    metalness: 0.35,
-  });
-
-  material.positionNode = Fn(() => {
-    const pos = positionLocal.toVar();
-    const w1 = sin(pos.x.mul(0.35).add(time.mul(1.8))).mul(0.08);
-    const w2 = cos(pos.z.mul(0.35).sub(time.mul(1.4))).mul(0.08);
-    pos.y.addAssign(w1.add(w2));
-    return pos;
-  })();
-
-  material.colorNode = Fn(() => {
-    const p = positionWorld.xz;
-    // Grid-aligned concentric fountain ripples every 14m
-    const cell = fract(p.div(14.0).add(0.5)).sub(0.5);
-    const ringDist = length(cell);
-    const ripple = sin(ringDist.mul(36.0).sub(time.mul(4.5))).mul(0.5).add(0.5);
-    const ringMask = exp(ringDist.negate().mul(4.5));
-    const col = mix(deepCol, shimmerCol, ringMask.mul(ripple).mul(0.55));
-    return vec4(col, 1.0);
-  })();
-
-  material.emissiveNode = Fn(() => {
-    const p = positionWorld.xz;
-    const cell = fract(p.div(14.0).add(0.5)).sub(0.5);
-    const ringDist = length(cell);
-    const ripple = pow(sin(ringDist.mul(32.0).sub(time.mul(4.5))).mul(0.5).add(0.5), 3.0);
-    const ringGlow = exp(ringDist.negate().mul(5.2)).mul(ripple);
-
-    // Subtle luminous basin grid lines
-    const gridEdge = max(
-      smoothstep(float(0.475), float(0.498), abs(cell.x)),
-      smoothstep(float(0.475), float(0.498), abs(cell.y)),
-    );
-
-    return shimmerCol.mul(ringGlow.mul(1.35).add(gridEdge.mul(0.45)));
-  })();
-
-  return material;
-}
-
-/**
- * Architectural blueprint/studio grid floor for placeholder rooms & Nexus plaza.
+ * Architectural blueprint/studio grid floor (Eric's room).
  */
 export function createStudioGridFloorMaterial(
   hexBase = '#090e1a',

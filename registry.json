@@ -1,46 +1,26 @@
 {
   "version": 1,
-  "defaultWorldId": "hub",
-  "defaultHubStyle": "nexus",
+  "defaultWorldId": "eric-world",
   "worlds": [
     {
-      "id": "hub",
-      "name": "Portal Hub",
-      "owner": "Shared Metaverse",
-      "author": "Eric & JP",
-      "description": "Switchable metaverse gateway \u2014 soar above Magic Fountains, wander the Blooming Solarpunk Meadow, or step through Nexus Arches.",
-      "accentColor": "#38bdf8",
+      "id": "eric-world",
+      "name": "Eric's Room",
+      "owner": "ericrius1",
+      "author": "Eric (ericrius1)",
+      "description": "Eric's placeholder studio room — cyan holographic workshop ready to build in worlds/eric-world.",
+      "accentColor": "#22d3ee",
       "kind": "local",
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [
-            0,
-            21,
-            30
-          ],
-          "yaw": 0,
-          "pitch": -0.46,
-          "flying": true
-        },
-        "from-eric": {
-          "position": [
-            -6,
-            1.5,
-            13
-          ],
-          "yaw": -0.3
+          "position": [0, 0, 35.75],
+          "yaw": 0
         },
         "from-jp": {
-          "position": [
-            6,
-            1.5,
-            13
-          ],
-          "yaw": 0.3
+          "position": [0, 0, 35.75],
+          "yaw": 0
         }
-      },
-      "customPortalSlots": 3
+      }
     },
     {
       "id": "jp-world",
@@ -53,47 +33,59 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [
-            0,
-            0,
-            35.75
-          ],
+          "position": [0, 0, 35.75],
           "yaw": 0
         },
         "from-eric": {
-          "position": [
-            0,
-            0,
-            35.75
-          ],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
     },
     {
-      "id": "eric-world",
-      "name": "Eric's Room",
-      "owner": "ericrius1",
-      "author": "Eric (ericrius1)",
-      "description": "Eric's placeholder studio room \u2014 cyan holographic workshop ready to build in worlds/eric-world.",
-      "accentColor": "#22d3ee",
+      "id": "fishpond",
+      "name": "Kāneʻohe Fishpond",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Hawaiian coastal loko iʻa — turquoise TSL lagoon, basalt kuapā walls, swaying palms, reef fish, and Koʻolau cliffs.",
+      "accentColor": "#14b8a6",
       "kind": "local",
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [
-            0,
-            0,
-            35.75
-          ],
+          "position": [0, 0, 35.75],
           "yaw": 0
-        },
-        "from-jp": {
-          "position": [
-            0,
-            0,
-            35.75
-          ],
+        }
+      }
+    },
+    {
+      "id": "laser-lab",
+      "name": "Laser Forcefield Arena",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Pitch-black light-show gallery with sweeping TSL laser fans, pulsing forcefield walls, and floating refractive prisms.",
+      "accentColor": "#ff2a85",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "alpine-sled",
+      "name": "Alpine Snow Run",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Twilight alpine snow promenade lined with lantern-lit sled fences, frosted fir forests, alpenglow peaks, and falling snow.",
+      "accentColor": "#818cf8",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }

@@ -77,7 +77,7 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
   const roomManager = new RoomManager({
     worldNames,
     livePortalLimits: new Map((registry?.worlds ?? []).map(w => [w.id, livePortalSlots(w)])),
-    defaultWorldId: registry?.defaultWorldId ?? 'hub',
+    defaultWorldId: registry?.defaultWorldId ?? 'eric-world',
   });
 
   const sockets = new Map<string, TrackedSocket>();

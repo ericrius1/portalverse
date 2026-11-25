@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three/webgpu';
 import type { RegistryFile, SpawnPoint, WorldModule } from '../types';
-import { ROUTE_LENGTH, RUN_SPEED, routeGates, threshold } from '../portal/roomLayout';
+import {
+  PORTAL_LENS_REF_DIST,
+  ROUTE_LENGTH,
+  RUN_SPEED,
+  effectivePortalDistance,
+  routeGates,
+  threshold,
+} from '../portal/roomLayout';
 import { RoomInstance } from '../engine/RoomInstance';
 import { framePortal, portalPixels, PortalPreviews } from '../engine/PortalPreviews';
 import { WorldRegistry } from '../portal/registry';
@@ -54,6 +61,57 @@ describe('portal perspective', () => {
       }
     }
   });
+
+  it('matches snapshot FOV at ROUTE_LENGTH while keeping aperture-plane pixels exact and clipping behind the threshold', () => {
+    expect(effectivePortalDistance(ROUTE_LENGTH)).toBeCloseTo(PORTAL_LENS_REF_DIST, 5);
+    const aperture = new THREE.Mesh(new THREE.CircleGeometry(2.77, 48), new THREE.MeshBasicMaterial());
+    aperture.position.set(0, 2.85, 0);
+    aperture.updateMatrixWorld();
+    const size = new THREE.Vector2(2560, 1440);
+    const destSpawn: SpawnPoint = { position: [0, 0, 36.25], yaw: 0 };
+
+    for (const system of [THREE.WebGLCoordinateSystem, THREE.WebGPUCoordinateSystem] as const) {
+      const viewer = new THREE.PerspectiveCamera(62, size.x / size.y, 0.1, 450);
+      viewer.coordinateSystem = system;
+      viewer.position.set(0.5, 3.0, ROUTE_LENGTH);
+      viewer.rotation.set(-0.04, 0, 0, 'YXZ');
+      viewer.updateProjectionMatrix();
+      viewer.updateMatrixWorld();
+
+      const camera = new THREE.PerspectiveCamera();
+      const rect = portalPixels(aperture, viewer, size, new THREE.Vector4());
+      framePortal(camera, viewer, aperture, destSpawn, 0, 0, size, rect);
+
+      // Every point on the aperture plane (z = 0) must still map to the exact same screen pixel
+      for (const [lx, ly] of [[0, 2.85], [1.8, 3.5], [-1.5, 1.4]]) {
+        const expected = new THREE.Vector3(lx, ly, 0).project(viewer);
+        const dest = new THREE.Vector3(lx, ly, destSpawn.position[2]).project(camera);
+        expect(rect.x + (dest.x + 1) * rect.z / 2).toBeCloseTo((expected.x + 1) * size.x / 2, 3);
+        expect(rect.y + (1 - dest.y) * rect.w / 2).toBeCloseTo((1 - expected.y) * size.y / 2, 3);
+      }
+
+      // A tree/lantern 30m inside the room at x = 6.5m (outside the 2.3deg keyhole!) is now inside the portal
+      const treeNdc = new THREE.Vector3(6.5, 2.85, destSpawn.position[2] - 30).project(camera);
+      expect(Math.abs(treeNdc.x)).toBeLessThan(1);
+      expect(treeNdc.z).toBeLessThan(1);
+      expect(treeNdc.z).toBeGreaterThan(system === THREE.WebGPUCoordinateSystem ? 0 : -1);
+
+      // A point 100m deep inside the room is not far-clipped
+      const farNdc = new THREE.Vector3(0, 2.85, destSpawn.position[2] - 100).project(camera);
+      expect(farNdc.z).toBeLessThan(1);
+    }
+  });
+});
+
+it('links the five rooms in order: eric-world -> jp-world -> fishpond -> laser-lab -> alpine-sled -> eric-world', () => {
+  const rooms = (catalog as unknown as RegistryFile).worlds;
+  const order = ['eric-world', 'jp-world', 'fishpond', 'laser-lab', 'alpine-sled'];
+  expect(rooms.filter(r => r.kind === 'local').map(r => r.id)).toEqual(order);
+  for (let i = 0; i < order.length; i++) {
+    const gates = routeGates(order[i], rooms);
+    expect(gates.find(g => g.id === 'exit')?.targetWorldId).toBe(order[(i + 1) % order.length]);
+    expect(gates.find(g => g.id === 'entrance')?.targetWorldId).toBe(order[(i - 1 + order.length) % order.length]);
+  }
 });
 
 it('gives each local room reciprocal entrance and exit thresholds five sprint seconds apart', () => {
@@ -77,12 +135,31 @@ it('promotes the same in-flight preview and transfers disposal to the active sce
   try {
     const loader = vi.fn(async () => ({}) as WorldModule);
     const previews = new PortalPreviews({} as THREE.WebGPURenderer, loader);
-    const pending = previews.prepare('jp-world', 'nexus');
-    expect(previews.prepare('jp-world', 'nexus')).toBe(pending);
-    expect(previews.take('jp-world', 'nexus')).toBe(pending);
+    const pending = previews.prepare('jp-world');
+    expect(previews.prepare('jp-world')).toBe(pending);
+    expect(previews.take('jp-world')).toBe(pending);
     previews.clear();
     expect(await pending).toBe(instance);
     expect(mount).toHaveBeenCalledTimes(1);
+    expect(instance.dispose).not.toHaveBeenCalled();
+  } finally {
+    mount.mockRestore();
+  }
+});
+
+it('synchronously hands over a resolved preview via takeReady without disposing it', async () => {
+  const instance = { dispose: vi.fn(), deactivate: vi.fn(), portals: [] } as unknown as RoomInstance;
+  const mount = vi.spyOn(RoomInstance, 'mount').mockResolvedValue(instance);
+  try {
+    const loader = vi.fn(async () => ({}) as WorldModule);
+    const previews = new PortalPreviews({} as THREE.WebGPURenderer, loader);
+    await previews.prepare('fishpond');
+    expect(previews.takeReady('fishpond')).toBe(instance);
+    expect(previews.takeReady('fishpond')).toBeUndefined();
+    previews.retain('fishpond', instance);
+    expect(instance.deactivate).toHaveBeenCalled();
+    expect(previews.takeReady('fishpond')).toBe(instance);
+    previews.clear();
     expect(instance.dispose).not.toHaveBeenCalled();
   } finally {
     mount.mockRestore();

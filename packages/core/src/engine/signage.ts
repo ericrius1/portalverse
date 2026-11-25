@@ -83,7 +83,7 @@ export function createPlaqueTexture(opts: PlaqueOptions): THREE.CanvasTexture {
 }
 
 /**
- * Floating billboard label (used above portals, magic fountains, blooming flowers, and avatars).
+ * Floating billboard label (used above avatars and in rooms).
  */
 export function createFloatingLabel(opts: PlaqueOptions): {
   sprite: THREE.Sprite;

@@ -15,12 +15,14 @@ interface RemoteAvatarVisual {
   dispose: () => void;
 }
 
-function createStylizedAvatarRig(hexColor: string): {
+export interface StylizedAvatarRig {
   group: THREE.Group;
   bodyMat: THREE.MeshStandardMaterial;
   haloMesh: THREE.Mesh;
   dispose: () => void;
-} {
+}
+
+export function createStylizedAvatarRig(hexColor: string): StylizedAvatarRig {
   const group = new THREE.Group();
   const col = new THREE.Color(hexColor);
 
@@ -77,18 +79,21 @@ export class AvatarController {
   firstPerson = false;
 
   private readonly keys = new Set<string>();
+  private readonly desiredCamPos = new THREE.Vector3();
   private isDraggingLook = false;
   private dragMoved = false;
   private lastPointerX = 0;
   private lastPointerY = 0;
   private onGround = true;
 
-  private localRig: ReturnType<typeof createStylizedAvatarRig>;
+  private localRig: StylizedAvatarRig;
+  private localColor: string;
   private readonly remoteMap = new Map<string, RemoteAvatarVisual>();
   private readonly remoteRoot = new THREE.Group();
   private platforms: PlatformCollider[] = [];
   private terrainHeightFn: ((x: number, z: number) => number) | null = null;
   private onFlightChange?: (flying: boolean) => void;
+  private onColorChange?: (hexColor: string) => void;
 
   private readonly domElement: HTMLElement;
   private readonly scene: THREE.Scene;
@@ -100,11 +105,14 @@ export class AvatarController {
     domElement: HTMLElement,
     initialColor: string,
     onFlightChange?: (flying: boolean) => void,
+    onColorChange?: (hexColor: string) => void,
   ) {
     this.scene = scene;
     this.camera = camera;
     this.domElement = domElement;
+    this.localColor = initialColor;
     this.onFlightChange = onFlightChange;
+    this.onColorChange = onColorChange;
 
     this.localRig = createStylizedAvatarRig(initialColor);
     this.scene.add(this.localRig.group);
@@ -122,11 +130,17 @@ export class AvatarController {
     return !this.dragMoved;
   }
 
+  getLocalColor(): string {
+    return this.localColor;
+  }
+
   setLocalColor(hexColor: string): void {
+    this.localColor = hexColor;
     const col = new THREE.Color(hexColor);
     this.localRig.bodyMat.color.copy(col);
     this.localRig.bodyMat.emissive.copy(col);
     (this.localRig.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
+    this.onColorChange?.(hexColor);
   }
 
   setWorldCollision(platforms: PlatformCollider[], terrainHeightFn: ((x: number, z: number) => number) | null): void {
@@ -141,8 +155,43 @@ export class AvatarController {
     this.velocityY = 0;
     this.setFlying(Boolean(spawn.flying));
     this.snapToGroundIfWalking();
+    this.syncRigTransform();
+    this.snapCameraToTarget();
+  }
+
+  syncRigTransform(elapsed = 0): void {
     this.localRig.group.position.copy(this.position);
+    if (this.isFlying) {
+      this.localRig.group.position.y += Math.sin(elapsed * 3.0) * 0.14;
+    }
     this.localRig.group.rotation.y = this.yaw;
+    this.localRig.haloMesh.position.y = 1.82 + Math.sin(elapsed * 2.8) * 0.06;
+  }
+
+  snapCameraToTarget(): void {
+    const eyeY = this.position.y + 1.65;
+    if (this.firstPerson) {
+      this.camera.position.set(this.position.x, eyeY, this.position.z);
+      const lookX = this.position.x - Math.sin(this.yaw) * Math.cos(this.pitch) * 10;
+      const lookY = eyeY + Math.sin(this.pitch) * 10;
+      const lookZ = this.position.z - Math.cos(this.yaw) * Math.cos(this.pitch) * 10;
+      this.camera.lookAt(lookX, lookY, lookZ);
+    } else {
+      const camDist = this.isFlying ? 7.2 : 5.6;
+      const camX = this.position.x + Math.sin(this.yaw) * Math.cos(this.pitch) * camDist;
+      const camY = Math.max(
+        this.sampleSurfaceHeight(this.position.x, this.position.z) + 0.65,
+        eyeY - Math.sin(this.pitch) * camDist + 1.15,
+      );
+      const camZ = this.position.z + Math.cos(this.yaw) * Math.cos(this.pitch) * camDist;
+      this.camera.position.set(camX, camY, camZ);
+      const lookAhead = this.isFlying ? 12 : 4;
+      this.camera.lookAt(
+        this.position.x - Math.sin(this.yaw) * lookAhead,
+        eyeY + Math.sin(this.pitch) * lookAhead * 0.7,
+        this.position.z - Math.cos(this.yaw) * lookAhead,
+      );
+    }
   }
 
   setFlying(flying: boolean): void {
@@ -157,7 +206,7 @@ export class AvatarController {
 
   updateCameraVisibility(): void {
     const horizontalDistance = Math.hypot(this.camera.position.x - this.position.x, this.camera.position.z - this.position.z);
-    this.localRig.group.visible = !this.firstPerson && horizontalDistance > 0.9;
+    this.localRig.group.visible = !this.firstPerson && horizontalDistance > 0.55;
   }
 
   toggleCameraView(): void {
@@ -270,7 +319,7 @@ export class AvatarController {
           (this.keys.has('Space') ? 1 : 0) -
           (this.keys.has('KeyC') || this.keys.has('KeyQ') || this.keys.has('ControlLeft') ? 1 : 0);
 
-        // Fly along camera 3D look direction when holding W/S so diving into fountains feels effortless!
+        // Fly along the camera's 3D look direction when holding W/S.
         const cosPitch = Math.cos(this.pitch);
         const moveX = fwdX * cosPitch * forward + rightX * strafe;
         const moveY = Math.sin(this.pitch) * forward + verticalInput;
@@ -347,7 +396,8 @@ export class AvatarController {
         eyeY - Math.sin(this.pitch) * camDist + 1.15,
       );
       const camZ = this.position.z + Math.cos(this.yaw) * Math.cos(this.pitch) * camDist;
-      this.camera.position.lerp(new THREE.Vector3(camX, camY, camZ), Math.min(1, clampedDt * 12));
+      this.desiredCamPos.set(camX, camY, camZ);
+      this.camera.position.lerp(this.desiredCamPos, Math.min(1, clampedDt * 12));
       const lookAhead = this.isFlying ? 12 : 4;
       this.camera.lookAt(
         this.position.x - Math.sin(this.yaw) * lookAhead,

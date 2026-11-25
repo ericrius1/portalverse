@@ -4,7 +4,6 @@ import registryData from '../registry.json';
 import type {
   AvatarState,
   ConnectionState,
-  HubStyle,
   PlayerIdentity,
   PortalDefinition,
   RegistryFile,
@@ -18,6 +17,7 @@ import {
   buildRemotePortalUrl,
   buildShareableWorldUrl,
   createReturnPortalFromHandoff,
+  placeHandoffArrival,
   readRouteFromLocation,
 } from '@portalverse/core/portal/handoff';
 
@@ -73,17 +73,17 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 async function boot(): Promise<void> {
   const viewport = document.getElementById('viewport')!;
+  const loadingGate = document.getElementById('loading-gate')!;
+  const loadingMedallion = document.getElementById('loading-medallion') as HTMLButtonElement;
+  const loadingRingArc = document.getElementById('loading-ring-arc') as unknown as SVGCircleElement;
+  const loadingStatusText = document.getElementById('loading-status-text')!;
+  const loadingPhaseText = document.getElementById('loading-phase-text')!;
   const warpOverlay = document.getElementById('warp-overlay')!;
   const warpLabel = document.getElementById('warp-label')!;
-  const hoverTooltip = document.getElementById('hover-tooltip')!;
-  const tooltipDot = document.getElementById('tooltip-dot')!;
-  const tooltipTitle = document.getElementById('tooltip-title')!;
-  const tooltipSub = document.getElementById('tooltip-sub')!;
   const hudWorldName = document.getElementById('hud-world-name')!;
   const hudWorldAuthor = document.getElementById('hud-world-author')!;
   const worldAccentDot = document.getElementById('world-accent-dot')!;
   const hudNetStatus = document.getElementById('hud-net-status')!;
-  const hubStyleSwitcher = document.getElementById('hub-style-switcher')!;
   const playerCountEl = document.getElementById('player-count')!;
   const playerListEl = document.getElementById('player-list')!;
   const portalPromptEl = document.getElementById('portal-prompt')!;
@@ -131,10 +131,11 @@ async function boot(): Promise<void> {
   const loaders = Object.fromEntries(Object.entries(modules).map(([path, load]) => [path.split('/')[2], load]));
   const registry = new WorldRegistry(registryData as unknown as RegistryFile, loaders);
 
-  // Read initial deep-link route (?world=eric-world, ?world=hub&hubStyle=meadow, ?handoff=...)
+  // Read initial deep-link route (?world=eric-world, ?handoff=...)
   const route = readRouteFromLocation(window.location.search, window.location.hash);
   let identity = loadOrCreateIdentity();
 
+  // Placed behind the traveller once their arrival spawn is known (see boot below).
   let returnPortalFromHandoff: PortalDefinition | null = null;
   if (route.handoff) {
     identity = {
@@ -143,7 +144,6 @@ async function boot(): Promise<void> {
       color: route.handoff.playerColor || identity.color,
     };
     saveIdentity(identity);
-    returnPortalFromHandoff = createReturnPortalFromHandoff(route.handoff, [0, 0, -10]);
   }
 
   const initialWorldId =
@@ -153,79 +153,56 @@ async function boot(): Promise<void> {
       : undefined) ??
     registry.getDefaultWorldId();
 
-  let activeHubStyle: HubStyle =
-    route.hubStyle ?? route.handoff?.targetHubStyle ?? registry.getDefaultHubStyle();
   let activeWorldId = initialWorldId;
   let activeManifest: WorldManifest = registry.getManifest(initialWorldId) ?? registry.listWorlds()[0];
   let isTransitioning = false;
   let latestRoster: AvatarState[] = [];
   let latestDynamicPortals: PortalDefinition[] = [];
 
+  let urlSyncTimer = 0;
   function syncUrlBar(): void {
-    const shareUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
-      worldId: activeWorldId,
-      hubStyle: activeWorldId === 'hub' ? activeHubStyle : undefined,
-    });
-    try {
-      window.history.replaceState(null, '', shareUrl);
-    } catch {
-      // Ignore in sandboxed contexts
-    }
-  }
-
-  function updateHubStyleChips(): void {
-    const isHub = activeWorldId === 'hub';
-    hubStyleSwitcher.classList.toggle('hidden', !isHub);
-    hubStyleSwitcher.querySelectorAll<HTMLButtonElement>('[data-hub-style]').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.hubStyle === activeHubStyle);
-    });
+    window.clearTimeout(urlSyncTimer);
+    urlSyncTimer = window.setTimeout(() => {
+      const shareUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
+        worldId: activeWorldId,
+      });
+      try {
+        window.history.replaceState(null, '', shareUrl);
+      } catch {
+        // Ignore in sandboxed contexts
+      }
+    }, 120);
   }
 
   function combinedDynamicPortals(): PortalDefinition[] {
     if (returnPortalFromHandoff && activeWorldId === initialWorldId) {
-      return [...latestDynamicPortals, returnPortalFromHandoff];
+      // First, so a room full of player portals never crowds out the way home.
+      return [returnPortalFromHandoff, ...latestDynamicPortals];
     }
     return latestDynamicPortals;
   }
 
   const engine = new WorldEngine(viewport, identity.color, {
     loadLocalWorld: id => registry.getManifest(id)?.kind === 'local' ? registry.loadWorld(id) : undefined,
-    onWorldLoaded: (manifest, hubStyle) => {
+    onWorldLoaded: (manifest) => {
       activeManifest = manifest;
       activeWorldId = manifest.id;
-      activeHubStyle = hubStyle;
 
       hudWorldName.textContent = manifest.name;
-      const styleLabel =
-        manifest.id === 'hub'
-          ? hubStyle === 'fountains'
-            ? 'Magic Fountains Grid'
-            : hubStyle === 'meadow'
-              ? 'Solarpunk Blooming Meadow'
-              : 'Starlight Nexus'
-          : manifest.owner
-            ? `Owner: ${manifest.owner}`
-            : manifest.author;
-      hudWorldAuthor.textContent = `${styleLabel} · WebGPU`;
+      const authorLabel = manifest.owner ? `Owner: ${manifest.owner}` : manifest.author;
+      hudWorldAuthor.textContent = `${authorLabel} · WebGPU`;
       worldAccentDot.style.background = manifest.accentColor;
       worldAccentDot.style.boxShadow = `0 0 14px ${manifest.accentColor}`;
 
-      updateHubStyleChips();
       syncUrlBar();
-      renderWorldDirectory();
     },
-    onPortalHover: (portal, x, y) => {
-      if (!portal) {
-        hoverTooltip.classList.add('hidden');
-        return;
-      }
-      hoverTooltip.classList.remove('hidden');
-      hoverTooltip.style.left = `${x}px`;
-      hoverTooltip.style.top = `${y}px`;
-      tooltipDot.style.background = portal.colorA ?? '#38bdf8';
-      tooltipDot.style.boxShadow = `0 0 12px ${portal.colorA ?? '#38bdf8'}`;
-      tooltipTitle.textContent = portal.label;
-      tooltipSub.textContent = portal.subtitle ?? (portal.remoteUrl ? 'Click to travel to remote world' : 'Click or enter portal');
+    onPortalPromoted: (manifest) => {
+      net.switchWorld(
+        manifest.id,
+        [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
+        engine.avatar.yaw,
+      );
+      renderPresenceRoster();
     },
     onPortalProximity: (portal) => {
       if (!portal) {
@@ -313,41 +290,18 @@ async function boot(): Promise<void> {
     worldDirectoryList.innerHTML = '';
     const base = window.location.origin + window.location.pathname;
 
-    const entries: Array<{
-      title: string;
-      owner: string;
-      desc: string;
-      accent: string;
-      worldId: string;
-      hubStyle?: HubStyle;
-    }> = [
-      {
-        title: 'Portal Hub · Magic Fountains',
-        owner: 'Shared Hub',
-        desc: 'Soar high above a glowing blue magic fountain grid — fly into or click any fountain.',
-        accent: '#38bdf8',
-        worldId: 'hub',
-        hubStyle: 'fountains',
-      },
-      {
-        title: 'Portal Hub · Solarpunk Meadow',
-        owner: 'Shared Hub',
-        desc: 'Wind-swept wildflower meadow with giant blooming petal portals.',
-        accent: '#34d399',
-        worldId: 'hub',
-        hubStyle: 'meadow',
-      },
-      { title: 'Portal Hub · Starlight Nexus', owner: 'Shared Hub', desc: 'A gallery of live framed worlds.',
-        accent: '#818cf8', worldId: 'hub', hubStyle: 'nexus' },
-      ...registry.listWorlds().filter(w => w.kind === 'local' && w.id !== 'hub').map(w => ({
-        title: w.name, owner: w.owner ?? w.author, desc: w.description, accent: w.accentColor, worldId: w.id,
-      })),
-    ];
+    const entries = registry.listWorlds().filter(w => w.kind === 'local').map(w => ({
+      title: w.name,
+      owner: w.owner ?? w.author,
+      desc: w.description,
+      accent: w.accentColor,
+      worldId: w.id,
+    }));
 
     for (const item of entries) {
       const card = document.createElement('div');
       card.className = 'world-card';
-      const url = buildShareableWorldUrl(base, { worldId: item.worldId, hubStyle: item.hubStyle });
+      const url = buildShareableWorldUrl(base, { worldId: item.worldId });
       card.innerHTML = `
         <div class="world-card-info">
           <div class="world-card-title">
@@ -370,7 +324,7 @@ async function boot(): Promise<void> {
 
       card.querySelector('[data-go-world]')!.addEventListener('click', () => {
         closeAllModals();
-        void transitionToWorld(item.worldId, { hubStyle: item.hubStyle });
+        void transitionToWorld(item.worldId);
       });
 
       worldDirectoryList.appendChild(card);
@@ -388,18 +342,17 @@ async function boot(): Promise<void> {
 
   async function transitionToWorld(
     worldId: string,
-    opts?: { spawnId?: string; hubStyle?: HubStyle; fromPortal?: PortalDefinition; crossed?: boolean },
+    opts?: { spawnId?: string; fromPortal?: PortalDefinition; crossed?: boolean },
   ): Promise<void> {
     if (isTransitioning) return;
     isTransitioning = true;
 
-    const nextHubStyle = opts?.hubStyle ?? activeHubStyle;
     try {
       const worldModule = await registry.loadWorld(worldId);
       await engine.mountWorld(worldModule, {
         spawnId: opts?.spawnId,
-        hubStyle: nextHubStyle,
-        fromPortal: opts?.fromPortal, crossed: opts?.crossed,
+        fromPortal: opts?.fromPortal,
+        crossed: opts?.crossed,
       });
       net.switchWorld(
         worldId,
@@ -418,7 +371,6 @@ async function boot(): Promise<void> {
     if (portal.remoteUrl) {
       const returnUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
         worldId: activeWorldId,
-        hubStyle: activeWorldId === 'hub' ? activeHubStyle : undefined,
       });
       const dest = buildRemotePortalUrl(portal.remoteUrl, {
         version: 1,
@@ -429,7 +381,6 @@ async function boot(): Promise<void> {
         returnUrl,
         targetWorldId: portal.targetWorldId,
         targetSpawnId: portal.targetSpawnId,
-        targetHubStyle: portal.targetHubStyle,
         sentAt: Date.now(),
       });
       if (!dest) {
@@ -446,13 +397,16 @@ async function boot(): Promise<void> {
 
     await transitionToWorld(portal.targetWorldId, {
       spawnId: portal.targetSpawnId,
-      hubStyle: portal.targetHubStyle,
-      fromPortal: portal, crossed,
+      fromPortal: portal,
+      crossed,
     });
   }
 
+  let gateExited = false;
+
   // Modal helpers
   function openModal(modal: HTMLElement): void {
+    if (!gateExited) return;
     closeAllModals();
     modal.classList.remove('hidden');
     engine.setInputLocked(true);
@@ -462,7 +416,7 @@ async function boot(): Promise<void> {
     modalPortal.classList.add('hidden');
     modalWorlds.classList.add('hidden');
     modalProfile.classList.add('hidden');
-    engine.setInputLocked(false);
+    engine.setInputLocked(!gateExited);
   }
 
   document.querySelectorAll('[data-close-modal]').forEach((btn) => {
@@ -474,20 +428,10 @@ async function boot(): Promise<void> {
     });
   });
 
-  // Hub representation switcher buttons
-  hubStyleSwitcher.querySelectorAll<HTMLButtonElement>('[data-hub-style]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const style = btn.dataset.hubStyle as HubStyle;
-      if (style === activeHubStyle && activeWorldId === 'hub') return;
-      void transitionToWorld('hub', { hubStyle: style });
-    });
-  });
-
-  // Share current room/hub direct link
+  // Share current room direct link
   btnShareLink.addEventListener('click', async () => {
     const shareUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
       worldId: activeWorldId,
-      hubStyle: activeWorldId === 'hub' ? activeHubStyle : undefined,
     });
     await copyToClipboard(shareUrl);
     showToast(`Copied link to ${activeManifest.name}!`);
@@ -524,7 +468,8 @@ async function boot(): Promise<void> {
 
     const isRemote = portalModeSelect.value === 'remote';
     const remoteUrl = isRemote ? portalRemoteUrlInput.value.trim() : undefined;
-    const targetWorldId = isRemote ? 'hub' : portalTargetWorldSelect.value || 'hub';
+    const defaultId = registry.getDefaultWorldId();
+    const targetWorldId = isRemote ? defaultId : portalTargetWorldSelect.value || defaultId;
     const targetSpawnId = isRemote ? undefined : portalTargetSpawnInput.value.trim() || 'default';
 
     const newPortal: PortalDefinition = {
@@ -580,15 +525,139 @@ async function boot(): Promise<void> {
     }
   });
 
-  // Initialize Three.js WebGPU renderer BEFORE mounting & rendering!
-  await engine.init();
+  // Yuna-style smooth circular loading gate controller
+  const RING_CIRCUMFERENCE = 2 * Math.PI * 102;
+  const REVEAL_START_Y = 168;
+  const REVEAL_END_Y = 68;
+  const revealCircleY = (pct: number) =>
+    REVEAL_START_Y - (REVEAL_START_Y - REVEAL_END_Y) * (pct / 100);
 
-  const startModule = await registry.loadWorld(initialWorldId);
-  await engine.mountWorld(startModule, {
-    spawnId: route.spawnId ?? route.handoff?.targetSpawnId,
-    hubStyle: activeHubStyle,
-    extraPortals: combinedDynamicPortals(),
+  let targetProgress = 8;
+  let visualProgress = 0;
+  let fillProgress = 0;
+  let preloadComplete = false;
+  let gateReady = false;
+  let gateError = false;
+  let lastGateFrame = performance.now();
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  engine.setInputLocked(true);
+
+  const setLoadPhase = (progressPct: number, label: string) => {
+    targetProgress = Math.max(targetProgress, Math.min(100, progressPct));
+    loadingPhaseText.textContent = label;
+  };
+
+  const drawGateProgress = (val: number, bgVal: number) => {
+    loadingStatusText.textContent = `${Math.floor(val)}%`;
+    loadingMedallion.style.setProperty('--emblem-reveal-y', `${revealCircleY(val)}%`);
+    loadingMedallion.style.setProperty('--fill-reveal-y', `${revealCircleY(bgVal)}%`);
+    const dashOffset = RING_CIRCUMFERENCE * (1 - val / 100);
+    loadingRingArc.style.strokeDashoffset = `${dashOffset.toFixed(2)}`;
+  };
+
+  const stepGate = (now: number) => {
+    if (gateExited || gateError) return;
+    const elapsedMs = Math.min(now - lastGateFrame, 100);
+    lastGateFrame = now;
+
+    const goal = preloadComplete ? 100 : targetProgress;
+    if (reduceMotion) {
+      visualProgress = goal;
+      fillProgress = goal;
+    } else {
+      const response = 1 - Math.exp(-elapsedMs / 180);
+      const maxStep = Math.min(2.2, 55 * (elapsedMs / 1000));
+      visualProgress += Math.min((goal - visualProgress) * response, maxStep);
+      if (Math.abs(goal - visualProgress) < 0.08) visualProgress = goal;
+
+      const maxFillStep = Math.min(1.6, 42 * (elapsedMs / 1000));
+      fillProgress += Math.min(visualProgress - fillProgress, maxFillStep);
+      if (Math.abs(visualProgress - fillProgress) < 0.08) fillProgress = visualProgress;
+    }
+
+    visualProgress = Math.min(100, Math.max(0, visualProgress));
+    fillProgress = Math.min(100, Math.max(0, fillProgress));
+    drawGateProgress(visualProgress, fillProgress);
+
+    if (preloadComplete && visualProgress >= 99.9 && fillProgress >= 99.9) {
+      drawGateProgress(100, 100);
+      gateReady = true;
+      loadingGate.classList.add('ready');
+      loadingGate.setAttribute('aria-busy', 'false');
+      loadingGate.setAttribute('aria-label', 'Portalverse ready. Click to enter.');
+      loadingMedallion.disabled = false;
+      loadingMedallion.setAttribute('aria-label', `Enter ${activeManifest.name}`);
+      loadingPhaseText.textContent = activeManifest.name.toUpperCase();
+      loadingMedallion.focus();
+      return;
+    }
+
+    window.requestAnimationFrame(stepGate);
+  };
+  window.requestAnimationFrame(stepGate);
+
+  loadingMedallion.addEventListener('click', () => {
+    if (gateError) {
+      window.location.reload();
+      return;
+    }
+    if (!gateReady || gateExited) return;
+    gateExited = true;
+    loadingMedallion.disabled = true;
+    loadingGate.classList.add('exiting');
+    engine.setInputLocked(false);
+    window.setTimeout(() => {
+      loadingGate.remove();
+    }, 900);
   });
+
+  // Boot & preload pipeline behind the loading gate
+  try {
+    setLoadPhase(15, 'INITIALIZING WEBGPU');
+    await engine.init();
+
+    setLoadPhase(35, `LOADING ${activeManifest.name.toUpperCase()}`);
+    const startModule = await registry.loadWorld(initialWorldId);
+    const spawn = await engine.mountWorld(startModule, {
+      spawnId: route.spawnId ?? route.handoff?.targetSpawnId,
+      extraPortals: combinedDynamicPortals(),
+    });
+    if (route.handoff && spawn) {
+      // Step the traveller into the room with the way home right behind them.
+      const placement = placeHandoffArrival(spawn);
+      returnPortalFromHandoff = createReturnPortalFromHandoff(
+        route.handoff,
+        placement.portal.position,
+        placement.portal.yaw,
+      );
+      if (returnPortalFromHandoff) {
+        engine.avatar.applySpawn(placement.arrival);
+        engine.setDynamicPortals(combinedDynamicPortals());
+      }
+    }
+
+    setLoadPhase(60, 'PRELOADING ADJACENT ROOMS');
+    await engine.preloadAdjacentRooms();
+
+    const localIds = registry.listWorlds().filter(w => w.kind === 'local').map(w => w.id);
+    setLoadPhase(68, 'RENDERING PORTAL PREVIEWS');
+    await engine.prewarmPortalSnapshots(localIds, (frac) => {
+      setLoadPhase(68 + frac * 30, 'RENDERING PORTAL PREVIEWS');
+    });
+
+    preloadComplete = true;
+    setLoadPhase(100, activeManifest.name.toUpperCase());
+  } catch (err) {
+    gateError = true;
+    loadingGate.classList.add('error');
+    loadingGate.setAttribute('aria-busy', 'false');
+    loadingStatusText.textContent = 'RETRY';
+    loadingPhaseText.textContent = err instanceof Error ? err.message.slice(0, 32).toUpperCase() : 'LOAD FAILED';
+    loadingMedallion.disabled = false;
+    loadingMedallion.setAttribute('aria-label', 'Loading failed. Click to retry.');
+    return;
+  }
 
   net.connect();
   renderPresenceRoster();
@@ -607,7 +676,11 @@ async function boot(): Promise<void> {
   }, 50);
 
   if (route.handoff) {
-    showToast(`Arrived from ${route.handoff.fromWorldName}! A return portal was placed behind you.`);
+    showToast(
+      returnPortalFromHandoff
+        ? `Arrived from ${route.handoff.fromWorldName}! Turn around to go back.`
+        : `Arrived from ${route.handoff.fromWorldName}!`,
+    );
   }
 }
 

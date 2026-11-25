@@ -6,7 +6,6 @@ import type {
 } from '../../core/src/types';
 import {
   isFiniteNumber,
-  isHubStyle,
   sanitizeColor,
   sanitizeHttpUrl,
   sanitizeId,
@@ -66,10 +65,6 @@ export function sanitizePortalDefinition(
     const spawn = sanitizeId(portal.targetSpawnId);
     if (!spawn) return null;
     result.targetSpawnId = spawn;
-  }
-  if (portal.targetHubStyle !== undefined) {
-    if (!isHubStyle(portal.targetHubStyle)) return null;
-    result.targetHubStyle = portal.targetHubStyle;
   }
   if (portal.remoteUrl !== undefined) {
     const url = sanitizeHttpUrl(portal.remoteUrl);

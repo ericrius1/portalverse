@@ -1,7 +1,7 @@
 import type {
-  HubStyle,
   PortalDefinition,
   PortalHandoffPayload,
+  SpawnPoint,
   Vec3Tuple,
 } from '../types';
 
@@ -12,8 +12,6 @@ import type {
  * Everything here runs in both the browser and Node, and every decoder treats
  * its input as hostile (it arrives from a URL anyone can craft).
  */
-
-export const HUB_STYLES: readonly HubStyle[] = ['fountains', 'meadow', 'nexus'];
 
 const MAX_ENCODED_HANDOFF_LENGTH = 8192;
 const MAX_URL_LENGTH = 2048;
@@ -28,10 +26,6 @@ const UNSAFE_TEXT_CHARS = /[\u0000-\u001f\u007f-\u009f<>`\u200b-\u200f\u2028-\u2
 // ---------------------------------------------------------------------------
 // Shared sanitizers (also used by the server protocol layer)
 // ---------------------------------------------------------------------------
-
-export function isHubStyle(value: unknown): value is HubStyle {
-  return typeof value === 'string' && (HUB_STYLES as readonly string[]).includes(value);
-}
 
 /** Returns the id if it is a safe slug-ish identifier (1-64 chars), else null. */
 export function sanitizeId(value: unknown): string | null {
@@ -163,7 +157,6 @@ export function sanitizeHandoffPayload(value: unknown): PortalHandoffPayload | n
   if (targetWorldId) payload.targetWorldId = targetWorldId;
   const targetSpawnId = sanitizeId(raw.targetSpawnId);
   if (targetSpawnId) payload.targetSpawnId = targetSpawnId;
-  if (isHubStyle(raw.targetHubStyle)) payload.targetHubStyle = raw.targetHubStyle;
   return payload;
 }
 
@@ -200,17 +193,17 @@ export function buildRemotePortalUrl(
   return url.toString();
 }
 
-const ROUTE_PARAMS = ['world', 'hubStyle', 'spawn', 'handoff'] as const;
+const ROUTE_PARAMS = ['world', 'spawn', 'handoff'] as const;
 const RELATIVE_BASE = 'http://portalverse.invalid';
 
 /**
  * Builds a clean shareable link, e.g. `https://host/?world=jp-world` or
- * `https://host/?world=hub&hubStyle=meadow`. Other query params on the base
+ * `https://host/?world=fishpond&spawn=exit`. Other query params on the base
  * are preserved; stale route params and the hash are dropped.
  */
 export function buildShareableWorldUrl(
   baseUrl: string,
-  opts: { worldId: string; hubStyle?: HubStyle; spawnId?: string },
+  opts: { worldId: string; spawnId?: string },
 ): string {
   let url: URL;
   let relative = false;
@@ -225,7 +218,6 @@ export function buildShareableWorldUrl(
 
   const worldId = sanitizeId(opts.worldId);
   if (worldId) url.searchParams.set('world', worldId);
-  if (isHubStyle(opts.hubStyle)) url.searchParams.set('hubStyle', opts.hubStyle);
   const spawnId = sanitizeId(opts.spawnId);
   if (spawnId) url.searchParams.set('spawn', spawnId);
 
@@ -234,12 +226,11 @@ export function buildShareableWorldUrl(
 
 export interface LocationRoute {
   worldId?: string;
-  hubStyle?: HubStyle;
   spawnId?: string;
   handoff?: PortalHandoffPayload;
 }
 
-/** Parses `?world=`, `?hubStyle=`, `?spawn=` and `?handoff=` / `#handoff=`. */
+/** Parses `?world=`, `?spawn=` and `?handoff=` / `#handoff=`. */
 export function readRouteFromLocation(search: string, hash?: string): LocationRoute {
   const route: LocationRoute = {};
   const query = new URLSearchParams(search ?? '');
@@ -247,8 +238,6 @@ export function readRouteFromLocation(search: string, hash?: string): LocationRo
 
   const worldId = sanitizeId(query.get('world'));
   if (worldId) route.worldId = worldId;
-  const hubStyle = query.get('hubStyle');
-  if (isHubStyle(hubStyle)) route.hubStyle = hubStyle;
   const spawnId = sanitizeId(query.get('spawn'));
   if (spawnId) route.spawnId = spawnId;
 
@@ -273,13 +262,48 @@ function shiftHue(hex: string): string {
   return `#${[b, r, g].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/** How far into the room a federated traveller appears, leaving space for the way home. */
+export const HANDOFF_ARRIVAL_CLEARANCE = 6;
+/** Gap between the traveller and the return portal behind them at arrival. */
+const RETURN_PORTAL_GAP = 0.5;
+
+export interface HandoffArrival {
+  /** Where the traveller appears, facing the same way as the room's spawn. */
+  arrival: SpawnPoint;
+  /** The return portal directly behind the traveller, its front facing them. */
+  portal: { position: Vec3Tuple; yaw: number };
+}
+
 /**
- * Builds a glowing return portal leading back to `handoff.returnUrl`.
+ * Places a federated arrival like stepping out of the room's entrance: the
+ * traveller moves `clearance` metres forward from the spawn and the way home
+ * stands just behind them, so turning around and walking back returns them.
+ * The clearance keeps the portal clear of the entrance gate at the default spawn.
+ */
+export function placeHandoffArrival(spawn: SpawnPoint, clearance = HANDOFF_ARRIVAL_CLEARANCE): HandoffArrival {
+  const forwardX = -Math.sin(spawn.yaw);
+  const forwardZ = -Math.cos(spawn.yaw);
+  const [x, y, z] = spawn.position;
+  const arrivalX = x + forwardX * clearance;
+  const arrivalZ = z + forwardZ * clearance;
+  return {
+    arrival: { ...spawn, position: [arrivalX, y, arrivalZ] },
+    portal: {
+      position: [arrivalX - forwardX * RETURN_PORTAL_GAP, y, arrivalZ - forwardZ * RETURN_PORTAL_GAP],
+      // A portal's front faces local +Z, so turn it to face the way the traveller looks.
+      yaw: spawn.yaw + Math.PI,
+    },
+  };
+}
+
+/**
+ * Builds a glowing one-way return portal leading back to `handoff.returnUrl`.
  * Returns null when the handoff has no (valid) return URL.
  */
 export function createReturnPortalFromHandoff(
   handoff: PortalHandoffPayload,
   position: Vec3Tuple = DEFAULT_RETURN_POSITION,
+  yaw = 0,
 ): PortalDefinition | null {
   const returnUrl = sanitizeHttpUrl(handoff?.returnUrl);
   if (!returnUrl) return null;
@@ -294,11 +318,12 @@ export function createReturnPortalFromHandoff(
     label: sanitizeText(`Return to ${worldName}`, 40) ?? 'Return portal',
     subtitle: sanitizeText(`Way home for ${handoff.playerName ?? 'Traveler'}`, 60) ?? 'Way home',
     position: safePosition,
-    yaw: 0,
+    yaw: Number.isFinite(yaw) ? yaw : 0,
     targetWorldId: fromWorldId,
     remoteUrl: returnUrl,
     colorA,
     colorB: shiftHue(colorA),
     triggerRadius: 2.6,
+    oneWay: true,
   };
 }

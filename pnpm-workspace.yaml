@@ -1,0 +1,3 @@
+# Vite needs esbuild's install script to fetch its platform binary.
+allowBuilds:
+  esbuild: true

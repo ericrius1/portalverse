@@ -5,7 +5,7 @@ import {
   createMeadowGroundMaterial,
   createWorldMeadowGrassMaterial,
   sampleMeadowHeight,
-} from '@portalverse/core/shaders/meadowShaders';
+} from './meadowShaders';
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -29,7 +29,7 @@ export function mountMeadow(ctx: WorldContext): void {
   ctx.scene.add(root);
 
   ctx.scene.background = new THREE.Color('#8ecae6');
-  ctx.scene.fog = new THREE.Fog('#c8e8f5', 38, 125);
+  ctx.scene.fog = new THREE.Fog('#c8e8f5', 70, 195);
   ctx.setTerrainHeight(meadowHeight);
 
   // Golden California afternoon sun + warm green sky bounce

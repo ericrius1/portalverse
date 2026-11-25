@@ -6,11 +6,11 @@ This repo is structured so you both—plus **Claude Opus 5.5** and **Gemini 4 Ne
 
 - **Eric builds freely in:** `worlds/eric-world/` (plus any new `worlds/eric-*/` worlds)
 - **JP builds freely in:** `worlds/jp-world/` (plus any new `worlds/jp-*/` worlds)
-- **Shared Hub & SDK (`worlds/hub/`, `packages/core/`, `packages/server/`, `registry.json`):** Update via short PRs or in a shared T3 Code session.
+- **Shared SDK (`packages/core/`, `packages/server/`, `registry.json`):** Update via short PRs or in a shared T3 Code session.
 
 ### Building your room
 
-Open `/?world=jp-world` while editing `worlds/jp-world/index.ts`. Eric can do the same in `worlds/eric-world/index.ts`. Open a second tab at `/?world=hub&hubStyle=nexus` to see both rooms through their arches. Move sideways to check the perspective, then click the opening to enter.
+Open `/?world=jp-world` while editing `worlds/jp-world/index.ts`. Eric can do the same in `worlds/eric-world/index.ts`. To see your room through a portal, open a second tab at the room before yours in the loop (for JP that's `/?world=eric-world`) and look down the room at its exit. Move sideways to check the perspective, then walk through or click the opening to enter.
 
 Each room exports `defineRoom(id, { mount(ctx) })`. The engine calls the same builder for a visit and for a view through a local portal. Keep mutable scene objects inside `mount` so each instance can animate and unload independently.
 
@@ -38,10 +38,11 @@ export default defineRoom('jp-world', {
 The engine gives every local room a framed entrance and exit on the Z axis. Leave the central path clear and level at Y = 0. The entrance stands at Z = +36.25 and the exit at Z = −36.25. Shift+W covers the 72.5 metres in five seconds. Local rooms follow their order in `registry.json`, with the last connected back to the first. Adding a room inserts its two connections automatically.
 
 - Add `worlds/<id>/index.ts` and a local entry with a default spawn in `registry.json`. The room directory and route discover it automatically. Use `[0, 0, 35.75]` and yaw zero to start just inside the entrance.
-- Put scenery and animation in `mount`. Use `ctx.onActivate` to start player-only behavior when a preloaded scene becomes active. Use `ctx.onDispose` for cleanup. Keep permanent scene objects instance-local.
+- Put scenery and animation in `mount`. Use `ctx.onDispose` for cleanup. Keep permanent scene objects instance-local.
+- Use `ctx.onActivate` for player-only behavior such as input listeners or audio, and return a function that stops it. The engine keeps the room a player just left mounted as a preview so turning back is instant, so a room can activate and deactivate many times. `ctx.mode` reports `'active'` or `'preview'`.
 - Use the manifest’s `portals` array for up to five optional links. Each takes an ID, label, position, and target world. Use the target spawn `entrance` or `exit` to meet its main route, or name a spawn in the target manifest.
-- For custom portal art, reserve slots with `customPortalSlots` in the manifest, then use `ctx.addPortal` or `ctx.registerCustomPortal` during mount. The hub reserves three slots across its visual styles. Unreserved slots are available to player-placed portals, including offline play.
-- Every local preview uses the destination scene and a common up direction. Crossing a main frame preserves the player’s position relative to the threshold and viewing direction. Up to four visible windows render one level deep. Remote links use URL handoffs.
+- For custom portal art, reserve slots with `customPortalSlots` in the manifest, then use `ctx.addPortal` or `ctx.registerCustomPortal` during mount. Unreserved slots are available to player-placed portals, including offline play.
+- Every local preview uses the destination scene and a common up direction, rendered at screen resolution. Crossing a main frame preserves the player’s position relative to the threshold and viewing direction. Up to four visible windows render one level deep; portals beyond those show snapshots. Remote links use URL handoffs.
 
 ### Room budgets
 
@@ -85,9 +86,10 @@ Pick the workflow that fits your session:
 
 Because Vite proxies `/ws` and `/api` through port `5173`, exposing a single URL (via Tailscale, Cloudflare Tunnel, or a small VPS deploy) gives both of you full 3D + live multiplayer on one link:
 
-- **Share the Portal Hub (Fountains):** `<your-url>/?world=hub&hubStyle=fountains`
-- **Share the Portal Hub (Solarpunk Meadow):** `<your-url>/?world=hub&hubStyle=meadow`
-- **Share Eric's Room directly:** `<your-url>/?world=eric-world`
-- **Share JP's Room directly:** `<your-url>/?world=jp-world`
+- **Share Eric's Room:** `<your-url>/?world=eric-world`
+- **Share JP's Meadow:** `<your-url>/?world=jp-world`
+- **Share any room, arriving at its far end:** `<your-url>/?world=fishpond&spawn=exit`
 
-You can also run **two completely separate servers** and connect them via **+ Link Portal (`P`) → Remote Federated URL**—stepping into the portal hands off your explorer name, aura color, and automatically spawns a glowing return portal back to your friend's server.
+The Rooms menu (`M`) copies a link to every room.
+
+You can also run **two completely separate servers** and connect them via **+ Link Portal (`P`) → Remote Federated URL**. Walking through the portal carries your explorer name and aura color to your friend's server, where you arrive with a return portal right behind you: turn around and walk back through it to go home.
