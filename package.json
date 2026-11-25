@@ -9,6 +9,7 @@
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "vite",
     "dev:server": "tsx watch packages/server/src/index.ts",
+    "start:server": "tsx packages/server/src/index.ts",
     "check:rooms": "node scripts/check-rooms.mjs",
     "build": "npm run check:rooms && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",

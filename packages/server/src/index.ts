@@ -111,6 +111,16 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
       sendJson(res, 405, { ok: false, error: 'method_not_allowed' });
       return;
     }
+    if (pathname === '/') {
+      sendJson(res, 200, {
+        ok: true,
+        service: 'portalverse-multiplayer',
+        wsPath: '/ws',
+        health: '/api/health',
+        totalPlayers: roomManager.getTotalPlayers(),
+      });
+      return;
+    }
     if (pathname === '/api/health') {
       sendJson(res, 200, {
         ok: true,
