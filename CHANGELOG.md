@@ -28,6 +28,21 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 - **The fire hydrant talks**
   - *Decision*: Within 5 m a speech bubble pops up reading はちみつタイム ("honey time"), and it goes away past 6 m.
 
+## Stutter when crossing portals — `fix/portal-crossing-stutter` (2026-11-25)
+
+### Fixed
+
+- **Freezes on every portal crossing (`engine/PortalPreviews.ts`)** — previews and snapshots hid the arrival portal along with its point light. The arrival portal's meshes are still hidden there, but its light now stays on.
+
+### Design & engineering decisions
+
+- **A room is lit the same in preview and when active**
+  - *Why*: Three.js builds shaders for a room's set of lights. One light fewer in preview meant every lit object in the room you entered, and the one you left, was rebuilt on the crossing frame (50–120 ms), with a further freeze of up to 2.7 s on first visits.
+  - *Decision*: Hide a portal by taking its meshes off all camera layers, which leaves lights underneath it on. In a headless Chrome run on Apple Metal, 23 consecutive crossings then stayed at 17 ms.
+  - *Tradeoff*: Preview rooms now include the arrival gate's glow, as they do once you are inside.
+
+JP confirmed the crossing stutter was gone in a local playtest.
+
 ## Platformer jump timing — `jp/platformer-input-fixes` (2026-11-25)
 
 ### Fixed
