@@ -6,7 +6,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 
 ### Added
 
-- **`G` switches walking physics between Classic and Platformer (`engine/movement.ts`, `AvatarController.ts`)** — Platformer ramps speed up over 0.25 s and brakes over 0.15 s, allows 35% steering in mid-air, falls faster than it rises, and scales jump height with how long `Space` is held (about 0.9 m tapped to 2.2 m held). Jumps still work just after running off a ledge. The HUD shows the mode and the browser remembers it. Platformer momentum turns with the player through portals.
+- **`G` switches walking physics between Classic and Platformer (`engine/movement.ts`, `AvatarController.ts`)** — Platformer ramps speed up over 0.25 s and brakes over 0.15 s, allows 35% steering in mid-air, falls faster than it rises, and scales jump height with how long `Space` is held (about 0.9 m tapped to 3.5 m held; a held jump peaks level with Classic's). Jumps still work just after running off a ledge. The HUD shows the mode and the browser remembers it. Platformer momentum turns with the player through portals.
 
 ### Design & engineering decisions
 

@@ -39,9 +39,9 @@ export const PLATFORMER_TUNING: Readonly<MovementTuning> = {
   accelTime: 0.25,
   stopTime: 0.15,
   airControl: 0.35,
-  jumpSpeed: 11.5,
+  jumpSpeed: 14.5, // A held jump peaks level with Classic's at 60 fps.
   riseGravity: 30,
-  releaseGravity: 75,
+  releaseGravity: 115,
   fallGravity: 48,
   maxFallSpeed: 30,
   coyoteTime: 0.1,

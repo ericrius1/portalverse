@@ -202,3 +202,29 @@ describe('platformer ledges', () => {
     expect(avatar.velocityY).toBeGreaterThan(0);
   });
 });
+
+describe('jump height', () => {
+  /** Highest point of one jump with Space held for `holdFrames`, at a given frame rate. */
+  function apex(mode: 'classic' | 'platformer', fps: number, holdFrames = Infinity) {
+    const { avatar } = setup();
+    avatar.setMovementMode(mode);
+    key('keydown', 'Space');
+    let best = 0;
+    for (let i = 0; i < fps * 2; i++) {
+      if (i === holdFrames) key('keyup', 'Space');
+      avatar.update(1 / fps, i / fps, false);
+      best = Math.max(best, avatar.position.y);
+    }
+    key('keyup', 'Space');
+    return best;
+  }
+
+  // Both modes vary a little with frame rate, in opposite directions, so they coincide at 60 fps.
+  it.each([[60, 0.05], [30, 0.3], [120, 0.3]])('reaches the same full height in both modes at %s fps', (fps, within) => {
+    expect(Math.abs(apex('platformer', fps) - apex('classic', fps))).toBeLessThan(within);
+  });
+
+  it('keeps the Platformer tap low', () => {
+    expect(Math.abs(apex('platformer', 60, 0) - 0.8)).toBeLessThan(0.15);
+  });
+});

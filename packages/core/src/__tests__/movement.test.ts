@@ -152,9 +152,9 @@ describe('platformer jumping', () => {
     for (let i = 1; i < heights.length; i++) expect(heights[i] - heights[i - 1]).toBeGreaterThan(0.1);
   });
 
-  it('jumps about 2.2 m when held and falls faster than it rises', () => {
+  it('jumps about 3.5 m when held and falls faster than it rises', () => {
     const { apex, rise, fall } = jump(platformer, true);
-    expect(Math.abs(apex - 2.2)).toBeLessThan(0.1);
+    expect(Math.abs(apex - 3.5)).toBeLessThan(0.1);
     expect(fall).toBeLessThan(rise);
   });
 
