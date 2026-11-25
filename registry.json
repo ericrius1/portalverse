@@ -43,12 +43,60 @@
       }
     },
     {
+      "id": "jp-garden",
+      "name": "Breezy Plant Garden",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Giant flat-coloured tropical plants from JP's portfolio garden, swaying in the breeze and bending away as you pass.",
+      "accentColor": "#f08a9b",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
       "id": "fishpond",
       "name": "Kāneʻohe Fishpond",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
       "description": "Hawaiian coastal loko iʻa — turquoise TSL lagoon, basalt kuapā walls, swaying palms, reef fish, and Koʻolau cliffs.",
       "accentColor": "#14b8a6",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "jp-reef",
+      "name": "Coral Reef Walk",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "A sandy path through a coral canyon on the sea floor: caustic light, jellyfish, fish schools, a turtle and a manta ray.",
+      "accentColor": "#22b8cf",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "jp-loft",
+      "name": "Night Loft",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "An open-plan loft above the night city, with warm lamps, a kitchen island and a shiba who follows you around.",
+      "accentColor": "#f4a259",
       "kind": "local",
       "allowFlight": true,
       "spawns": {

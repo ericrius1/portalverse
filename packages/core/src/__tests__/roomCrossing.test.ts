@@ -230,14 +230,18 @@ describe('room lifecycle across crossings', () => {
     const portal = room.portals[0].portal;
 
     expect(ctx().mode).toBe('preview');
-    room.activate(enter);
+    expect(ctx().player).toBeNull();
+    const player = { position: v(1, 0, 2) };
+    room.activate(enter, player);
     expect(ctx().mode).toBe('active');
+    expect(ctx().player).toBe(player);
     expect(counts).toEqual({ starts: 1, stops: 0 });
     ctx().enterPortal(portal);
     expect(enter).toHaveBeenCalledTimes(1);
 
     room.deactivate();
     expect(ctx().mode).toBe('preview');
+    expect(ctx().player).toBeNull();
     expect(counts).toEqual({ starts: 1, stops: 1 });
     ctx().enterPortal(portal);
     expect(enter).toHaveBeenCalledTimes(1);

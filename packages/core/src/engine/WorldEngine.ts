@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import type {
   AvatarState,
+  PlayerView,
   PortalDefinition,
   PortalVisualHandle,
   SpawnPoint,
@@ -98,6 +99,8 @@ export class WorldEngine {
   private readonly previousFeet = new THREE.Vector3();
   private readonly previousCamera = new THREE.Vector3();
   private readonly frameMotion: FrameMotion;
+  /** What the active room may read about the player. */
+  private readonly playerView: PlayerView;
   private readonly scratchPlayerCenter = new THREE.Vector3();
   private readonly scratchVecA = new THREE.Vector3();
   private readonly transitAvatarState: {
@@ -164,6 +167,7 @@ export class WorldEngine {
         (this.transitRig.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
       },
     );
+    this.playerView = { position: this.avatar.position };
     this.frameMotion = {
       previousFeet: this.previousFeet,
       feet: this.avatar.position,
@@ -299,7 +303,7 @@ export class WorldEngine {
       this.skipNextSpeedSample = true;
     }
 
-    room.activate(portal => this.requestPortalEntry(portal));
+    room.activate(portal => this.requestPortalEntry(portal), this.playerView);
 
     // Preload next & previous neighbors immediately so transitions never stall
     void this.previews?.syncPinnedForRoom(room);

@@ -219,9 +219,20 @@ export interface PlatformCollider {
   topY: number;
 }
 
+/** What a room can read about the local player while it is the active room. */
+export interface PlayerView {
+  /** The player's feet, in this room's coordinates. Live and read-only: never modify it. */
+  readonly position: THREE.Vector3;
+}
+
 export interface WorldContext {
   /** Each mount is independent. Preview mounts run scene animation without player input. */
   readonly mode: 'active' | 'preview';
+  /**
+   * The local player while this room is active, or null while it's a preview seen
+   * through a portal. Read it in `onUpdate` each frame; it changes as rooms switch.
+   */
+  readonly player: PlayerView | null;
   /**
    * Install player-only behavior each time this instance becomes the active room.
    * Return a cleanup function to stop it when the player leaves and the room goes

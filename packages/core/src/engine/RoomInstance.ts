@@ -1,7 +1,7 @@
 import catalog from '../../../../registry.json';
 import { routeGates, threshold, SIDE_PORTALS } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
-import type { RegistryFile, PlatformCollider, PortalDefinition, PortalVisualHandle, SpawnPoint, WorldModule } from '../types';
+import type { RegistryFile, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, WorldModule } from '../types';
 import { createArchwayPortal } from './PortalMesh';
 
 const noEntry = (): void => {};
@@ -17,6 +17,7 @@ export class RoomInstance {
   readonly platforms: PlatformCollider[] = [];
   terrainHeight: ((x: number, z: number) => number) | null = null;
   private active = false;
+  private player: PlayerView | null = null;
   private enter: (portal: PortalDefinition) => void = noEntry;
   private readonly activation: Array<() => void | (() => void)> = [];
   private activeCleanups: Array<() => void> = [];
@@ -54,6 +55,7 @@ export class RoomInstance {
         scene: room.scene,
         renderer,
         get mode() { return room.active ? 'active' : 'preview'; },
+        get player() { return room.player; },
         onActivate: fn => room.activation.push(fn),
         enterPortal: portal => room.enter(portal),
         addPortal: portal => registerCustom(createArchwayPortal(portal, { passage: true })),
@@ -80,8 +82,9 @@ export class RoomInstance {
   }
 
   /** Make this the room the player is in and start its player-only behavior. */
-  activate(enter: (portal: PortalDefinition) => void): void {
+  activate(enter: (portal: PortalDefinition) => void, player: PlayerView | null = null): void {
     this.enter = enter;
+    this.player = player;
     if (this.active) return;
     this.active = true;
     for (const fn of this.activation) {
@@ -98,6 +101,7 @@ export class RoomInstance {
   deactivate(): void {
     if (!this.active) return;
     this.active = false;
+    this.player = null;
     this.enter = noEntry;
     const cleanups = this.activeCleanups.reverse();
     this.activeCleanups = [];

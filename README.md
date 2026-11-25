@@ -6,12 +6,15 @@ Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through t
 
 ## Features
 
-- **5-Room Seamless Circular Loop** (`registry.json`):
+- **8-Room Seamless Circular Loop** (`registry.json`):
   1. **Eric's Room (`worlds/eric-world/index.ts`)** — Cyan holographic studio (`ericrius1`).
   2. **JP's Solarpunk Meadow (`worlds/jp-world/index.ts`)** — Sunlit meadow with 26,000 Bezier-elastica grass blades, California wildflowers, and solar arches.
-  3. **Kāneʻohe Fishpond (`worlds/fishpond/index.ts`)** — Hawaiian coastal *loko iʻa* boardwalk over turquoise TSL lagoon water, basalt walls, swaying palms, reef fish, and Koʻolau cliffs.
-  4. **Laser Forcefield Arena (`worlds/laser-lab/index.ts`)** — Pitch-black light-show gallery with sweeping volumetric TSL laser fans, pulsing scanline forcefield walls, and floating prisms.
-  5. **Alpine Snow Run (`worlds/alpine-sled/index.ts`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow.
+  3. **Breezy Plant Garden (`worlds/jp-garden/index.ts`)** — Giant flat-coloured tropical plants from JP's portfolio garden, swaying in the breeze and bending away as you pass.
+  4. **Kāneʻohe Fishpond (`worlds/fishpond/index.ts`)** — Hawaiian coastal *loko iʻa* boardwalk over turquoise TSL lagoon water, basalt walls, swaying palms, reef fish, and Koʻolau cliffs.
+  5. **Coral Reef Walk (`worlds/jp-reef/index.ts`)** — A sea-floor path through a coral canyon with caustic light, jellyfish, fish schools, a turtle and a manta ray.
+  6. **Night Loft (`worlds/jp-loft/index.ts`)** — An open-plan loft above the night city, with warm lamps and a shiba that follows you around.
+  7. **Laser Forcefield Arena (`worlds/laser-lab/index.ts`)** — Pitch-black light-show gallery with sweeping volumetric TSL laser fans, pulsing scanline forcefield walls, and floating prisms.
+  8. **Alpine Snow Run (`worlds/alpine-sled/index.ts`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow.
 - **Seamless Circular Portals & 3rd-Person Traversal**:
   - Perspective-correct live portal windows at screen resolution, two rooms deep along the loop, so the portal at the far end of the next room is already live and stays steady as you walk through. Portals beyond that show snapshots.
   - A distance-compressed lens that keeps distant doors small, zero-dip 3rd-person walk-through crossings (forward or backing in) with mirrored character transit, and an organic liquid-membrane warp that builds as you walk into a portal's warp zone, strongest at the ring and a little stronger when you're moving.
@@ -56,12 +59,16 @@ portalverse/
 │   │   ├── src/engine/      # WebGPU WorldEngine, room crossings, PortalPreviews, PortalRipplePass, AvatarController
 │   │   ├── src/shaders/     # Three.js WebGPU TSL portal shaders
 │   │   ├── src/net/         # MultiplayerClient (WebSocket + auto-reconnect + offline mode)
-│   │   └── src/portal/      # defineRoom, roomLayout, WorldRegistry & federated URL handoff
+│   │   ├── src/portal/      # defineRoom, roomLayout, WorldRegistry & federated URL handoff
+│   │   └── src/rooms/       # kit.ts: model loading, grounding & cleanup helpers for rooms
 │   └── server/              # Authoritative WebSocket room, presence & dynamic portal server
 ├── worlds/
 │   ├── eric-world/          # Eric's personal room
 │   ├── jp-world/            # JP's Solarpunk Meadow (and its meadow shaders)
+│   ├── jp-garden/           # Breezy Plant Garden
 │   ├── fishpond/            # Kāneʻohe Fishpond
+│   ├── jp-reef/             # Coral Reef Walk
+│   ├── jp-loft/             # Night Loft
 │   ├── laser-lab/           # Laser Forcefield Arena
 │   └── alpine-sled/         # Alpine Snow Run
 ├── registry.json            # World catalog, loop order & spawn manifest

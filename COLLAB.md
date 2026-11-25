@@ -39,6 +39,7 @@ The engine gives every local room a framed entrance and exit on the Z axis. Leav
 
 - Add `worlds/<id>/index.ts` and a local entry with a default spawn in `registry.json`. The room directory and route discover it automatically. Use `[0, 0, 35.75]` and yaw zero to start just inside the entrance.
 - Put scenery and animation in `mount`. Use `ctx.onDispose` for cleanup. Keep permanent scene objects instance-local.
+- Read `ctx.player` in `onUpdate` to react to the player: it holds their feet position while your room is active and is `null` while it's a preview. The garden bends plants away from it and the loft's shiba follows it.
 - Use `ctx.onActivate` for player-only behavior such as input listeners or audio, and return a function that stops it. The engine keeps the room a player just left mounted as a preview so turning back is instant, so a room can activate and deactivate many times. `ctx.mode` reports `'active'` or `'preview'`.
 - Use the manifest’s `portals` array for up to five optional links. Each takes an ID, label, position, and target world. Use the target spawn `entrance` or `exit` to meet its main route, or name a spawn in the target manifest.
 - For custom portal art, reserve slots with `customPortalSlots` in the manifest, then use `ctx.addPortal` or `ctx.registerCustomPortal` during mount. Unreserved slots are available to player-placed portals, including offline play.
@@ -46,7 +47,7 @@ The engine gives every local room a framed entrance and exit on the Z axis. Leav
 
 ### Room budgets
 
-Keep room assets under `worlds/<id>/` and import them through Vite (for example, `import mural from './mural.png?url'`). Run `npm run check:rooms` while authoring and `npm run build` before submitting.
+Keep room assets under `worlds/<id>/` and import them through Vite (for example, `import mural from './mural.png?url'`, or `import.meta.glob('./assets/*.glb', { query: '?url', import: 'default', eager: true })` for a folder). `@portalverse/core/rooms/kit` has `loadGLB`, `groundModel`, `disposeObject` and `seededRandom` for rooms that load models; models must be uncompressed (no Draco, meshopt or KTX2). Note where third-party assets came from in a `CREDITS.md` in the room folder. Run `npm run check:rooms` while authoring and `npm run build` before submitting.
 
 | Check | Starting limit |
 | --- | --- |

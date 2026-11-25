@@ -203,7 +203,10 @@ describe('WorldRegistry', () => {
     expect(reg.listWorlds().map((w) => w.id)).toEqual([
       'eric-world',
       'jp-world',
+      'jp-garden',
       'fishpond',
+      'jp-reef',
+      'jp-loft',
       'laser-lab',
       'alpine-sled',
     ]);

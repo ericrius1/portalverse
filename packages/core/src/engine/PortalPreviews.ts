@@ -85,7 +85,8 @@ interface WindowView {
 const SNAPSHOT_SIZE = 512;
 const SNAPSHOT_RADIUS = 6.2;
 const SNAPSHOT_REF_DISTANCE = PORTAL_LENS_REF_DIST;
-const MAX_HOT_ROOMS = 6;
+/** Rooms kept mounted at once. Above this, rooms away from the player are unloaded and remounted when needed. */
+const MAX_HOT_ROOMS = 10;
 const LIVE_FADE_DURATION_S = 0.55;
 
 const up = new THREE.Vector3(0, 1, 0);
