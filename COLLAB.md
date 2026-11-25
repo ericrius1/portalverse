@@ -10,7 +10,7 @@ This repo is structured so you both—plus **Claude Opus 5.5** and **Gemini 4 Ne
 
 ### Building your room
 
-Open `/?world=jp-world` while editing `worlds/jp-world/index.ts`. Eric can do the same in `worlds/eric-world/index.ts`. To see your room through a portal, open a second tab at the room before yours in the loop (for JP that's `/?world=eric-world`) and look down the room at its exit. Move sideways to check the perspective, then walk through or click the opening to enter.
+Open `/?world=jp-world` while editing `worlds/jp-world/index.ts`. Eric can do the same in `worlds/eric-world/index.ts`. To see your room through a portal, open a second tab at the room before yours in the loop (for JP that's `/?world=eric-world`) and look down the room at its exit. Move sideways to check the perspective, then walk through the opening to enter.
 
 Each room exports `defineRoom(id, { mount(ctx) })`. The engine calls the same builder for a visit and for a view through a local portal. Keep mutable scene objects inside `mount` so each instance can animate and unload independently.
 
@@ -42,7 +42,7 @@ The engine gives every local room a framed entrance and exit on the Z axis. Leav
 - Use `ctx.onActivate` for player-only behavior such as input listeners or audio, and return a function that stops it. The engine keeps the room a player just left mounted as a preview so turning back is instant, so a room can activate and deactivate many times. `ctx.mode` reports `'active'` or `'preview'`.
 - Use the manifest’s `portals` array for up to five optional links. Each takes an ID, label, position, and target world. Use the target spawn `entrance` or `exit` to meet its main route, or name a spawn in the target manifest.
 - For custom portal art, reserve slots with `customPortalSlots` in the manifest, then use `ctx.addPortal` or `ctx.registerCustomPortal` during mount. Unreserved slots are available to player-placed portals, including offline play.
-- Every local preview uses the destination scene and a common up direction, rendered at screen resolution. Crossing a main frame preserves the player’s position relative to the threshold and viewing direction. Up to four visible windows render one level deep; portals beyond those show snapshots. Remote links use URL handoffs.
+- Every local preview uses the destination scene and a common up direction, rendered at screen resolution. Crossing a main frame preserves the player’s position relative to the threshold and viewing direction. Up to four visible windows render live, along with the route gate at the far end of each room they show; portals beyond those show snapshots. Remote links use URL handoffs.
 
 ### Room budgets
 

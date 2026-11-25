@@ -13,7 +13,7 @@ Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through t
   4. **Laser Forcefield Arena (`worlds/laser-lab/index.ts`)** — Pitch-black light-show gallery with sweeping volumetric TSL laser fans, pulsing scanline forcefield walls, and floating prisms.
   5. **Alpine Snow Run (`worlds/alpine-sled/index.ts`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow.
 - **Seamless Circular Portals & 3rd-Person Traversal**:
-  - Perspective-correct live depth-1 portal windows, rendered at screen resolution, paired with POV-matched depth-2 snapshots that crossfade smoothly upon entry.
+  - Perspective-correct live portal windows at screen resolution, two rooms deep along the loop, so the portal at the far end of the next room is already live and stays steady as you walk through. Portals beyond that show snapshots.
   - Shared forced-perspective scaling for distant doors, zero-dip 3rd-person walk-through crossings with mirrored character transit, and a brief organic liquid-membrane wobble post-process triggered as the portal fills the screen.
 - **Round Preload Gate**:
   - Preloads WebGPU, adjacent rooms, portal snapshots, and post-processing pipelines behind a circular click-to-enter curtain gate for stutter-free room transitions.
@@ -37,7 +37,7 @@ The repo pins pnpm 12.23.0 through `packageManager` in `package.json`, and CI in
 - **Move / Fly:** `WASD` or Arrow keys
 - **Sprint:** Hold `Shift` while moving (the two circular gates are 5 sprint seconds apart)
 - **Look:** Click & drag anywhere on canvas
-- **Enter Portal:** Walk/fly straight through any circular portal, click it, or press `E` nearby
+- **Enter Portal:** Walk/fly straight through any circular portal, or press `E` while facing it nearby
 - **Ascend / Descend (Flight) / Jump:** `Space` / `C` (or `Q`)
 - **Toggle Flight Mode:** `F`
 - **Toggle 1st / 3rd Person Camera:** `V`

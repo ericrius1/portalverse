@@ -24,6 +24,7 @@ import {
 } from './AvatarController';
 import { createArchwayPortal, isOneWay } from './PortalMesh';
 import {
+  canOfferPortalPrompt,
   carryThroughPortal,
   crossingYawDelta,
   detectFeetCrossing,
@@ -38,7 +39,6 @@ export interface WorldEngineCallbacks {
   loadLocalWorld?: (id: string) => Promise<WorldModule> | undefined;
   onWorldLoaded?: (manifest: WorldManifest) => void;
   onPortalPromoted?: (manifest: WorldManifest) => void;
-  onPortalHover?: (portal: PortalDefinition | null, screenX: number, screenY: number) => void;
   onPortalProximity?: (portal: PortalDefinition | null) => void;
   onPortalEnter?: (portal: PortalDefinition, crossed: boolean) => void;
   onFlightChange?: (flying: boolean) => void;
@@ -76,8 +76,6 @@ export class WorldEngine {
   private readonly transitAvatarPos = new THREE.Vector3();
   private mountSequence = 0;
   private readonly dynamicPortalRoot = new THREE.Group();
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly pointerNdc = new THREE.Vector2(-99, -99);
 
   private currentManifest: WorldManifest | null = null;
   private dynamicPortals: PortalVisualHandle[] = [];
@@ -100,10 +98,7 @@ export class WorldEngine {
   private currentFrameDt = 0;
   private smoothedCamSpeed = 0;
   private skipNextSpeedSample = true;
-  private hoveredPortal: PortalVisualHandle | null = null;
   private nearestPortal: PortalVisualHandle | null = null;
-  private pointerScreenX = 0;
-  private pointerScreenY = 0;
   private inputLocked = false;
   private portalCooldownUntil = 0;
   private animFrameId = 0;
@@ -157,8 +152,6 @@ export class WorldEngine {
 
     window.addEventListener('resize', this.handleResize);
     window.addEventListener('keydown', this.handleKeyDown);
-    this.renderer.domElement.addEventListener('pointermove', this.handlePointerMove);
-    this.renderer.domElement.addEventListener('click', this.handleClick);
   }
 
   /** Must be awaited before rendering any frame (Three.js WebGPURenderer requirement). */
@@ -219,9 +212,8 @@ export class WorldEngine {
   }
 
   /**
-   * Capture POV-matched portal snapshots for every local room in the loop so
-   * depth-2 portals visible inside neighboring rooms show the real next room
-   * and gracefully crossfade into live depth-1 previews upon entering.
+   * Capture POV-matched portal snapshots for every local room in the loop, used for
+   * portals too far away to draw live and for rooms still loading.
    */
   async prewarmPortalSnapshots(
     worldIds: string[],
@@ -319,8 +311,8 @@ export class WorldEngine {
   }
 
   /**
-   * Enter a portal via click or E key. For local passage portals, smoothly walk the
-   * character through the circular opening in 3rd-person with the camera trailing naturally!
+   * Enter a portal via E key or programmatic trigger. For local passage portals,
+   * smoothly walk the character through the circular opening with the camera following.
    */
   private requestPortalEntry(portal: PortalDefinition): void {
     const now = performance.now();
@@ -365,8 +357,14 @@ export class WorldEngine {
     this.dynamicPortals = [];
 
     const slots = livePortalSlots(this.currentManifest);
-    for (let i = 0; i < Math.min(slots, portals.length); i++) {
-      const handle = createArchwayPortal(portals[i], { passage: true });
+    let playerPortalsPlaced = 0;
+    for (const portal of portals) {
+      const isReturnPortal = Boolean(portal.remoteUrl && portal.id.startsWith('return-'));
+      if (!isReturnPortal) {
+        if (playerPortalsPlaced >= slots) continue;
+        playerPortalsPlaced++;
+      }
+      const handle = createArchwayPortal(portal, { passage: true });
       this.dynamicPortalRoot.add(handle.group);
       this.dynamicPortals.push(handle);
     }
@@ -385,11 +383,9 @@ export class WorldEngine {
   }
 
   private swapOutCurrentRoom(retainInPreviewCache: boolean): void {
-    this.hoveredPortal = null;
     this.nearestPortal = null;
     this.transitPortal = undefined;
     this.walkThrough = undefined;
-    this.callbacks.onPortalHover?.(null, 0, 0);
     this.callbacks.onPortalProximity?.(null);
 
     this.previews?.releaseViews();
@@ -567,7 +563,7 @@ export class WorldEngine {
       handle.setProximity?.(prox01);
       handle.update?.(dt, this.elapsed);
 
-      if (dist < closestDist) {
+      if (dist < closestDist && canOfferPortalPrompt(handle, this.avatar.position, this.avatar.yaw)) {
         closestDist = dist;
         closest = handle;
       }
@@ -620,36 +616,6 @@ export class WorldEngine {
       this.callbacks.onPortalProximity?.(promptCandidate?.portal ?? null);
     }
 
-    // Hover raycast for clickable portals
-    if (!this.inputLocked && portals.length > 0) {
-      this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-      let hitHandle: PortalVisualHandle | null = null;
-      let hitDistance = Infinity;
-
-      for (const handle of portals) {
-        const hits = this.raycaster.intersectObjects(handle.hitTargets, true);
-        if (hits.length > 0 && hits[0].distance < hitDistance) {
-          hitDistance = hits[0].distance;
-          hitHandle = handle;
-        }
-      }
-
-      if (hitHandle !== this.hoveredPortal) {
-        this.hoveredPortal?.setHovered?.(false);
-        this.hoveredPortal = hitHandle;
-        this.hoveredPortal?.setHovered?.(true);
-        this.renderer.domElement.style.cursor = hitHandle ? 'pointer' : 'grab';
-      }
-      this.callbacks.onPortalHover?.(hitHandle?.portal ?? null, this.pointerScreenX, this.pointerScreenY);
-    }
-
-    // Active room portals always stay at exact 1.0x physical scale (never shrinking as you walk up).
-    for (const handle of portals) {
-      if (handle.aperture.userData.routeGate) {
-        handle.group.scale.setScalar(1);
-      }
-    }
-
     // Track smoothed camera speed (ignoring single-frame portal coordinate swaps)
     if (this.skipNextSpeedSample) {
       this.skipNextSpeedSample = false;
@@ -691,22 +657,6 @@ export class WorldEngine {
     }
   };
 
-  private readonly handlePointerMove = (e: PointerEvent): void => {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    this.pointerScreenX = e.clientX;
-    this.pointerScreenY = e.clientY;
-  };
-
-  private readonly handleClick = (): void => {
-    if (this.inputLocked) return;
-    if (!this.avatar.wasLastPointerClick()) return;
-    if (this.hoveredPortal) {
-      this.requestPortalEntry(this.hoveredPortal.portal);
-    }
-  };
-
   dispose(): void {
     this.mountSequence++;
     this.running = false;
@@ -715,8 +665,6 @@ export class WorldEngine {
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDown);
-    this.renderer.domElement.removeEventListener('pointermove', this.handlePointerMove);
-    this.renderer.domElement.removeEventListener('click', this.handleClick);
     this.unmountCurrentWorld();
     this.ripplePass.dispose();
     this.transitRig.dispose();

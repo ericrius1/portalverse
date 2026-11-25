@@ -2,13 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three/webgpu';
 import catalog from '../../../../registry.json';
 import type { PortalDefinition, PortalHandoffPayload, PortalVisualHandle, RegistryFile, WorldContext, WorldModule } from '../types';
-import { ROUTE_LENGTH, routeGates, threshold } from '../portal/roomLayout';
+import { PORTAL_CENTER_Y, PORTAL_RADIUS, ROUTE_LENGTH, routeGates, threshold } from '../portal/roomLayout';
 import { defineRoom } from '../portal/defineRoom';
 import { createReturnPortalFromHandoff, placeHandoffArrival } from '../portal/handoff';
 import { createArchwayPortal } from '../engine/PortalMesh';
 import { RoomInstance } from '../engine/RoomInstance';
 import { PortalPreviews, portalPixels } from '../engine/PortalPreviews';
 import {
+  canOfferPortalPrompt,
   carryThroughPortal,
   crossingYawDelta,
   detectFeetCrossing,
@@ -35,19 +36,48 @@ function sidePortal(overrides: Partial<PortalDefinition> = {}): PortalVisualHand
   return handle;
 }
 
-/** Stand-in renderer that records each render's target and viewport instead of drawing. */
+interface RecordedRender {
+  scene: THREE.Object3D;
+  target: THREE.RenderTarget | null;
+  viewport: THREE.Vector4 | null;
+  /** The camera's full view-projection at render time. */
+  viewProjection: THREE.Matrix4;
+}
+
+/** Stand-in renderer that records what each render would draw instead of drawing. */
 function fakeRenderer(width = 2560, height = 1440) {
   const size = new THREE.Vector2(width, height);
   let current: THREE.RenderTarget | null = null;
-  const renders: Array<{ target: THREE.RenderTarget | null; viewport: THREE.Vector4 | null }> = [];
+  const renders: RecordedRender[] = [];
   const renderer = {
     coordinateSystem: THREE.WebGPUCoordinateSystem,
     getDrawingBufferSize: (out: THREE.Vector2) => out.copy(size),
     getRenderTarget: () => current,
     setRenderTarget: (target: THREE.RenderTarget | null) => { current = target; },
-    render: () => { renders.push({ target: current, viewport: current ? current.viewport.clone() : null }); },
+    render: (scene: THREE.Object3D, camera: THREE.Camera) => {
+      renders.push({
+        scene,
+        target: current,
+        viewport: current ? current.viewport.clone() : null,
+        viewProjection: camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse),
+      });
+    },
   } as unknown as THREE.WebGPURenderer;
   return { renderer, renders, size };
+}
+
+/** A live window's state, read from the previews' private bookkeeping. */
+function windowFor(previews: PortalPreviews, aperture: THREE.Object3D) {
+  const views = (previews as unknown as {
+    views: Map<THREE.Object3D, { slot: { bounds: THREE.Vector4; material: THREE.Material; liveBlend: { value: number } } }>;
+  }).views;
+  return views.get(aperture)?.slot;
+}
+
+/** Where a world point lands on screen, given the camera of a render cropped to `bounds`. */
+function screenPixel(point: THREE.Vector3, viewProjection: THREE.Matrix4, bounds: THREE.Vector4): THREE.Vector2 {
+  const ndc = point.clone().applyMatrix4(viewProjection);
+  return new THREE.Vector2(bounds.x + (ndc.x + 1) / 2 * bounds.z, bounds.y + (1 - ndc.y) / 2 * bounds.w);
 }
 
 const emptyRoom = (id: string): WorldModule => defineRoom(id, { mount: () => {} });
@@ -67,11 +97,23 @@ describe('stepping through a portal', () => {
     expect(viewerSide(exit, v(0, 3, -50))).toBe(1);
   });
 
-  it('only counts feet that pass through the opening itself', () => {
+  it('only counts feet that pass through the circular opening itself', () => {
     const exit = gate('eric-world', 'exit');
     expect(detectFeetCrossing(exit, v(3.2, 0, -36.0), v(3.2, 0, -36.5))).toBeNull();
     expect(detectFeetCrossing(exit, v(0, 6, -36.0), v(0, 6, -36.5))).toBeNull();
     expect(detectFeetCrossing(exit, v(0, 0, -30), v(0, 0, -35))).toBeNull();
+    // Flying corner outside the circular ring (within the old bounding rectangle) is rejected.
+    expect(detectFeetCrossing(exit, v(2.6, 4.4, -36.0), v(2.6, 4.4, -36.5))).toBeNull();
+  });
+
+  it('only offers the [E] prompt when on an allowed entry side and facing the portal', () => {
+    const exit = gate('eric-world', 'exit');
+    // Facing -Z toward exit from inside the room -> offered
+    expect(canOfferPortalPrompt(exit, v(0, 0, -32), 0)).toBe(true);
+    // Facing +Z away from exit -> not offered
+    expect(canOfferPortalPrompt(exit, v(0, 0, -32), Math.PI)).toBe(false);
+    // On the back side of a one-way gate, even facing it -> not offered
+    expect(canOfferPortalPrompt(exit, v(0, 0, -40), Math.PI)).toBe(false);
   });
 
   it('lets two-way portals be entered from either face', () => {
@@ -247,7 +289,7 @@ describe('live portal windows', () => {
     const fake = fakeRenderer(width, height);
     const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
     const active = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
-    await previews.prepare('jp-world');
+    const jp = (await previews.prepare('jp-world'))!;
     const viewer = new THREE.PerspectiveCamera(62, width / height, 0.1, 450);
     viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
     const exit = active.portals.find(p => p.portal.id === 'exit')!;
@@ -258,7 +300,7 @@ describe('live portal windows', () => {
       viewer.updateProjectionMatrix();
       viewer.updateMatrixWorld();
       previews.render(active.portals, viewer, 1 / 60, 1);
-      const live = fake.renders.find(r => r.target);
+      const live = fake.renders.find(r => r.scene === jp.scene);
       const bounds = portalPixels(exit.aperture, viewer, fake.size, new THREE.Vector4());
       return { live: live!, bounds };
     };
@@ -298,6 +340,92 @@ describe('live portal windows', () => {
   });
 });
 
+describe('the portal two rooms ahead', () => {
+  // Eric's entrance leads back to Alpine, whose far gate (its entrance) leads to Laser.
+  const lantern = v(2.5, 2.85, -ROUTE_LENGTH / 2 + 20); // 20 m into Laser, seen from its exit
+  const W = 1920, H = 1080;
+
+  async function ericLookingAtAlpine() {
+    const fake = fakeRenderer(W, H);
+    const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
+    const eric = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
+    eric.activate(() => {});
+    // With snapshots captured, any fallback to them at the crossing would show as a crossfade.
+    await previews.prewarmSnapshots(rooms.map(room => room.id), eric);
+    const alpine = (await previews.prepare('alpine-sled'))!;
+    const laser = (await previews.prepare('laser-lab'))!;
+    const alpineFar = alpine.portals.find(p => p.portal.id === 'entrance')!;
+    expect(alpineFar.portal.targetWorldId).toBe('laser-lab');
+
+    const viewer = new THREE.PerspectiveCamera(62, W / H, 0.1, 450);
+    viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
+    const place = (x: number, z: number) => {
+      viewer.position.set(x, 3.5, z);
+      viewer.rotation.set(-0.06, Math.PI, 0, 'YXZ'); // 3rd-person height, looking +Z
+      viewer.updateProjectionMatrix();
+      viewer.updateMatrixWorld();
+    };
+    const frame = (handles: PortalVisualHandle[]) => {
+      fake.renders.length = 0;
+      previews.render(handles, viewer, 1 / 60, 1);
+      return fake.renders;
+    };
+    return { previews, eric, alpine, laser, alpineFar, viewer, place, frame };
+  }
+
+  it('draws the far portal live while you walk toward the near one', async () => {
+    const { previews, eric, laser, alpineFar, place, frame } = await ericLookingAtAlpine();
+    place(0, ROUTE_LENGTH / 2 - 20);
+    const renders = frame(eric.portals);
+    const farWindow = windowFor(previews, alpineFar.aperture)!;
+    expect(renders.some(r => r.scene === laser.scene)).toBe(true);
+    expect(alpineFar.aperture.material).toBe(farWindow.material);
+    expect(farWindow.liveBlend.value).toBe(1);
+    expect(alpineFar.group.scale.x).toBe(1);
+    previews.clear();
+  });
+
+  it.each([0, 1.5])('keeps it steady through the crossing, %s m off-centre', async lateral => {
+    const { previews, eric, alpine, laser, alpineFar, viewer, place, frame } = await ericLookingAtAlpine();
+
+    // Just before the near threshold, in Eric's room.
+    place(lateral, ROUTE_LENGTH / 2 - 0.01);
+    const before = frame(eric.portals);
+    const beforeWindow = windowFor(previews, alpineFar.aperture)!;
+    const lanternBefore = screenPixel(lantern, before.find(r => r.scene === laser.scene)!.viewProjection, beforeWindow.bounds);
+    // The near room fills the view here, so Alpine is drawn straight to the screen.
+    const alpineRender = before.find(r => r.scene === alpine.scene)!;
+    expect(alpineRender.target).toBeNull();
+    const fullScreen = new THREE.Vector4(0, 0, W, H);
+    const ringCenter = alpineFar.aperture.getWorldPosition(new THREE.Vector3());
+    const ringTop = alpineFar.group.localToWorld(v(0, PORTAL_CENTER_Y + PORTAL_RADIUS, 0));
+    const ringBefore = screenPixel(ringCenter, alpineRender.viewProjection, fullScreen)
+      .distanceTo(screenPixel(ringTop, alpineRender.viewProjection, fullScreen));
+
+    // The engine promotes Alpine as the camera crosses, then the same frame renders from inside it.
+    previews.releaseViews();
+    const active = previews.takeReady('alpine-sled')!;
+    expect(active).toBe(alpine);
+    eric.deactivate();
+    previews.retain('eric-world', eric);
+    alpine.activate(() => {});
+    place(lateral, ROUTE_LENGTH / 2 + 0.01 - ROUTE_LENGTH);
+    const after = frame(alpine.portals);
+    const afterWindow = windowFor(previews, alpineFar.aperture)!;
+    const lanternAfter = screenPixel(lantern, after.find(r => r.scene === laser.scene)!.viewProjection, afterWindow.bounds);
+    viewer.updateMatrixWorld();
+    const viewerVp = viewer.projectionMatrix.clone().multiply(viewer.matrixWorldInverse);
+    const ringAfter = screenPixel(ringCenter, viewerVp, fullScreen).distanceTo(screenPixel(ringTop, viewerVp, fullScreen));
+
+    // Same pixels, same size, and the live view carries on rather than restarting from the snapshot.
+    expect(lanternAfter.distanceTo(lanternBefore)).toBeLessThan(0.25);
+    expect(ringAfter / ringBefore).toBeCloseTo(1, 2);
+    expect(afterWindow.liveBlend.value).toBe(1);
+    expect(alpineFar.group.scale.x).toBe(1);
+    previews.clear();
+  });
+});
+
 describe('federated arrival', () => {
   const handoff: PortalHandoffPayload = {
     version: 1,
@@ -309,17 +437,22 @@ describe('federated arrival', () => {
     sentAt: 0,
   };
 
-  it('puts the way home right behind the traveller, clear of the entrance gate', () => {
+  it('puts the way home behind the 3rd-person chase camera, clear of the entrance gate, and silent until turned toward', () => {
     const spawn = rooms[0].spawns.default;
     const { arrival, portal } = placeHandoffArrival(spawn);
     const definition = createReturnPortalFromHandoff(handoff, portal.position, portal.yaw)!;
     expect(definition.oneWay).toBe(true);
     expect(arrival.yaw).toBe(spawn.yaw);
-    expect(definition.position[2]).toBeGreaterThan(arrival.position[2]);
+    // Return portal sits > 5.6 m behind the avatar (behind the chase camera) and clear of entrance.
+    expect(definition.position[2] - arrival.position[2]).toBeGreaterThan(5.6);
     expect(definition.position[2]).toBeLessThan(ROUTE_LENGTH / 2 - 5);
 
     const home = createArchwayPortal(definition, { passage: true });
     home.group.updateMatrixWorld(true);
+    // Facing forward on arrival does not offer the [E] prompt for the return portal behind you.
+    expect(canOfferPortalPrompt(home, v(...arrival.position), arrival.yaw)).toBe(false);
+    // Turning around to face it offers the prompt.
+    expect(canOfferPortalPrompt(home, v(...arrival.position), arrival.yaw + Math.PI)).toBe(true);
     // The traveller starts in front of it...
     expect(home.group.worldToLocal(v(...arrival.position)).z).toBeGreaterThan(0);
     // ...turning around and walking back goes home...

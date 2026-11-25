@@ -262,10 +262,10 @@ function shiftHue(hex: string): string {
   return `#${[b, r, g].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** How far into the room a federated traveller appears, leaving space for the way home. */
-export const HANDOFF_ARRIVAL_CLEARANCE = 6;
-/** Gap between the traveller and the return portal behind them at arrival. */
-const RETURN_PORTAL_GAP = 0.5;
+/** How far into the room a federated traveller appears, leaving room behind the chase camera for the way home. */
+export const HANDOFF_ARRIVAL_CLEARANCE = 12;
+/** Gap between the traveller and the return portal behind them (> 5.6 m 3rd-person camera distance). */
+const RETURN_PORTAL_GAP = 6.5;
 
 export interface HandoffArrival {
   /** Where the traveller appears, facing the same way as the room's spawn. */

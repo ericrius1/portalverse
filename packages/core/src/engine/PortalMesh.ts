@@ -86,38 +86,21 @@ export function createArchwayPortal(
   light.position.set(0, centerY, 1.0);
   group.add(light);
 
-  // Generous clickable target aligned with the circular opening
-  const hitGeo = new THREE.CircleGeometry(radius + 0.15, 32);
-  const hitMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
-  const hitMesh = new THREE.Mesh(hitGeo, hitMat);
-  hitMesh.position.y = centerY;
-  group.add(hitMesh);
-
-  let targetHover = 0;
-  let currentHover = 0;
-
   return {
     portal,
     group,
     passage: options.passage ?? true,
     aperture: vortex,
-    hitTargets: [hitMesh, vortex, outerRing],
     triggerCenter: new THREE.Vector3(portal.position[0], portal.position[1] + centerY, portal.position[2]),
     triggerRadius: portal.triggerRadius ?? radius,
-    setHovered: (h) => {
-      targetHover = h ? 1 : 0;
-    },
     setProximity: (p) => {
       vortexUniforms.proximity.value = p;
+      ringHover.value = p * 0.65;
     },
-    update: (dt, elapsed) => {
-      currentHover += (targetHover - currentHover) * Math.min(1, dt * 8);
-      vortexUniforms.hover.value = currentHover;
-      ringHover.value = currentHover;
+    update: (_dt, elapsed) => {
       halo.rotation.z = elapsed * 0.55;
       halo.rotation.y = Math.sin(elapsed * 0.9) * 0.14;
-      halo.scale.setScalar(1 + currentHover * 0.06);
-      light.intensity = 3.2 + currentHover * 2.5 + Math.sin(elapsed * 3.1) * 0.4;
+      light.intensity = 3.2 + Math.sin(elapsed * 3.1) * 0.4;
     },
     dispose: () => {
       outerRingGeo.dispose();
@@ -129,8 +112,6 @@ export function createArchwayPortal(
       baseMat.dispose();
       vortexGeo.dispose();
       vortexMat.dispose();
-      hitGeo.dispose();
-      hitMat.dispose();
     },
   };
 }

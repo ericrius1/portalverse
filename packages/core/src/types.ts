@@ -200,14 +200,11 @@ export interface PortalVisualHandle {
   /** Planar XY opening, with UVs spanning its bounds and local +Z facing out. */
   passage?: boolean;
   aperture: THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
-  /** Hitbox mesh(es) tested for mouse hover & click-to-enter. */
-  hitTargets: THREE.Object3D[];
-  /** World-space center used for proximity/dive triggering. */
+  /** World-space center used for proximity triggering. */
   triggerCenter: THREE.Vector3;
   triggerRadius: number;
   /** Optional vertical cylinder bounds [minY, maxY] for tall custom portals. */
   triggerYRange?: [number, number];
-  setHovered?: (hovered: boolean) => void;
   setProximity?: (proximity01: number) => void;
   update?: (dt: number, elapsed: number) => void;
   dispose?: () => void;

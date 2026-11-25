@@ -27,32 +27,50 @@ const UP = new THREE.Vector3(0, 1, 0);
 const localA = new THREE.Vector3();
 const localB = new THREE.Vector3();
 
-type PortalFrame = Pick<PortalVisualHandle, 'group' | 'aperture'>;
+type PortalFrame = Pick<PortalVisualHandle, 'group' | 'aperture' | 'portal'>;
 
 /** Depth of a world point along the portal normal, signed so the entry side is positive. */
-function depth(handle: PortalFrame, point: THREE.Vector3, side: CrossingSide, out: THREE.Vector3): number {
+function depth(handle: Pick<PortalVisualHandle, 'group' | 'aperture'>, point: THREE.Vector3, side: CrossingSide, out: THREE.Vector3): number {
   return handle.group.worldToLocal(out.copy(point)).z * side;
 }
 
 /**
- * Which face the feet passed through between two frames, or null. Feet must be
- * inside the opening's width and height. One-way portals ignore the back face.
+ * Which face the feet passed through between two frames, or null. The traveller's
+ * body must pass inside the circular opening itself. One-way portals ignore the back face.
  */
 export function detectFeetCrossing(
-  handle: PortalFrame,
+  handle: Pick<PortalVisualHandle, 'group' | 'aperture'>,
   previousFeet: THREE.Vector3,
   feet: THREE.Vector3,
 ): CrossingSide | null {
   const before = handle.group.worldToLocal(localA.copy(previousFeet));
   const after = handle.group.worldToLocal(localB.copy(feet));
-  const withinOpening =
-    Math.abs(after.x) < PORTAL_RADIUS - 0.1 &&
-    after.y >= -0.35 &&
-    after.y < PORTAL_CENTER_Y + PORTAL_RADIUS;
+  const radialDist = Math.hypot(after.x, after.y + 1.0 - PORTAL_CENTER_Y);
+  const withinOpening = after.y >= -0.35 && radialDist < PORTAL_RADIUS - 0.1;
   if (!withinOpening) return null;
   if (before.z > 0 && after.z <= 0) return 1;
   if (!isOneWay(handle) && before.z < 0 && after.z >= 0) return -1;
   return null;
+}
+
+/**
+ * Whether a nearby portal should offer the [E] prompt: the player must be on an
+ * allowed entry side (front only for one-way portals) and facing toward the opening.
+ */
+export function canOfferPortalPrompt(
+  handle: PortalFrame,
+  playerPos: THREE.Vector3,
+  playerYaw: number,
+): boolean {
+  const feetLocal = handle.group.worldToLocal(localA.copy(playerPos));
+  if (isOneWay(handle) && feetLocal.z <= 0) return false;
+  const toX = handle.portal.position[0] - playerPos.x;
+  const toZ = handle.portal.position[2] - playerPos.z;
+  const len = Math.hypot(toX, toZ);
+  if (len < 0.05) return false;
+  const fwdX = -Math.sin(playerYaw);
+  const fwdZ = -Math.cos(playerYaw);
+  return (fwdX * toX + fwdZ * toZ) / len > 0.35;
 }
 
 /**
@@ -61,7 +79,7 @@ export function detectFeetCrossing(
  * - `cancel` when the player steps back out with the camera (not during a click-to-walk).
  */
 export function resolveTransit(
-  handle: PortalFrame,
+  handle: Pick<PortalVisualHandle, 'group' | 'aperture'>,
   side: CrossingSide,
   feet: THREE.Vector3,
   camera: THREE.Vector3,
@@ -75,7 +93,7 @@ export function resolveTransit(
 }
 
 /** Which face a viewer stands in front of, for choosing how a portal maps into its destination. */
-export function viewerSide(handle: PortalFrame, viewer: THREE.Vector3): CrossingSide {
+export function viewerSide(handle: Pick<PortalVisualHandle, 'group' | 'aperture'>, viewer: THREE.Vector3): CrossingSide {
   if (isOneWay(handle)) return 1;
   return handle.group.worldToLocal(localA.copy(viewer)).z >= 0 ? 1 : -1;
 }

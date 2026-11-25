@@ -21,9 +21,7 @@ import {
   PORTAL_CENTER_Y,
   PORTAL_LENS_REF_DIST,
   PORTAL_RADIUS,
-  ROUTE_LENGTH,
   effectivePortalDistance,
-  farPortalScaleByDistance,
 } from '../portal/roomLayout';
 import { RoomInstance } from './RoomInstance';
 import { isOneWay } from './PortalMesh';
@@ -63,6 +61,12 @@ interface WindowViewSlot {
   target: THREE.RenderTarget;
   material: THREE.MeshBasicNodeMaterial;
   /** On-screen rectangle (x, y, width, height) in physical pixels from the top left. */
+  bounds: THREE.Vector4;
+  /**
+   * Where the material samples: `bounds` relative to the pass that draws this
+   * opening. That is the screen for an opening in the active room, or the parent
+   * window's target for an opening seen through another portal.
+   */
   pixels: THREE.Vector4;
   /** Target size in texels, used to map screen pixels to texture coordinates. */
   targetSize: { value: THREE.Vector2 };
@@ -154,6 +158,33 @@ function buildSnapshotColorNode(snapshot: PortalSnapshot, aperture: Aperture) {
   return texture(snapshot.target.texture, lens.uv);
 }
 
+const mapOrigin = new THREE.Vector3();
+const mapNormal = new THREE.Vector3();
+const mapPlane = new THREE.Plane();
+const mapStep = new THREE.Matrix4();
+
+/**
+ * The transform a portal view applies to its destination, matching `framePortal`:
+ * destination world → source world. It is rigid within the exact range and, farther
+ * away, also stretches depth behind the threshold (the distance-compressed lens).
+ * Writes the matrix to `out` and returns the yaw it turns the destination by.
+ */
+export function portalMapping(viewer: THREE.Vector3, aperture: Aperture, spawn: SpawnPoint,
+  sourceFloor: number, sourceYaw: number, out: THREE.Matrix4): number {
+  aperture.getWorldPosition(mapOrigin);
+  mapNormal.set(0, 0, 1).transformDirection(aperture.matrixWorld);
+  const distance = mapPlane.setFromNormalAndCoplanarPoint(mapNormal, mapOrigin).distanceToPoint(viewer);
+  const absDist = Math.abs(distance);
+  const ratio = absDist > 1e-4 ? effectivePortalDistance(absDist) / absDist : 1;
+  const sourceYawEff = sourceYaw + (distance < 0 ? Math.PI : 0);
+  out.makeTranslation(-spawn.position[0], -spawn.position[1], -spawn.position[2])
+    .premultiply(mapStep.makeRotationY(-spawn.yaw))
+    .premultiply(mapStep.makeScale(1, 1, ratio < 0.9999 ? 1 / ratio : 1))
+    .premultiply(mapStep.makeRotationY(sourceYawEff))
+    .premultiply(mapStep.makeTranslation(mapOrigin.x, sourceFloor, mapOrigin.z));
+  return sourceYawEff - spawn.yaw;
+}
+
 /** Visible aperture bounds in physical pixels, measured from the top left. */
 export function portalPixels(aperture: Aperture, viewer: THREE.PerspectiveCamera, size: THREE.Vector2, out: THREE.Vector4) {
   if (!aperture.geometry.boundingBox) aperture.geometry.computeBoundingBox();
@@ -184,7 +215,7 @@ export function portalPixels(aperture: Aperture, viewer: THREE.PerspectiveCamera
 /**
  * Transport the viewer through the doorway, preserving the original screen pixel grid
  * on the aperture plane while smoothly widening the far-distance portal lens (d > 12m)
- * so the live preview matches the depth-2 snapshot FOV with zero pop-in upon entry.
+ * to the framing portal snapshots are taken with.
  */
 export function framePortal(camera: THREE.PerspectiveCamera, viewer: THREE.PerspectiveCamera,
   aperture: Aperture, spawn: SpawnPoint, sourceFloor: number, sourceYaw: number,
@@ -301,9 +332,20 @@ export class PortalPreviews {
   private readonly ndc = new THREE.Vector2();
   private readonly hits: THREE.Intersection[] = [];
   private readonly viewProjection = new THREE.Matrix4();
+  /** Camera, bounds and stand-in opening for the portal at the far end of a previewed room. */
+  private readonly farCamera = new THREE.PerspectiveCamera();
+  private readonly farBounds = new THREE.Vector4();
+  private readonly nearMapping = new THREE.Matrix4();
+  private readonly farProxy: Aperture = new THREE.Mesh();
+  private readonly farFloor = new THREE.Vector3();
+  /** Openings that were on screen showing only their snapshot last frame, because their room wasn't ready. */
+  private seenWithoutLive = new Set<Aperture>();
+  private nextSeenWithoutLive = new Set<Aperture>();
   private lastElapsed = 0;
 
-  constructor(private readonly renderer: THREE.WebGPURenderer, private readonly load: LocalLoader) {}
+  constructor(private readonly renderer: THREE.WebGPURenderer, private readonly load: LocalLoader) {
+    this.farProxy.matrixAutoUpdate = false;
+  }
 
   private destination(id: string, elapsed: number): Destination | undefined {
     const existing = this.destinations.get(id);
@@ -342,10 +384,6 @@ export class PortalPreviews {
     const existing = this.destinations.get(id);
     if (existing && existing.room !== room) {
       this.discard(existing);
-    }
-    // Reset any forced-perspective scaling from when this room was active
-    for (const h of room.portals) {
-      h.group.scale.setScalar(1);
     }
     this.applySnapshotsToRoom(room);
     this.destinations.set(id, {
@@ -415,10 +453,6 @@ export class PortalPreviews {
       this.snapshots.set(key, snap);
     }
 
-    for (const h of room.portals) {
-      h.group.scale.setScalar(1);
-    }
-
     const spawn = room.spawn(spawnId);
     const forward = new THREE.Vector3(-Math.sin(spawn.yaw), 0, -Math.cos(spawn.yaw));
     const center = new THREE.Vector3(
@@ -467,9 +501,9 @@ export class PortalPreviews {
   }
 
   /**
-   * Apply POV-aware cached snapshot materials to every local portal inside a room
-   * so depth-2 portals visible through a neighbor never show a swirling placeholder
-   * and blend naturally into atmospheric distance fog.
+   * Apply POV-aware cached snapshot materials to every local portal inside a room,
+   * so portals too far away to draw live never show a swirling placeholder and blend
+   * into atmospheric distance fog.
    */
   applySnapshotsToRoom(room: RoomInstance): void {
     if (!room.portals?.length) return;
@@ -536,7 +570,7 @@ export class PortalPreviews {
         onProgress?.(completed / totalSteps);
       }
 
-      // Pass 2: apply depth-2 snapshot materials to every room and refresh snapshots
+      // Pass 2: apply snapshot materials to every room and refresh snapshots
       // so even distant depth-3 portals inside snapshots show real destinations!
       for (const entry of mountedForPass) {
         this.applySnapshotsToRoom(entry.room);
@@ -597,14 +631,15 @@ export class PortalPreviews {
     material.side = oneWay ? THREE.FrontSide : THREE.DoubleSide;
     material.fog = false;
 
-    const pixels = new THREE.Vector4(0, 0, target.width, target.height);
+    const bounds = new THREE.Vector4(0, 0, target.width, target.height);
+    const pixels = bounds.clone();
     const rect = uniform(pixels);
     const targetSize = uniform(new THREE.Vector2(target.width, target.height));
     const liveBlend = uniform(1.0);
     const hasSnap = uniform(0.0);
     const lens = createSnapshotLens(SNAPSHOT_RADIUS * 2.0);
 
-    // The live view sits in the target's top-left corner at one texel per screen pixel.
+    // The live view sits in the target's top-left corner at one texel per pixel of the pass that draws the opening.
     const liveColor = texture(target.texture, screenCoordinate.sub(rect.xy).div(targetSize));
     const snapTexNode = texture(target.texture, lens.uv);
     const blended = mix(snapTexNode, liveColor, liveBlend);
@@ -615,41 +650,46 @@ export class PortalPreviews {
     const nearZ = isWebGPU ? 0 : mvp.w.negate();
     material.vertexNode = vec4(mvp.xy, mvp.z.max(nearZ), mvp.w);
 
-    return { oneWay, target, material, pixels, targetSize, liveBlend, hasSnap, lens, snapTexNode };
+    return { oneWay, target, material, bounds, pixels, targetSize, liveBlend, hasSnap, lens, snapTexNode };
   }
 
   /**
    * Size a window's target to the drawing buffer (only when the window size changes)
-   * and limit this frame's render to the portal's on-screen rectangle.
+   * and limit this frame's render to the portal's on-screen rectangle. `origin` is the
+   * screen position of the pass that will draw the opening (zero for the main view).
    */
-  private fitViewTarget(slot: WindowViewSlot, bounds: THREE.Vector4): void {
+  private fitViewTarget(slot: WindowViewSlot, bounds: THREE.Vector4, originX = 0, originY = 0): void {
     const { target } = slot;
     if (target.width !== this.size.x || target.height !== this.size.y) {
       target.setSize(this.size.x, this.size.y);
       slot.targetSize.value.set(this.size.x, this.size.y);
     }
-    slot.pixels.copy(bounds);
+    slot.bounds.copy(bounds);
+    slot.pixels.set(bounds.x - originX, bounds.y - originY, bounds.z, bounds.w);
     target.viewport.set(0, 0, bounds.z, bounds.w);
   }
 
   private view(
     handle: PortalVisualHandle,
     bounds: THREE.Vector4,
-    viewer: THREE.PerspectiveCamera,
     snapshot?: PortalSnapshot,
+    originX = 0,
+    originY = 0,
   ): WindowView {
     const aperture = handle.aperture;
     const existing = this.views.get(aperture);
     if (existing) {
-      this.fitViewTarget(existing.slot, bounds);
+      this.fitViewTarget(existing.slot, bounds, originX, originY);
       return existing;
     }
 
     const slot = this.allocateViewSlot(isOneWay(handle));
-    this.fitViewTarget(slot, bounds);
+    this.fitViewTarget(slot, bounds, originX, originY);
 
-    const distToPortal = viewer.position.distanceTo(handle.triggerCenter);
-    const startBlended = !snapshot || distToPortal < 15;
+    // Crossfade from the snapshot only if it was on screen last frame because the room
+    // wasn't ready. Openings that were already live (including the far-end portal you
+    // just walked toward) and openings just coming into view start live.
+    const startBlended = !snapshot || !this.seenWithoutLive.has(aperture);
     slot.liveBlend.value = startBlended ? 1.0 : 0.0;
 
     if (snapshot) {
@@ -711,6 +751,7 @@ export class PortalPreviews {
     viewer.updateMatrixWorld();
     this.renderer.getDrawingBufferSize(this.size);
     this.camera.coordinateSystem = this.renderer.coordinateSystem;
+    this.farCamera.coordinateSystem = this.renderer.coordinateSystem;
     this.viewProjection.multiplyMatrices(viewer.projectionMatrix, viewer.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.viewProjection, viewer.coordinateSystem);
 
@@ -731,31 +772,35 @@ export class PortalPreviews {
     const used = new Set<Aperture>();
     const animated = new Set<RoomInstance>();
     const previous = this.renderer.getRenderTarget();
+    this.nextSeenWithoutLive.clear();
     let presented = false;
     try {
       for (const handle of visible) {
         const { portal, aperture } = handle;
         const dest = this.destination(portal.targetWorldId, elapsed);
         const room = dest?.room;
-        if (!room) continue;
+        if (!room) {
+          this.nextSeenWithoutLive.add(aperture);
+          continue;
+        }
         portalPixels(aperture, viewer, this.size, this.bounds);
         if (!this.bounds.z || !this.bounds.w) continue;
         const spawn = room.spawn(portal.targetSpawnId);
         framePortal(this.camera, viewer, aperture, spawn,
           portal.position[1], portal.yaw ?? 0, this.size, this.bounds);
-        if (!animated.has(room)) {
-          room.update(dt, elapsed);
-          for (const h of room.portals) h.update?.(dt, elapsed);
-          animated.add(room);
-        }
+        this.animate(room, dt, elapsed, animated);
         const direct = this.fillsView(aperture, viewer);
+
+        // Draw the portal at the far end of this room first, so this room's view shows it live.
+        this.renderFarPortal(handle, room, spawn, viewer, direct, dt, elapsed, animated, used);
+
         if (direct) {
           this.camera.projectionMatrix.copy(viewer.projectionMatrix);
           this.camera.projectionMatrixInverse.copy(viewer.projectionMatrixInverse);
           this.renderer.setRenderTarget(previous);
         } else {
           const snap = this.getSnapshot(portal);
-          const view = this.view(handle, this.bounds, viewer, snap);
+          const view = this.view(handle, this.bounds, snap);
           if (view.blendProgress < 1) {
             view.blendProgress = Math.min(1, view.blendProgress + dt / LIVE_FADE_DURATION_S);
             const t = view.blendProgress;
@@ -790,35 +835,11 @@ export class PortalPreviews {
           }
         }
 
-        const receiving = room.portals.find(p => p.portal.id === portal.targetSpawnId);
-        // Compute true viewer distance to this portal so far-portal de-emphasis stays tied
-        // to the player's real walk progress (0.30x across the room -> exact 1.0x at crossing),
-        // while fog offsets by the compressed virtual camera distance behind the threshold.
-        const distToPortal = Math.max(
-          0,
-          Math.hypot(viewer.position.x - portal.position[0], viewer.position.z - portal.position[2]),
-        );
-        const effDistToPortal = effectivePortalDistance(distToPortal);
-        for (const h of room.portals) {
-          if (h.aperture.userData.routeGate && h !== receiving) {
-            h.group.scale.setScalar(farPortalScaleByDistance(ROUTE_LENGTH + distToPortal));
-          }
-        }
-        const destFog = room.scene.fog;
-        const savedFogNear = destFog instanceof THREE.Fog ? destFog.near : 0;
-        const savedFogFar = destFog instanceof THREE.Fog ? destFog.far : 0;
-        if (destFog instanceof THREE.Fog) {
-          destFog.near = savedFogNear + effDistToPortal;
-          destFog.far = savedFogFar + effDistToPortal;
-        }
-        if (receiving) receiving.group.visible = false;
-        try { this.renderer.render(room.scene, this.camera); }
-        finally {
-          if (destFog instanceof THREE.Fog) {
-            destFog.near = savedFogNear;
-            destFog.far = savedFogFar;
-          }
-          if (receiving) receiving.group.visible = true;
+        // Fog starts at the threshold: offset it by the virtual camera's compressed distance.
+        const distToPortal = Math.hypot(viewer.position.x - portal.position[0], viewer.position.z - portal.position[2]);
+        try {
+          this.renderRoom(room, this.camera, portal.targetSpawnId, effectivePortalDistance(distToPortal));
+        } finally {
           if (attachedProxy && transitAvatar) room.scene.remove(transitAvatar.rig);
         }
         if (direct) {
@@ -832,6 +853,7 @@ export class PortalPreviews {
     for (const [aperture, view] of this.views) {
       if (!used.has(aperture)) this.release(aperture, view);
     }
+    [this.seenWithoutLive, this.nextSeenWithoutLive] = [this.nextSeenWithoutLive, this.seenWithoutLive];
     for (const [key, dest] of this.destinations) {
       if (!dest.pinned && elapsed - dest.lastSeen > 4) {
         this.destinations.delete(key);
@@ -841,8 +863,102 @@ export class PortalPreviews {
     return presented;
   }
 
+  private animate(room: RoomInstance, dt: number, elapsed: number, animated: Set<RoomInstance>): void {
+    if (animated.has(room)) return;
+    room.update(dt, elapsed);
+    for (const h of room.portals) h.update?.(dt, elapsed);
+    animated.add(room);
+  }
+
+  /** Render a destination room with its fog starting at the threshold and its receiving portal hidden. */
+  private renderRoom(room: RoomInstance, camera: THREE.Camera, receivingId: string | undefined, fogOffset: number): void {
+    const receiving = room.portals.find(p => p.portal.id === receivingId);
+    const fog = room.scene.fog instanceof THREE.Fog ? room.scene.fog : null;
+    const fogNear = fog?.near ?? 0;
+    const fogFar = fog?.far ?? 0;
+    if (fog) {
+      fog.near = fogNear + fogOffset;
+      fog.far = fogFar + fogOffset;
+    }
+    if (receiving) receiving.group.visible = false;
+    try {
+      this.renderer.render(room.scene, camera);
+    } finally {
+      if (fog) {
+        fog.near = fogNear;
+        fog.far = fogFar;
+      }
+      if (receiving) receiving.group.visible = true;
+    }
+  }
+
+  /**
+   * Draw the route gate at the far end of a previewed room live, through the same lens
+   * it will use once the player walks into that room. Seen from here it sits behind the
+   * near portal, so place a stand-in for it in this world with the near portal's mapping
+   * and frame it like any other opening. When the player crosses, the gate becomes an
+   * opening in the active room and its view simply carries on, so nothing jumps.
+   * Other portals in previewed rooms keep their snapshots.
+   */
+  private renderFarPortal(
+    near: PortalVisualHandle,
+    room: RoomInstance,
+    spawn: SpawnPoint,
+    viewer: THREE.PerspectiveCamera,
+    direct: boolean,
+    dt: number,
+    elapsed: number,
+    animated: Set<RoomInstance>,
+    used: Set<Aperture>,
+  ): void {
+    // The lens stretches depth along the near portal's axis, which only lines up with the
+    // far gate when we arrive at one of this room's route thresholds.
+    const arrival = near.portal.targetSpawnId;
+    if (arrival !== 'entrance' && arrival !== 'exit') return;
+    const far = room.portals.find(p => p.aperture.userData.routeGate && p.portal.id !== arrival && !p.portal.remoteUrl);
+    if (!far) return;
+    const farRoom = this.destination(far.portal.targetWorldId, elapsed)?.room;
+    if (!farRoom) return;
+
+    const turn = portalMapping(viewer.position, near.aperture, spawn,
+      near.portal.position[1], near.portal.yaw ?? 0, this.nearMapping);
+    far.aperture.updateWorldMatrix(true, false);
+    this.farProxy.geometry = far.aperture.geometry;
+    this.farProxy.matrix.multiplyMatrices(this.nearMapping, far.aperture.matrixWorld);
+    this.farProxy.updateMatrixWorld(true);
+
+    // Only the part of the far opening visible through the near opening needs drawing.
+    portalPixels(this.farProxy, viewer, this.size, this.farBounds);
+    const fb = this.farBounds;
+    const nb = this.bounds;
+    const left = Math.max(fb.x, nb.x);
+    const top = Math.max(fb.y, nb.y);
+    const right = Math.min(fb.x + fb.z, nb.x + nb.z);
+    const bottom = Math.min(fb.y + fb.w, nb.y + nb.w);
+    if (right <= left || bottom <= top) return;
+    fb.set(left, top, right - left, bottom - top);
+
+    far.group.updateWorldMatrix(true, false);
+    this.farFloor.setFromMatrixPosition(far.group.matrixWorld).applyMatrix4(this.nearMapping);
+    const farSpawn = farRoom.spawn(far.portal.targetSpawnId);
+    framePortal(this.farCamera, viewer, this.farProxy, farSpawn,
+      this.farFloor.y, (far.portal.yaw ?? 0) + turn, this.size, fb);
+    this.animate(farRoom, dt, elapsed, animated);
+
+    // The near room is drawn into its own window unless it fills the view, so sample
+    // relative to wherever that pass starts on screen.
+    const view = this.view(far, fb, undefined, direct ? 0 : nb.x, direct ? 0 : nb.y);
+    far.aperture.material = view.slot.material;
+    used.add(far.aperture);
+    this.renderer.setRenderTarget(view.slot.target);
+    const farDistance = Math.hypot(viewer.position.x - this.farFloor.x, viewer.position.z - this.farFloor.z);
+    this.renderRoom(farRoom, this.farCamera, far.portal.targetSpawnId, effectivePortalDistance(farDistance));
+  }
+
   clear(): void {
     this.releaseViews();
+    this.seenWithoutLive.clear();
+    this.nextSeenWithoutLive.clear();
     for (const slot of this.viewPool) {
       slot.target.dispose();
       slot.material.dispose();
