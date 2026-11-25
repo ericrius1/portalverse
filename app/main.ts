@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+import { livePortalSlots } from '@portalverse/core/portal/roomLayout';
 import registryData from '../registry.json';
 import type {
   AvatarState,
@@ -7,6 +9,7 @@ import type {
   PortalDefinition,
   RegistryFile,
   WorldManifest,
+  WorldModule,
 } from '@portalverse/core/types';
 import { WorldEngine } from '@portalverse/core/engine/WorldEngine';
 import { MultiplayerClient } from '@portalverse/core/net/multiplayerClient';
@@ -124,11 +127,9 @@ async function boot(): Promise<void> {
   }
 
   // Register lazy local world modules
-  const registry = new WorldRegistry(registryData as unknown as RegistryFile, {
-    hub: () => import('@portalverse/worlds/hub/index'),
-    'eric-world': () => import('@portalverse/worlds/eric-world/index'),
-    'jp-world': () => import('@portalverse/worlds/jp-world/index'),
-  });
+  const modules = import.meta.glob<{ default: WorldModule }>('../worlds/*/index.ts');
+  const loaders = Object.fromEntries(Object.entries(modules).map(([path, load]) => [path.split('/')[2], load]));
+  const registry = new WorldRegistry(registryData as unknown as RegistryFile, loaders);
 
   // Read initial deep-link route (?world=eric-world, ?world=hub&hubStyle=meadow, ?handoff=...)
   const route = readRouteFromLocation(window.location.search, window.location.hash);
@@ -188,6 +189,7 @@ async function boot(): Promise<void> {
   }
 
   const engine = new WorldEngine(viewport, identity.color, {
+    loadLocalWorld: id => registry.getManifest(id)?.kind === 'local' ? registry.loadWorld(id) : undefined,
     onWorldLoaded: (manifest, hubStyle) => {
       activeManifest = manifest;
       activeWorldId = manifest.id;
@@ -233,8 +235,8 @@ async function boot(): Promise<void> {
       portalPromptEl.classList.remove('hidden');
       portalPromptText.textContent = `Enter ${portal.label}`;
     },
-    onPortalEnter: (portal) => {
-      void handlePortalTransition(portal);
+    onPortalEnter: (portal, crossed) => {
+      void handlePortalTransition(portal, crossed);
     },
     onFlightChange: (flying) => {
       flightStatusLabel.textContent = flying ? 'Flight: On' : 'Flight: Off';
@@ -244,6 +246,7 @@ async function boot(): Promise<void> {
   const net = new MultiplayerClient({
     identity,
     initialWorldId,
+    livePortalLimits: new Map(registry.listWorlds().map(w => [w.id, livePortalSlots(w)])),
     onConnectionChange: (state: ConnectionState) => {
       hudNetStatus.dataset.state = state;
       hudNetStatus.textContent =
@@ -334,20 +337,11 @@ async function boot(): Promise<void> {
         worldId: 'hub',
         hubStyle: 'meadow',
       },
-      {
-        title: "Eric's Room",
-        owner: 'ericrius1',
-        desc: "Eric's cyan placeholder studio room (worlds/eric-world/index.ts).",
-        accent: '#22d3ee',
-        worldId: 'eric-world',
-      },
-      {
-        title: "JP's Room",
-        owner: 'jpwhitaker',
-        desc: "JP's warm amber placeholder studio room (worlds/jp-world/index.ts).",
-        accent: '#f59e0b',
-        worldId: 'jp-world',
-      },
+      { title: 'Portal Hub · Starlight Nexus', owner: 'Shared Hub', desc: 'A gallery of live framed worlds.',
+        accent: '#818cf8', worldId: 'hub', hubStyle: 'nexus' },
+      ...registry.listWorlds().filter(w => w.kind === 'local' && w.id !== 'hub').map(w => ({
+        title: w.name, owner: w.owner ?? w.author, desc: w.description, accent: w.accentColor, worldId: w.id,
+      })),
     ];
 
     for (const item of entries) {
@@ -394,32 +388,18 @@ async function boot(): Promise<void> {
 
   async function transitionToWorld(
     worldId: string,
-    opts?: { spawnId?: string; hubStyle?: HubStyle; labelOverride?: string },
+    opts?: { spawnId?: string; hubStyle?: HubStyle; fromPortal?: PortalDefinition; crossed?: boolean },
   ): Promise<void> {
     if (isTransitioning) return;
     isTransitioning = true;
 
-    const targetManifest = registry.getManifest(worldId);
     const nextHubStyle = opts?.hubStyle ?? activeHubStyle;
-    warpLabel.textContent =
-      opts?.labelOverride ??
-      (worldId === 'hub'
-        ? nextHubStyle === 'meadow'
-          ? 'Blooming Solarpunk Meadow...'
-          : nextHubStyle === 'fountains'
-            ? 'Ascending Above Magic Fountains...'
-            : 'Entering Starlight Nexus...'
-        : `Entering ${targetManifest?.name ?? worldId}...`);
-    warpOverlay.classList.add('active');
-
-    await new Promise((r) => window.setTimeout(r, 240));
-
     try {
       const worldModule = await registry.loadWorld(worldId);
       await engine.mountWorld(worldModule, {
         spawnId: opts?.spawnId,
         hubStyle: nextHubStyle,
-        extraPortals: combinedDynamicPortals(),
+        fromPortal: opts?.fromPortal, crossed: opts?.crossed,
       });
       net.switchWorld(
         worldId,
@@ -430,14 +410,11 @@ async function boot(): Promise<void> {
     } catch (err) {
       showToast(`Failed to enter world: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      window.setTimeout(() => {
-        warpOverlay.classList.remove('active');
-        isTransitioning = false;
-      }, 220);
+      isTransitioning = false;
     }
   }
 
-  async function handlePortalTransition(portal: PortalDefinition): Promise<void> {
+  async function handlePortalTransition(portal: PortalDefinition, crossed: boolean): Promise<void> {
     if (portal.remoteUrl) {
       const returnUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
         worldId: activeWorldId,
@@ -470,7 +447,7 @@ async function boot(): Promise<void> {
     await transitionToWorld(portal.targetWorldId, {
       spawnId: portal.targetSpawnId,
       hubStyle: portal.targetHubStyle,
-      labelOverride: `Warping to ${portal.label}...`,
+      fromPortal: portal, crossed,
     });
   }
 

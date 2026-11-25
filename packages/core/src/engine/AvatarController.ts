@@ -1,3 +1,4 @@
+import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
 import type { AvatarState, PlatformCollider, SpawnPoint, Vec3Tuple } from '../types';
 import { createFloatingLabel } from './signage';
@@ -154,6 +155,11 @@ export class AvatarController {
     this.setFlying(!this.isFlying);
   }
 
+  updateCameraVisibility(): void {
+    const horizontalDistance = Math.hypot(this.camera.position.x - this.position.x, this.camera.position.z - this.position.z);
+    this.localRig.group.visible = !this.firstPerson && horizontalDistance > 0.9;
+  }
+
   toggleCameraView(): void {
     this.firstPerson = !this.firstPerson;
     this.localRig.group.visible = !this.firstPerson;
@@ -282,7 +288,7 @@ export class AvatarController {
         }
         this.velocityY = 0;
       } else {
-        const moveSpeed = sprint ? 14.5 : 8.2;
+        const moveSpeed = sprint ? RUN_SPEED : 8.2;
         let dx = fwdX * forward + rightX * strafe;
         let dz = fwdZ * forward + rightZ * strafe;
         const len = Math.hypot(dx, dz);

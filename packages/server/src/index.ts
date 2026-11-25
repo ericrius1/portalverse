@@ -1,3 +1,4 @@
+import { livePortalSlots } from '../../core/src/portal/roomLayout';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -75,6 +76,7 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
   }
   const roomManager = new RoomManager({
     worldNames,
+    livePortalLimits: new Map((registry?.worlds ?? []).map(w => [w.id, livePortalSlots(w)])),
     defaultWorldId: registry?.defaultWorldId ?? 'hub',
   });
 

@@ -1,3 +1,4 @@
+import { SIDE_PORTALS } from '../portal/roomLayout';
 import type {
   AvatarState,
   ClientNetMessage,
@@ -26,6 +27,7 @@ export interface MultiplayerClientOptions {
   url?: string;
   identity: PlayerIdentity;
   initialWorldId: string;
+  livePortalLimits?: ReadonlyMap<string, number>;
   onConnectionChange?: (state: ConnectionState) => void;
   onPlayersChange?: (playersInWorld: AvatarState[]) => void;
   onRosterChange?: (roster: AvatarState[], event?: string) => void;
@@ -222,6 +224,12 @@ export class MultiplayerClient {
   spawnPortal(worldId: string, portal: PortalDefinition): void {
     if (this.state !== 'connected') {
       // Offline/solo: apply locally so the portal still appears.
+      const map = this.portalMap(worldId);
+      const limit = this.options.livePortalLimits?.get(worldId) ?? SIDE_PORTALS;
+      if (!map.has(portal.id) && map.size >= limit) {
+        this.options.onError?.(`This room has used its ${limit} live portal slots`);
+        return;
+      }
       const local = copyPortal({ ...portal, createdBy: portal.createdBy ?? this.localPlayerId });
       this.portalMap(worldId).set(local.id, local);
       let pending = this.offlinePortals.get(worldId);

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import type { WorldModule } from '@portalverse/core/types';
+import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import {
   createEnergyRingMaterial,
   createStudioGridFloorMaterial,
@@ -12,21 +12,7 @@ import { createFloatingLabel, createWallBanner } from '@portalverse/core/engine/
  * and portals back to the Portal Hub + directly to JP's Room.
  * Edit this file freely to build your world without conflicting with JP!
  */
-const ericWorld: WorldModule = {
-  manifest: {
-    id: 'eric-world',
-    name: "Eric's Room",
-    owner: 'ericrius1',
-    author: 'Eric (ericrius1)',
-    description: "Eric's placeholder studio room — cyan holographic workshop ready to build in worlds/eric-world.",
-    accentColor: '#22d3ee',
-    kind: 'local',
-    allowFlight: true,
-    spawns: {
-      default: { position: [0, 0, 11], yaw: 0 },
-      'from-jp': { position: [8, 0, 2], yaw: 1.35 },
-    },
-  },
+export default defineRoom('eric-world', {
   mount(ctx) {
     const root = new THREE.Group();
     ctx.scene.add(root);
@@ -40,12 +26,12 @@ const ericWorld: WorldModule = {
     root.add(hemi, key);
 
     // Crisp cyan holographic studio floor
-    const floorGeo = new THREE.BoxGeometry(36, 0.8, 36);
+    const floorGeo = new THREE.BoxGeometry(36, 0.8, 80);
     const floorMat = createStudioGridFloorMaterial('#061526', '#22d3ee', 2.0);
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.position.y = -0.4;
     root.add(floor);
-    ctx.addPlatform({ minX: -18, maxX: 18, minZ: -18, maxZ: 18, topY: 0 });
+    ctx.addPlatform({ minX: -18, maxX: 18, minZ: -40, maxZ: 40, topY: 0 });
 
     // Open-air architectural studio corner pillars & glowing overhead beam frame
     const pillarGeo = new THREE.BoxGeometry(0.9, 10.5, 0.9);
@@ -80,7 +66,8 @@ const ericWorld: WorldModule = {
       metalness: 0.55,
     });
     const backWall = new THREE.Mesh(wallGeo, wallMat);
-    backWall.position.set(0, 4.4, -15.5);
+    backWall.rotation.y = Math.PI / 2;
+    backWall.position.set(-16, 4.4, -2);
     root.add(backWall);
 
     // Unmistakable giant room marquee: "ERIC'S ROOM · ericrius1"
@@ -91,7 +78,8 @@ const ericWorld: WorldModule = {
       bgColor: 'rgba(4, 18, 34, 0.92)',
       width: 15.5,
     });
-    heroBanner.mesh.position.set(0, 5.4, -15.1);
+    heroBanner.mesh.rotation.y = Math.PI / 2;
+    heroBanner.mesh.position.set(-15.7, 5.4, -2);
     root.add(heroBanner.mesh);
 
     // Central placeholder workbench pedestal with spinning cyan hologram crystal
@@ -102,7 +90,7 @@ const ericWorld: WorldModule = {
       metalness: 0.75,
     });
     const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
-    pedestal.position.set(0, 0.425, 0);
+    pedestal.position.set(5, 0.425, 0);
     root.add(pedestal);
 
     const crystalGeo = new THREE.IcosahedronGeometry(1.15, 0);
@@ -115,13 +103,13 @@ const ericWorld: WorldModule = {
       wireframe: false,
     });
     const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-    crystal.position.set(0, 2.8, 0);
+    crystal.position.set(5, 2.8, 0);
     root.add(crystal);
 
     const ringGeo = new THREE.TorusGeometry(2.1, 0.06, 12, 48);
     const { material: ringMat } = createEnergyRingMaterial('#22d3ee', '#818cf8');
     const holoRing = new THREE.Mesh(ringGeo, ringMat);
-    holoRing.position.set(0, 2.8, 0);
+    holoRing.position.set(5, 2.8, 0);
     root.add(holoRing);
 
     const workbenchNote = createFloatingLabel({
@@ -130,33 +118,8 @@ const ericWorld: WorldModule = {
       accentColor: '#67e8f9',
       width: 4.8,
     });
-    workbenchNote.sprite.position.set(0, 5.05, 0);
+    workbenchNote.sprite.position.set(5, 5.05, 0);
     root.add(workbenchNote.sprite);
-
-    // Portals out of Eric's Room
-    ctx.addPortal({
-      id: 'eric-to-hub',
-      label: 'Portal Hub',
-      subtitle: 'Back to Shared Metaverse Hub',
-      position: [-9.5, 0, -7.5],
-      yaw: 0.55,
-      targetWorldId: 'hub',
-      targetSpawnId: 'default',
-      colorA: '#38bdf8',
-      colorB: '#818cf8',
-    });
-
-    ctx.addPortal({
-      id: 'eric-to-jp',
-      label: "JP's Room",
-      subtitle: 'Direct link to jpwhitaker',
-      position: [9.5, 0, -7.5],
-      yaw: -0.55,
-      targetWorldId: 'jp-world',
-      targetSpawnId: 'from-eric',
-      colorA: '#f59e0b',
-      colorB: '#fb7185',
-    });
 
     ctx.onUpdate((_, elapsed) => {
       crystal.rotation.y = elapsed * 0.75;
@@ -186,6 +149,4 @@ const ericWorld: WorldModule = {
       workbenchNote.dispose();
     });
   },
-};
-
-export default ericWorld;
+});

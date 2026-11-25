@@ -51,6 +51,8 @@ export interface WorldManifest {
   /** Allow toggling 3D free-flight in this world (default true). */
   allowFlight?: boolean;
   spawns: Record<string, SpawnPoint>;
+  /** Side portals placed by the room builder (reserved across all variants). */
+  customPortalSlots?: number;
   portals?: PortalDefinition[];
 }
 
@@ -196,6 +198,9 @@ export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export interface PortalVisualHandle {
   portal: PortalDefinition;
   group: THREE.Group;
+  /** Planar XY opening, with UVs spanning its bounds and local +Z facing out. */
+  passage?: boolean;
+  aperture: THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
   /** Hitbox mesh(es) tested for mouse hover & click-to-enter. */
   hitTargets: THREE.Object3D[];
   /** World-space center used for proximity/dive triggering. */
@@ -219,6 +224,10 @@ export interface PlatformCollider {
 }
 
 export interface WorldContext {
+  /** Each mount is independent. Preview mounts run scene animation without player input. */
+  readonly mode: 'active' | 'preview';
+  /** Install player-only behavior when this instance becomes the active room. */
+  onActivate: (fn: () => void) => void;
   scene: THREE.Scene;
   renderer: THREE.WebGPURenderer;
   /** Active hub representation style when mounting the portal hub. */

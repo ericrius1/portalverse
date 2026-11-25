@@ -296,16 +296,24 @@ describe('RoomManager', () => {
     });
   });
 
-  it('caps dynamic portals per world at 24', () => {
+  it('reserves the authored slots when allocating live portals', () => {
+    const rm = new RoomManager({ livePortalLimits: new Map([['hub', 1]]) });
+    rm.handleMessage('c1', hello('eric', 'Eric', 'hub'));
+    rm.handleMessage('c1', { type: 'spawn_portal', worldId: 'hub', portal: portal('first') as never });
+    const over = rm.handleMessage('c1', { type: 'spawn_portal', worldId: 'hub', portal: portal('second') as never });
+    expect(over[0].message).toMatchObject({ type: 'error', code: 'portal_limit' });
+  });
+
+  it('caps dynamic portals per world at five', () => {
     const rm = makeManager();
     rm.handleMessage('c1', hello('eric', 'Eric', 'hub'));
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 5; i++) {
       const out = rm.handleMessage('c1', { type: 'spawn_portal', worldId: 'hub', portal: portal(`p${i}`) as never });
       expect(out[0].message.type).toBe('portal_spawned');
     }
     const over = rm.handleMessage('c1', { type: 'spawn_portal', worldId: 'hub', portal: portal('p24') as never });
     expect(over[0].message).toMatchObject({ type: 'error', code: 'portal_limit' });
-    expect(rm.getDynamicPortals('hub')).toHaveLength(24);
+    expect(rm.getDynamicPortals('hub')).toHaveLength(5);
     // Updating an existing portal still works at the cap.
     const upd = rm.handleMessage('c1', {
       type: 'spawn_portal',
@@ -505,7 +513,7 @@ describe('HTTP + WebSocket server (ephemeral port)', () => {
     const jpWelcome = await jp.s.next('welcome');
     expect(jpWelcome.worldId).toBe('jp-world');
     expect(await eric.s.next('player_left')).toMatchObject({ playerId: 'jp', worldId: 'hub' });
-    const travel = await eric.s.next('roster_update', (m) => m.event === "JP entered JP's Room");
+    const travel = await eric.s.next('roster_update', (m) => m.event === "JP entered JP's Solarpunk Meadow");
     expect(travel.roster.find((a) => a.id === 'jp')?.worldId).toBe('jp-world');
 
     const health = await (await fetch(`${urls.http}/api/health`)).json();
@@ -601,7 +609,7 @@ describe('MultiplayerClient against the real server', () => {
 
     jp.switchWorld('jp-world', [0, 0, 10], 0);
     await waitFor(() => eric.getPlayersInWorld().length === 0, 'jp left hub');
-    await waitFor(() => rosterEvents.includes("JP entered JP's Room"), 'travel event');
+    await waitFor(() => rosterEvents.includes("JP entered JP's Solarpunk Meadow"), 'travel event');
     expect(jp.getDynamicPortals()).toEqual([]);
     expect(eric.getRoster().find((a) => a.id === 'jp')?.worldId).toBe('jp-world');
   });

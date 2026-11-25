@@ -85,6 +85,7 @@ export function createArchwayPortal(portal: PortalDefinition): PortalVisualHandl
   return {
     portal,
     group,
+    aperture: vortex,
     hitTargets: [hitMesh, vortex, outerRing],
     triggerCenter: new THREE.Vector3(portal.position[0], portal.position[1] + 2.0, portal.position[2]),
     triggerRadius: portal.triggerRadius ?? 2.35,
@@ -155,6 +156,11 @@ export function createMagicFountainPortal(
   pool.rotation.x = -Math.PI / 2;
   pool.position.y = 0.94;
   group.add(pool);
+
+  const windowMesh = new THREE.Mesh(poolGeo, vortexMat);
+  windowMesh.position.set(0, 3.15, 1.8);
+  group.rotation.y = portal.yaw ?? 0;
+  group.add(windowMesh);
 
   // Luminous energy crown ring floating halfway up the magic jet
   const crownGeo = new THREE.TorusGeometry(2.35, 0.11, 14, 48);
@@ -231,6 +237,7 @@ export function createMagicFountainPortal(
   return {
     portal,
     group,
+    aperture: windowMesh,
     hitTargets: [hitMesh, corePlume, outerVeil, pool, crown],
     triggerCenter,
     triggerRadius: portal.triggerRadius ?? 4.2,
@@ -404,9 +411,8 @@ export function createBloomingFlowerPortal(
   const vortexGeo = new THREE.CircleGeometry(1.68, 48);
   const { material: vortexMat, uniforms: vortexUniforms } = createPortalVortexMaterial(colorA, colorB);
   const vortex = new THREE.Mesh(vortexGeo, vortexMat);
-  vortex.rotation.x = -Math.PI / 2;
-  vortex.position.y = 0.22;
-  blossomHead.add(vortex);
+  vortex.position.set(0, stemHeight + 0.65, 0.85);
+  group.add(vortex);
 
   // Golden stamen/pollen halo ringing the portal inside the petals
   const stamenRingGeo = new THREE.TorusGeometry(1.72, 0.06, 10, 48);
@@ -493,6 +499,7 @@ export function createBloomingFlowerPortal(
   return {
     portal,
     group,
+    aperture: vortex,
     hitTargets: [hitMesh, vortex, blossomHead],
     triggerCenter,
     triggerRadius: portal.triggerRadius ?? 2.85,

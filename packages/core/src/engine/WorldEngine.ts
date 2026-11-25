@@ -2,14 +2,14 @@ import * as THREE from 'three/webgpu';
 import type {
   AvatarState,
   HubStyle,
-  PlatformCollider,
   PortalDefinition,
   PortalVisualHandle,
-  SpawnPoint,
-  WorldContext,
   WorldManifest,
   WorldModule,
 } from '../types';
+import { GATE_HEIGHT, GATE_WIDTH, livePortalSlots } from '../portal/roomLayout';
+import { RoomInstance } from './RoomInstance';
+import { PortalPreviews } from './PortalPreviews';
 import { AvatarController } from './AvatarController';
 import {
   createArchwayPortal,
@@ -18,42 +18,43 @@ import {
 } from './PortalMesh';
 
 export interface WorldEngineCallbacks {
+  loadLocalWorld?: (id: string) => Promise<WorldModule> | undefined;
   onWorldLoaded?: (manifest: WorldManifest, hubStyle: HubStyle) => void;
   onPortalHover?: (portal: PortalDefinition | null, screenX: number, screenY: number) => void;
   onPortalProximity?: (portal: PortalDefinition | null) => void;
-  onPortalEnter?: (portal: PortalDefinition) => void;
+  onPortalEnter?: (portal: PortalDefinition, crossed: boolean) => void;
   onFlightChange?: (flying: boolean) => void;
 }
 
 export class WorldEngine {
-  readonly scene: THREE.Scene;
+  private readonly avatarScene = new THREE.Scene();
+  get scene(): THREE.Scene { return this.room?.scene ?? this.avatarScene; }
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGPURenderer;
   readonly avatar: AvatarController;
 
   private readonly container: HTMLElement;
   private readonly callbacks: WorldEngineCallbacks;
-  private readonly worldRoot = new THREE.Group();
+  private room?: RoomInstance;
+  private readonly previews?: PortalPreviews;
+  private mountSequence = 0;
   private readonly dynamicPortalRoot = new THREE.Group();
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointerNdc = new THREE.Vector2(-99, -99);
 
   private currentManifest: WorldManifest | null = null;
   private currentHubStyle: HubStyle = 'fountains';
-  private staticPortals: PortalVisualHandle[] = [];
   private dynamicPortals: PortalVisualHandle[] = [];
-  private updateHooks: Array<(dt: number, elapsed: number) => void> = [];
-  private disposeHooks: Array<() => void> = [];
-  private platforms: PlatformCollider[] = [];
-  private terrainHeightFn: ((x: number, z: number) => number) | null = null;
-  private spawnOverride: SpawnPoint | null = null;
-
+  private approach?: { start: number; from: THREE.Vector3; to: THREE.Vector3; look: THREE.Quaternion;
+    heading: THREE.Quaternion; finish: () => void };
+  private readonly previousFeet = new THREE.Vector3();
   private hoveredPortal: PortalVisualHandle | null = null;
   private nearestPortal: PortalVisualHandle | null = null;
   private pointerScreenX = 0;
   private pointerScreenY = 0;
   private inputLocked = false;
   private portalCooldownUntil = 0;
+  private arrivedAt = -Infinity;
   private animFrameId = 0;
   private lastTime = 0;
   private elapsed = 0;
@@ -63,8 +64,6 @@ export class WorldEngine {
     this.container = container;
     this.callbacks = callbacks;
 
-    this.scene = new THREE.Scene();
-    this.scene.add(this.worldRoot);
     this.scene.add(this.dynamicPortalRoot);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -75,6 +74,7 @@ export class WorldEngine {
     );
 
     this.renderer = new THREE.WebGPURenderer({ antialias: true });
+    if (callbacks.loadLocalWorld) this.previews = new PortalPreviews(this.renderer, callbacks.loadLocalWorld);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -121,70 +121,52 @@ export class WorldEngine {
 
   async mountWorld(
     module: WorldModule,
-    options?: { spawnId?: string; hubStyle?: HubStyle; extraPortals?: PortalDefinition[] },
+    options?: { spawnId?: string; hubStyle?: HubStyle; extraPortals?: PortalDefinition[]; fromPortal?: PortalDefinition; crossed?: boolean },
   ): Promise<void> {
-    this.unmountCurrentWorld();
-
-    this.currentManifest = module.manifest;
-    if (options?.hubStyle) {
-      this.currentHubStyle = options.hubStyle;
+    const sequence = ++this.mountSequence;
+    const style = options?.hubStyle ?? this.currentHubStyle;
+    const source = this.getAllPortals().find(p => p.portal === options?.fromPortal);
+    const cached = this.previews?.prepare(module.manifest.id, style);
+    const room = await (cached ?? RoomInstance.mount(module, this.renderer, style));
+    if (sequence !== this.mountSequence) {
+      if (!cached) room.dispose();
+      return;
     }
-
-    this.spawnOverride = null;
-    this.platforms = [];
-    this.terrainHeightFn = null;
-
-    const worldSceneGroup = new THREE.Group();
-    this.worldRoot.add(worldSceneGroup);
-
-    const ctx: WorldContext = {
-      scene: this.scene,
-      renderer: this.renderer,
-      hubStyle: this.currentHubStyle,
-      addPortal: (portal) => {
-        const handle = createArchwayPortal(portal);
-        this.worldRoot.add(handle.group);
-        this.staticPortals.push(handle);
-        return handle;
-      },
-      registerCustomPortal: (handle) => {
-        this.worldRoot.add(handle.group);
-        this.staticPortals.push(handle);
-      },
-      onUpdate: (fn) => {
-        this.updateHooks.push(fn);
-      },
-      onDispose: (fn) => {
-        this.disposeHooks.push(fn);
-      },
-      addPlatform: (bounds) => {
-        this.platforms.push(bounds);
-      },
-      setTerrainHeight: (fn) => {
-        this.terrainHeightFn = fn;
-      },
-      configureSpawn: (spawn) => {
-        this.spawnOverride = spawn;
-      },
-      enterPortal: (portal) => {
-        this.triggerPortal(portal);
-      },
-    };
-
-    // Mount world module (adds lighting, terrain, geometry, custom portals)
-    await module.mount(ctx);
-
-    this.avatar.setWorldCollision(this.platforms, this.terrainHeightFn);
-
-    // Choose spawn: explicit non-default named spawn -> world mount override -> manifest default
-    const requestedSpawn =
-      options?.spawnId && options.spawnId !== 'default' ? module.manifest.spawns[options.spawnId] : undefined;
-    const spawn: SpawnPoint =
-      requestedSpawn ??
-      this.spawnOverride ??
-      module.manifest.spawns.default ?? { position: [0, 0, 10], yaw: 0 };
-
-    this.avatar.applySpawn(spawn);
+    const arrival = room.spawn(options?.spawnId);
+    let sourceOrigin: THREE.Vector3 | undefined;
+    let yawDelta = 0;
+    if (source) {
+      sourceOrigin = source.aperture.getWorldPosition(new THREE.Vector3());
+      sourceOrigin.y = source.portal.position[1];
+      let sourceYaw = source.portal.yaw ?? 0;
+      if (!options?.crossed && source.aperture.worldToLocal(this.camera.position.clone()).z < 0) sourceYaw += Math.PI;
+      yawDelta = arrival.yaw - sourceYaw;
+      if (!options?.crossed) await this.approachPainting(sourceOrigin, sourceYaw);
+    }
+    if (sequence !== this.mountSequence) {
+      if (!cached) room.dispose();
+      return;
+    }
+    this.previews?.take(module.manifest.id, style);
+    this.unmountCurrentWorld();
+    this.room = room;
+    room.scene.add(this.avatarScene);
+    this.currentManifest = module.manifest;
+    this.currentHubStyle = style;
+    this.avatar.setWorldCollision(room.platforms, room.terrainHeight);
+    if (sourceOrigin) {
+      const axis = new THREE.Vector3(0, 1, 0);
+      const landing = new THREE.Vector3().fromArray(arrival.position);
+      for (const point of [this.avatar.position, this.camera.position]) {
+        point.sub(sourceOrigin).applyAxisAngle(axis, yawDelta).add(landing);
+      }
+      this.arrivedAt = performance.now();
+      this.avatar.yaw += yawDelta;
+      this.camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, yawDelta));
+    } else {
+      this.avatar.applySpawn(arrival);
+    }
+    room.activate(portal => this.triggerPortal(portal));
 
     // Brief portal reentry grace period so players don't immediately re-trigger a portal at spawn
     this.portalCooldownUntil = performance.now() + 1800;
@@ -194,6 +176,21 @@ export class WorldEngine {
     }
 
     this.callbacks.onWorldLoaded?.(module.manifest, this.currentHubStyle);
+  }
+
+  private approachPainting(origin: THREE.Vector3, yaw: number): Promise<void> {
+    const to = origin.clone();
+    to.y += 1.65;
+    const heading = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0));
+    return new Promise(resolve => {
+      this.approach = { start: performance.now(), from: this.camera.position.clone(), to,
+        look: this.camera.quaternion.clone(), heading, finish: () => {
+          this.avatar.position.copy(origin);
+          this.avatar.yaw = yaw;
+          this.avatar.pitch = 0;
+          resolve();
+        } };
+    });
   }
 
   /**
@@ -208,7 +205,8 @@ export class WorldEngine {
     this.dynamicPortals = [];
 
     const isHub = this.currentManifest?.id === 'hub';
-    for (let i = 0; i < portals.length; i++) {
+    const slots = livePortalSlots(this.currentManifest);
+    for (let i = 0; i < Math.min(slots, portals.length); i++) {
       const p = portals[i];
       let handle: PortalVisualHandle;
       if (isHub && this.currentHubStyle === 'fountains') {
@@ -217,7 +215,7 @@ export class WorldEngine {
           { plumeHeight: 13.5, phase: i * 1.3 },
         );
       } else if (isHub && this.currentHubStyle === 'meadow') {
-        const y = this.terrainHeightFn ? this.terrainHeightFn(p.position[0], p.position[2]) : p.position[1];
+        const y = this.room?.terrainHeight ? this.room.terrainHeight(p.position[0], p.position[2]) : p.position[1];
         handle = createBloomingFlowerPortal(
           { ...p, position: [p.position[0], y, p.position[2]] },
           { stemHeight: 3.4, phase: i * 1.1 },
@@ -231,14 +229,15 @@ export class WorldEngine {
   }
 
   private getAllPortals(): PortalVisualHandle[] {
-    return [...this.staticPortals, ...this.dynamicPortals];
+    return [...(this.room?.portals ?? []), ...this.dynamicPortals];
   }
 
-  private triggerPortal(portal: PortalDefinition): void {
+  private triggerPortal(portal: PortalDefinition, crossed = false): boolean {
     const now = performance.now();
-    if (now < this.portalCooldownUntil) return;
+    if (!this.callbacks.onPortalEnter || now < this.portalCooldownUntil) return false;
     this.portalCooldownUntil = now + 2000;
-    this.callbacks.onPortalEnter?.(portal);
+    this.callbacks.onPortalEnter(portal, crossed);
+    return true;
   }
 
   private unmountCurrentWorld(): void {
@@ -247,20 +246,10 @@ export class WorldEngine {
     this.callbacks.onPortalHover?.(null, 0, 0);
     this.callbacks.onPortalProximity?.(null);
 
-    for (const fn of this.disposeHooks) {
-      try {
-        fn();
-      } catch {
-        // Ignore cleanup errors on rapid world switches
-      }
-    }
-    this.disposeHooks = [];
-    this.updateHooks = [];
-
-    for (const handle of this.staticPortals) {
-      handle.dispose?.();
-    }
-    this.staticPortals = [];
+    this.previews?.clear();
+    this.avatarScene.removeFromParent();
+    this.room?.dispose();
+    this.room = undefined;
 
     for (const handle of this.dynamicPortals) {
       this.dynamicPortalRoot.remove(handle.group);
@@ -268,12 +257,6 @@ export class WorldEngine {
     }
     this.dynamicPortals = [];
 
-    // Clear all children attached to worldRoot & scene lighting added directly to scene
-    while (this.worldRoot.children.length > 0) {
-      this.worldRoot.remove(this.worldRoot.children[0]);
-    }
-    this.scene.fog = null;
-    this.scene.background = null;
     this.avatar.clearRemotePlayers();
   }
 
@@ -285,11 +268,22 @@ export class WorldEngine {
     this.lastTime = now;
     this.elapsed += dt;
 
-    this.avatar.update(dt, this.elapsed, this.inputLocked);
-
-    for (const fn of this.updateHooks) {
-      fn(dt, this.elapsed);
+    this.previousFeet.copy(this.avatar.position);
+    this.avatar.update(dt, this.elapsed, this.inputLocked || !!this.approach);
+    if (this.approach) {
+      const a = this.approach;
+      const t = Math.min(1, (now - a.start) / 720);
+      const ease = t * t * (3 - 2 * t);
+      this.camera.position.lerpVectors(a.from, a.to, ease);
+      this.camera.quaternion.slerpQuaternions(a.look, a.heading, ease);
+      if (t === 1) {
+        this.approach = undefined;
+        a.finish();
+        return; // Present the promoted destination on the next frame.
+      }
     }
+
+    this.room?.update(dt, this.elapsed);
 
     const portals = this.getAllPortals();
     let closest: PortalVisualHandle | null = null;
@@ -325,8 +319,23 @@ export class WorldEngine {
       }
 
       // Walk or dive directly into a portal to enter automatically!
-      if (!this.inputLocked && dist < handle.triggerRadius) {
-        this.triggerPortal(handle.portal);
+      if (!this.inputLocked && !this.approach && dist < GATE_WIDTH) {
+        if (handle.passage) {
+          const old = handle.group.worldToLocal(this.previousFeet.clone());
+          const feet = handle.group.worldToLocal(this.avatar.position.clone());
+          if (old.z > 0 && feet.z <= 0 && Math.abs(feet.x) < GATE_WIDTH / 2 && feet.y + 1.2 < GATE_HEIGHT && feet.y >= -0.25) {
+            if (this.triggerPortal(handle.portal, true)) {
+              // The chase rig already updated for this tick. Carry the eye through
+              // the plane and leave the last good frame up until promotion.
+              if (!this.avatar.firstPerson && Math.cos(this.avatar.yaw - (handle.portal.yaw ?? 0)) > 0.5) {
+                this.blendToEye(1);
+              }
+              return;
+            }
+          }
+        } else if (dist < handle.triggerRadius) {
+          this.triggerPortal(handle.portal);
+        }
       }
     }
 
@@ -359,8 +368,30 @@ export class WorldEngine {
       this.callbacks.onPortalHover?.(hitHandle?.portal ?? null, this.pointerScreenX, this.pointerScreenY);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // Bring the chase camera up to the glass with the runner so the opening
+    // fills the view at the instant the feet cross the plane.
+    if (!this.avatar.firstPerson && !this.approach && closest?.passage && closestDist < 6) {
+      const feet = closest.group.worldToLocal(this.avatar.position.clone());
+      const facing = Math.cos(this.avatar.yaw - (closest.portal.yaw ?? 0));
+      if (feet.z >= 0 && Math.abs(feet.x) < GATE_WIDTH / 2 && facing > 0.5) {
+        this.blendToEye(1 - THREE.MathUtils.smoothstep(feet.z, 0, 5));
+      }
+    }
+    if (!this.avatar.firstPerson && now - this.arrivedAt < 450) {
+      this.blendToEye(1 - THREE.MathUtils.smoothstep(now - this.arrivedAt, 0, 450));
+    }
+    this.avatar.updateCameraVisibility();
+    const insidePortal = this.previews?.render(portals, this.camera, this.currentHubStyle, dt, this.elapsed);
+    if (!insidePortal) this.renderer.render(this.scene, this.camera);
   };
+
+  private blendToEye(weight: number): void {
+    const eye = this.avatar.position.clone();
+    eye.y += 1.65;
+    this.camera.position.lerp(eye, weight);
+    const facing = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.avatar.pitch, this.avatar.yaw, 0, 'YXZ'));
+    this.camera.quaternion.slerp(facing, weight);
+  }
 
   private readonly handleResize = (): void => {
     const w = this.container.clientWidth || window.innerWidth;
@@ -394,7 +425,10 @@ export class WorldEngine {
   };
 
   dispose(): void {
+    this.mountSequence++;
     this.running = false;
+    this.approach?.finish();
+    this.approach = undefined;
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDown);

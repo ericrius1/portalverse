@@ -8,3 +8,4 @@ export * from './engine/AvatarController';
 export * from './engine/signage';
 export * from './shaders/portalShaders';
 export * from './shaders/meadowShaders';
+export * from './portal/defineRoom';

@@ -207,7 +207,7 @@ describe('WorldRegistry', () => {
     const reg = new WorldRegistry(registryJson as unknown as RegistryFile, {});
     expect(reg.getDefaultWorldId()).toBe('hub');
     expect(reg.getManifest('eric-world')?.name).toBe("Eric's Room");
-    expect(reg.getManifest('jp-world')?.name).toBe("JP's Room");
+    expect(reg.getManifest('jp-world')?.name).toBe("JP's Solarpunk Meadow");
   });
 
   it('caches loaded modules and dedupes concurrent loads', async () => {
