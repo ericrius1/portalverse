@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "defaultWorldId": "hub",
+  "defaultHubStyle": "fountains",
+  "worlds": [
+    {
+      "id": "hub",
+      "name": "Portal Hub",
+      "owner": "Shared Metaverse",
+      "author": "Eric & JP",
+      "description": "Switchable metaverse gateway — soar above Magic Fountains, wander the Blooming Solarpunk Meadow, or step through Nexus Arches.",
+      "accentColor": "#38bdf8",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": { "position": [0, 18, 22], "yaw": 0, "pitch": -0.45, "flying": true },
+        "from-eric": { "position": [-6, 1.8, 12], "yaw": -0.35 },
+        "from-jp": { "position": [6, 1.8, 12], "yaw": 0.35 }
+      }
+    },
+    {
+      "id": "eric-world",
+      "name": "Eric's Room",
+      "owner": "ericrius1",
+      "author": "Eric (ericrius1)",
+      "description": "Eric's placeholder studio room — cyan holographic workshop ready to build in worlds/eric-world.",
+      "accentColor": "#22d3ee",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": { "position": [0, 0, 10], "yaw": 0 },
+        "from-jp": { "position": [8, 0, 2], "yaw": 1.35 }
+      }
+    },
+    {
+      "id": "jp-world",
+      "name": "JP's Room",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "JP's placeholder studio room — warm amber solar workshop ready to build in worlds/jp-world.",
+      "accentColor": "#f59e0b",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": { "position": [0, 0, 10], "yaw": 0 },
+        "from-eric": { "position": [-8, 0, 2], "yaw": -1.35 }
+      }
+    }
+  ]
+}

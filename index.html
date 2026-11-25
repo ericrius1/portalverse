@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portalverse — Co-op WebGPU Metaverse</title>
+    <link rel="stylesheet" href="/app/styles.css" />
+  </head>
+  <body>
+    <div id="viewport"></div>
+
+    <!-- Warp Transition Overlay -->
+    <div id="warp-overlay" aria-hidden="true">
+      <div class="warp-ring"></div>
+      <div id="warp-label" class="warp-label">Entering World...</div>
+    </div>
+
+    <!-- Hover Tooltip for Clickable Portals (Fountains / Blooming Flowers / Arches) -->
+    <div id="hover-tooltip" class="hover-tooltip glass hidden">
+      <span class="tooltip-dot" id="tooltip-dot"></span>
+      <div>
+        <div class="tooltip-title" id="tooltip-title">Eric's Room</div>
+        <div class="tooltip-sub" id="tooltip-sub">Click or fly in to enter</div>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <header class="hud-top">
+        <div class="world-badge glass">
+          <span class="world-dot" id="world-accent-dot"></span>
+          <div>
+            <div class="world-title" id="hud-world-name">Portal Hub</div>
+            <div class="world-sub" id="hud-world-author">Shared Metaverse · WebGPU</div>
+          </div>
+          <span class="net-pill" id="hud-net-status" data-state="connecting">Connecting</span>
+        </div>
+
+        <!-- Portal Representation Switcher (shown in Portal Hub) -->
+        <div class="hub-style-switcher glass" id="hub-style-switcher" role="group" aria-label="Portal Hub Style">
+          <button class="style-chip active" data-hub-style="fountains" title="High above glowing blue magic fountains">
+            ✦ Fountains
+          </button>
+          <button class="style-chip" data-hub-style="meadow" title="Solarpunk wildflower meadow with blooming petal portals">
+            ✿ Meadow
+          </button>
+          <button class="style-chip" data-hub-style="nexus" title="Starlight obsidian archway plaza">
+            ◎ Nexus
+          </button>
+        </div>
+
+        <div class="hud-actions">
+          <button class="btn glass" id="btn-share-link" title="Copy direct shareable link to this room/hub">Share Link</button>
+          <button class="btn glass" id="btn-worlds" title="Rooms & Direct Links (M)">Rooms</button>
+          <button class="btn btn-primary glass" id="btn-link-portal" title="Spawn Portal (P)">+ Link Portal</button>
+          <button class="btn glass" id="btn-profile" title="Avatar Settings">Avatar</button>
+        </div>
+      </header>
+
+      <aside class="presence-panel glass" id="presence-panel">
+        <div class="panel-heading">
+          <span>Explorers</span>
+          <span class="count-badge" id="player-count">1</span>
+        </div>
+        <ul class="player-list" id="player-list"></ul>
+      </aside>
+
+      <div id="portal-prompt" class="portal-prompt glass hidden">
+        <span class="prompt-key">E</span>
+        <span id="portal-prompt-text">Step through portal</span>
+      </div>
+
+      <div id="toast-stack" class="toast-stack"></div>
+
+      <footer class="hud-bottom">
+        <div class="controls-bar glass">
+          <span><kbd>WASD</kbd> Move / Fly</span>
+          <span><kbd>Drag</kbd> Look</span>
+          <span><kbd>Click Portal</kbd> Enter</span>
+          <span><kbd>Space</kbd> / <kbd>C</kbd> Up / Down</span>
+          <span><kbd>F</kbd> <span id="flight-status-label">Flight: On</span></span>
+          <span><kbd>V</kbd> Camera</span>
+          <span><kbd>P</kbd> Link Portal</span>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Link Portal Modal -->
+    <div id="modal-portal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal glass">
+        <div class="modal-header">
+          <h2>Link a New Portal</h2>
+          <button class="icon-btn" data-close-modal>&times;</button>
+        </div>
+        <p class="modal-desc">
+          Spawn a live portal right in front of you—pointing to a world in this repo or any remote federated Portalverse URL.
+        </p>
+        <form id="form-portal" class="modal-form">
+          <label>
+            Portal Label
+            <input type="text" id="portal-label" placeholder="e.g. JP's Rooftop Lab" maxlength="40" required />
+          </label>
+          <label>
+            Destination Type
+            <select id="portal-mode">
+              <option value="local">Local World (in this repo)</option>
+              <option value="remote">Remote Federated URL (external world)</option>
+            </select>
+          </label>
+          <div id="portal-local-fields">
+            <label>
+              Target World
+              <select id="portal-target-world"></select>
+            </label>
+            <label>
+              Spawn Point ID
+              <input type="text" id="portal-target-spawn" value="default" placeholder="default" />
+            </label>
+          </div>
+          <div id="portal-remote-fields" class="hidden">
+            <label>
+              Remote World URL (http/https)
+              <input type="url" id="portal-remote-url" placeholder="https://friends-world.example.com" />
+            </label>
+          </div>
+          <div class="row-2">
+            <label>
+              Primary Color
+              <input type="color" id="portal-color-a" value="#38bdf8" />
+            </label>
+            <label>
+              Secondary Color
+              <input type="color" id="portal-color-b" value="#c084fc" />
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn" data-close-modal>Cancel</button>
+            <button type="submit" class="btn btn-primary">Spawn Portal</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Rooms & Direct Share Links Modal -->
+    <div id="modal-worlds" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal glass">
+        <div class="modal-header">
+          <h2>Rooms &amp; Shareable Links</h2>
+          <button class="icon-btn" data-close-modal>&times;</button>
+        </div>
+        <p class="modal-desc">
+          Jump straight into any room or copy a direct shareable link for Eric's Room, JP's Room, or the Portal Hub.
+        </p>
+        <div id="world-directory-list" class="world-cards"></div>
+      </div>
+    </div>
+
+    <!-- Avatar Profile Modal -->
+    <div id="modal-profile" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal glass">
+        <div class="modal-header">
+          <h2>Explorer Identity</h2>
+          <button class="icon-btn" data-close-modal>&times;</button>
+        </div>
+        <form id="form-profile" class="modal-form">
+          <label>
+            Display Name
+            <input type="text" id="profile-name" maxlength="24" required />
+          </label>
+          <label>
+            Avatar Aura Color
+            <input type="color" id="profile-color" value="#38bdf8" />
+          </label>
+          <div class="modal-footer">
+            <button type="button" class="btn" data-close-modal>Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="/app/main.ts"></script>
+  </body>
+</html>

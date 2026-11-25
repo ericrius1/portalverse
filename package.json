@@ -1,0 +1,31 @@
+{
+  "name": "portalverse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Co-op Three.js WebGPU + TSL portal metaverse built for multi-author & multi-agent workflows in T3 Code",
+  "scripts": {
+    "dev": "concurrently -n server,client -c magenta,cyan \"pnpm dev:server\" \"pnpm dev:client\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch packages/server/src/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.187.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/three": "^0.187.0",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.4"
+  }
+}
