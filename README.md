@@ -46,6 +46,7 @@ The repo pins pnpm 12.23.0 through `packageManager` in `package.json`, and CI in
 - **Rise / Descend & Land:** `Q` (or `Space`) rises up while flying; hold `E` to descend and land onto the ground
 - **Enter Portal:** Walk or fly straight through any circular portal (or press `E` nearby on foot)
 - **Toggle 1st / 3rd Person Camera:** `V` (defaults to 1st-person FPS)
+- **Toggle Walking Physics:** `G` switches between **Classic** (default) and **Platformer** (momentum, faster falls, jump height follows how long you hold `Space`); your browser remembers the choice
 - **Controls & Interactive Tutorial:** `H` or `?` (or choose **Interactive Tutorial** on the loading gate)
 - **Debug — Warp zones:** tick the checkbox in the controls bar to see each portal's warp zone (a wireframe sphere, and the floor circle the warp is measured on)
 - **Spawn Live Portal:** `P`

@@ -15,6 +15,33 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
   - *Decision*: Hide a portal by taking its meshes off all camera layers, which leaves lights underneath it on. In a headless Chrome run on Apple Metal, 23 consecutive crossings then stayed at 17 ms.
   - *Tradeoff*: Preview rooms now include the arrival gate's glow, as they do once you are inside.
 
+JP confirmed the crossing stutter was gone in a local playtest.
+
+## Platformer jump timing — `jp/platformer-input-fixes` (2026-11-25)
+
+### Fixed
+
+- Platformer jumps follow the same vertical trajectory at 20–240 FPS for the same hold duration. Movement now accounts for the time spent rising and falling within each frame. A held jump still matches Classic at 60 FPS, so players can clear the same ledges across frame rates in Platformer.
+- Two Space taps between frames now start flight when the first tap launches a jump. The controller counts presses until its next update so a frame hitch cannot swallow the second tap.
+
+## Platformer physics toggle — `feat/platformer-physics` (2026-11-25)
+
+### Added
+
+- **`G` switches walking physics between Classic and Platformer (`engine/movement.ts`, `AvatarController.ts`)** — Platformer ramps speed up over 0.25 s and brakes over 0.15 s, allows 35% steering in mid-air, falls faster than it rises, and scales jump height with how long `Space` is held (about 0.9 m tapped to 3.5 m held; a held jump peaks level with Classic's). Jumps still work just after running off a ledge. The HUD shows the mode and the browser remembers it. Platformer momentum turns with the player through portals.
+
+### Design & engineering decisions
+
+- **Opt-in, and the same in every room**
+  - *Why*: Walking felt floaty for platforming. A toggle lets people try a heavier feel without changing anyone's default.
+  - *Decision*: Classic is the default and runs the existing code. Per-room physics (such as gravity) is left for later.
+- **Platformer lives in a pure module**
+  - *Why*: It can be tested without a browser, and its numbers sit in one tuning object that per-room physics could override.
+  - *Decision*: `AvatarController` copies velocity and footing into the module each step, so flight, portals and menus keep using the existing fields.
+- **Double-tap flight works in both modes**
+  - *Why*: It is the established control.
+  - *Tradeoff*: A second `Space` during a Platformer jump takes off, even just before landing. The early-press allowance therefore only applies to falls that did not start with a jump.
+
 ## Railway all-in-one hosting, 10-room loop, FPS + tutorial, and Earth-style flight — `dd6aa95`..`2a8d19c` (2026-11-25)
 
 ### Added
