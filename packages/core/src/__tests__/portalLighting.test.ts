@@ -7,13 +7,14 @@ import { RoomInstance } from '../engine/RoomInstance';
 
 const emptyRoom = (id: string) => defineRoom(id, { mount: () => {} });
 
-/** What a render would see: three skips hidden subtrees, and meshes on no layer the camera shows. */
-function visibleIn(scene: THREE.Object3D) {
+/** Three.js skips invisible subtrees and checks each object's layers against the camera. */
+function visibleIn(scene: THREE.Object3D, camera: THREE.Camera) {
   const lights: number[] = [];
   const openings: THREE.Object3D[] = [];
   scene.traverseVisible(o => {
+    if (!o.layers.test(camera.layers)) return;
     if ((o as THREE.Light).isLight) lights.push(o.id);
-    if (o.userData.portalId && o.layers.mask !== 0) openings.push(o);
+    if (o.userData.portalId) openings.push(o);
   });
   return { lights: lights.sort((a, b) => a - b), openings };
 }
@@ -21,13 +22,15 @@ function visibleIn(scene: THREE.Object3D) {
 /** Draw eric-world's neighbours the ways the engine does, recording what each room render saw. */
 async function renderPreviews() {
   let target: THREE.RenderTarget | null = null;
-  const seen: Array<{ scene: THREE.Scene } & ReturnType<typeof visibleIn>> = [];
+  const seen: Array<{ scene: THREE.Scene; camera: THREE.Camera } & ReturnType<typeof visibleIn>> = [];
   const renderer = {
     coordinateSystem: THREE.WebGPUCoordinateSystem,
     getDrawingBufferSize: (out: THREE.Vector2) => out.set(1600, 900),
     getRenderTarget: () => target,
     setRenderTarget: (next: THREE.RenderTarget | null) => { target = next; },
-    render: (scene: THREE.Scene) => { seen.push({ scene, ...visibleIn(scene) }); },
+    render: (scene: THREE.Scene, camera: THREE.Camera) => {
+      seen.push({ scene, camera, ...visibleIn(scene, camera) });
+    },
   } as unknown as THREE.WebGPURenderer;
   const previews = new PortalPreviews(renderer, id => Promise.resolve(emptyRoom(id)));
   const home = await RoomInstance.mount(emptyRoom('eric-world'), renderer);
@@ -36,12 +39,14 @@ async function renderPreviews() {
   return { renderer, previews, home, seen };
 }
 
-function expectActiveLighting(seen: Awaited<ReturnType<typeof renderPreviews>>['seen']) {
+function expectPreviewVisibility(seen: Awaited<ReturnType<typeof renderPreviews>>['seen']) {
   expect(seen.length).toBeGreaterThan(0);
   for (const render of seen) {
     // Rendering leaves the room untouched afterwards, so this is what it shows when active.
-    const active = visibleIn(render.scene);
+    const active = visibleIn(render.scene, render.camera);
+    expect(active.lights.length).toBeGreaterThan(0);
     expect(render.lights).toEqual(active.lights);
+    expect(render.openings.length).toBeLessThan(active.openings.length);
   }
 }
 
@@ -54,18 +59,12 @@ describe('room lighting stays the same between preview and active', () => {
     camera.position.set(0, PORTAL_CENTER_Y, -ROUTE_LENGTH / 2 + 6);
     camera.lookAt(0, PORTAL_CENTER_Y, -ROUTE_LENGTH);
     previews.render(home.portals, camera, 1 / 60, 1);
-    expectActiveLighting(seen);
-    for (const render of seen) {
-      expect(render.openings.length).toBeLessThan(visibleIn(render.scene).openings.length);
-    }
+    expectPreviewVisibility(seen);
   });
 
   it('in the snapshots taken while loading', async () => {
     const { previews, home, seen } = await renderPreviews();
     await previews.prewarmSnapshots(['jp-world'], home);
-    expectActiveLighting(seen);
-    for (const render of seen) {
-      expect(render.openings.length).toBeLessThan(visibleIn(render.scene).openings.length);
-    }
+    expectPreviewVisibility(seen);
   });
 });
