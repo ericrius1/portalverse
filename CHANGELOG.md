@@ -6,7 +6,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 
 ### Changed
 
-- **Only five rooms stay mounted (`engine/roomWindow.ts`, `PortalPreviews.ts`)** — the player's room and two each way. The loading gate waits for the middle three; the outer two load one at a time behind them. A room left outside the window is disposed after 4 s unseen. This replaces `MAX_HOT_ROOMS` and the startup pass that mounted every room to photograph it.
+- **Only five rooms stay mounted (`engine/roomWindow.ts`, `PortalPreviews.ts`)** — the player's room and two each way. The loading gate waits for the middle three; the outer two then load one at a time. A menu jump holds that queue until the destination is ready. A room left outside the window is disposed after 4 s unseen. This replaces `MAX_HOT_ROOMS` and the startup pass that mounted every room to photograph it.
 - **A room is ready only after its shaders are compiled and both snapshots taken.**
 
 ### Fixed
@@ -16,7 +16,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 ### Design & engineering decisions
 
 - **Why**: efficiency, as the loop grows. Five matches what portals draw live; farther portals show snapshots.
-- **Measured** (headless Chrome, Apple Metal, 11 rooms, two runs each, before → after, shader cache warm):
+- **Measured** (headless Chrome, Apple Metal, 11 rooms, before → after, shader cache warm; two to three runs):
 
   | | before | after |
   |---|---|---|
@@ -25,14 +25,14 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
   | GPU process memory after one lap | 942–948 MB | 694–758 MB |
   | JS heap after one lap | 30 MB | 31 MB |
   | Frames over 33 ms per lap | 4–7 (worst 100 ms) | 0–1 (worst 33 ms) |
-  | Rooms-menu jump | 140–230 ms (one run) | 240–420 ms (one run) |
+  | Rooms-menu jump | 125–230 ms | 220–420 ms |
 
 - **Snapshot on arrival**, not pre-made images: no upkeep.
   - *Tradeoff*: Until a room has been visited or neared, portals to it show the placeholder, and a snapshot taken later may contain one.
 - **Dropped rooms start fresh** when you return.
 - **Tradeoff**: Jumping to an unloaded room waits for its shaders and snapshots, so it is slower than before.
 
-## Honey in da Hood Ya Heard room — `feat/honey-hood-room` (2026-11-25)
+## Honey in da Hood Ya Heard room — [PR #3](https://github.com/ericrius1/portalverse/pull/3), `7c9050d` (2026-11-25)
 
 ### Added
 
@@ -58,11 +58,12 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 - **The fire hydrant talks**
   - *Decision*: Within 5 m a speech bubble pops up reading はちみつタイム ("honey time"), and it goes away past 6 m.
 
-## Stutter when crossing portals — `fix/portal-crossing-stutter` (2026-11-25)
+## Stutter when crossing portals — [PR #2](https://github.com/ericrius1/portalverse/pull/2), `d2b21e1`, `aaa52cb` (2026-11-25)
 
 ### Fixed
 
 - **Freezes on every portal crossing (`engine/PortalPreviews.ts`)** — previews and snapshots hid the arrival portal along with its point light. The arrival portal's meshes are still hidden there, but its light now stays on.
+- The regression tests check which lights the camera can see in both live portal windows and loading snapshots. Both tests fail if hiding the arrival gate also hides its light.
 
 ### Design & engineering decisions
 
@@ -71,14 +72,16 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
   - *Decision*: Hide a portal by taking its meshes off all camera layers, which leaves lights underneath it on. In a headless Chrome run on Apple Metal, 23 consecutive crossings then stayed at 17 ms.
   - *Tradeoff*: Preview rooms now include the arrival gate's glow, as they do once you are inside.
 
-## Platformer jump timing — `jp/platformer-input-fixes` (2026-11-25)
+JP confirmed the crossing stutter was gone in a local playtest.
+
+## Platformer jump timing — [PR #1](https://github.com/ericrius1/portalverse/pull/1), `4b097a6` (2026-11-25)
 
 ### Fixed
 
 - Platformer jumps follow the same vertical trajectory at 20–240 FPS for the same hold duration. Movement now accounts for the time spent rising and falling within each frame. A held jump still matches Classic at 60 FPS, so players can clear the same ledges across frame rates in Platformer.
 - Two Space taps between frames now start flight when the first tap launches a jump. The controller counts presses until its next update so a frame hitch cannot swallow the second tap.
 
-## Platformer physics toggle — `feat/platformer-physics` (2026-11-25)
+## Platformer physics toggle — [PR #1](https://github.com/ericrius1/portalverse/pull/1), `c7ea955`, `2793e7d` (2026-11-25)
 
 ### Added
 
