@@ -201,6 +201,8 @@ export interface PortalVisualHandle {
   /** World-space center used for proximity/dive triggering. */
   triggerCenter: THREE.Vector3;
   triggerRadius: number;
+  /** Optional vertical cylinder bounds [minY, maxY] for tall portals like magic fountains. */
+  triggerYRange?: [number, number];
   setHovered?: (hovered: boolean) => void;
   setProximity?: (proximity01: number) => void;
   update?: (dt: number, elapsed: number) => void;
