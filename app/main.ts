@@ -13,6 +13,7 @@ import type {
 import { WorldEngine } from '@portalverse/core/engine/WorldEngine';
 import { MultiplayerClient } from '@portalverse/core/net/multiplayerClient';
 import { WorldRegistry } from '@portalverse/core/portal/registry';
+import { parseMovementMode } from '@portalverse/core/engine/movement';
 import {
   buildRemotePortalUrl,
   buildShareableWorldUrl,
@@ -23,6 +24,7 @@ import {
 import { InteractiveTutorial, hasCompletedTutorial } from './tutorial';
 
 const STORAGE_PROFILE_KEY = 'portalverse.profile.v1';
+const STORAGE_MOVEMENT_MODE_KEY = 'portalverse.movement.mode';
 const STORAGE_WARP_ZONES_KEY = 'portalverse.debug.warpZones';
 
 function loadOrCreateIdentity(): PlayerIdentity {
@@ -113,6 +115,7 @@ async function boot(): Promise<void> {
   const portalPromptText = document.getElementById('portal-prompt-text')!;
   const toastStack = document.getElementById('toast-stack')!;
   const flightStatusLabel = document.getElementById('flight-status-label')!;
+  const physicsModeLabel = document.getElementById('physics-mode-label')!;
   const warpZonesToggle = document.getElementById('debug-warp-zones') as HTMLInputElement;
 
   const btnShareLink = document.getElementById('btn-share-link')!;
@@ -290,7 +293,16 @@ async function boot(): Promise<void> {
     onPointerLockChange: (locked) => {
       syncPointerUi(locked);
     },
+    onMovementModeChange: (mode) => {
+      physicsModeLabel.textContent = mode === 'platformer' ? 'Physics: Platformer' : 'Physics: Classic';
+      try { localStorage.setItem(STORAGE_MOVEMENT_MODE_KEY, mode); } catch { /* storage unavailable */ }
+    },
   });
+
+  // Walking physics (G), remembered between reloads.
+  try {
+    engine.avatar.setMovementMode(parseMovementMode(localStorage.getItem(STORAGE_MOVEMENT_MODE_KEY)));
+  } catch { /* storage unavailable */ }
 
   // Debug: show each portal's warp zone, remembered between reloads.
   const readWarpZones = (): boolean => {

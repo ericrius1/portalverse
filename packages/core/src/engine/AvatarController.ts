@@ -1,6 +1,15 @@
 import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
 import type { AvatarState, PlatformCollider, SpawnPoint, Vec3Tuple } from '../types';
+import {
+  PLATFORMER_TUNING,
+  createMovementState,
+  resolveGround,
+  stepMovement,
+  turnMomentum,
+  type MovementInput,
+  type MovementMode,
+} from './movement';
 import { createFloatingLabel } from './signage';
 
 interface RemoteAvatarVisual {
@@ -91,6 +100,7 @@ export class AvatarController {
   pitch = 0;
   velocityY = 0;
   isFlying = false;
+  movementMode: MovementMode = 'classic';
   firstPerson = true;
   pointerLocked = false;
 
@@ -111,6 +121,9 @@ export class AvatarController {
   private lastPointerX = 0;
   private lastPointerY = 0;
   private onGround = true;
+  /** Platformer timers; velocity and footing are copied from the fields above each step. */
+  private readonly platformer = createMovementState();
+  private pendingJumpPresses = 0;
 
   private localRig: StylizedAvatarRig;
   private localColor: string;
@@ -122,6 +135,7 @@ export class AvatarController {
   private onColorChange?: (hexColor: string) => void;
   private onCameraViewChange?: (firstPerson: boolean) => void;
   private onPointerLockChange?: (locked: boolean) => void;
+  private onMovementModeChange?: (mode: MovementMode) => void;
 
   private readonly domElement: HTMLElement;
   private readonly scene: THREE.Scene;
@@ -136,6 +150,7 @@ export class AvatarController {
     onColorChange?: (hexColor: string) => void,
     onCameraViewChange?: (firstPerson: boolean) => void,
     onPointerLockChange?: (locked: boolean) => void,
+    onMovementModeChange?: (mode: MovementMode) => void,
   ) {
     this.scene = scene;
     this.camera = camera;
@@ -145,6 +160,7 @@ export class AvatarController {
     this.onColorChange = onColorChange;
     this.onCameraViewChange = onCameraViewChange;
     this.onPointerLockChange = onPointerLockChange;
+    this.onMovementModeChange = onMovementModeChange;
 
     this.localRig = createStylizedAvatarRig(initialColor);
     this.localRig.group.visible = !this.firstPerson;
@@ -166,6 +182,7 @@ export class AvatarController {
       this.keys.clear();
       this.flyVel.set(0, 0, 0);
       this.stride.set(0, 0);
+      this.resetPlatformerTimers();
       this.isDraggingLook = false;
       this.exitPointerLock();
     }
@@ -271,6 +288,7 @@ export class AvatarController {
     this.takeoffDriftW = 0;
     this.cruiseT = 0;
     this.boostT = 0;
+    this.resetPlatformerTimers();
     if (flying) {
       this.jumpedInAir = false;
       this.onGround = false;
@@ -312,6 +330,34 @@ export class AvatarController {
     this.takeoffDriftW = 1;
   }
 
+  setMovementMode(mode: MovementMode): void {
+    if (mode === this.movementMode) return;
+    this.movementMode = mode;
+    this.resetPlatformerTimers();
+    this.onMovementModeChange?.(mode);
+  }
+
+  toggleMovementMode(): void {
+    this.setMovementMode(this.movementMode === 'classic' ? 'platformer' : 'classic');
+  }
+
+  /** Keep Platformer momentum pointing the same way relative to the player through a portal. */
+  turnMomentum(yawDelta: number): void {
+    if (this.movementMode !== 'platformer') return;
+    const state = this.platformer;
+    state.velocity.x = this.stride.x;
+    state.velocity.z = this.stride.y;
+    turnMomentum(state, yawDelta);
+    this.stride.set(state.velocity.x, state.velocity.z);
+  }
+
+  private resetPlatformerTimers(): void {
+    this.platformer.coyote = 0;
+    this.platformer.jumpBuffer = 0;
+    this.platformer.gaitSpeed = 0;
+    this.pendingJumpPresses = 0;
+  }
+
   private triggerJumpOrFly(): void {
     if (this.isFlying) return;
     const air = !this.onGround || this.velocityY > 0.1;
@@ -320,7 +366,10 @@ export class AvatarController {
       this.takeOff();
       return;
     }
-    if (!air) {
+    // Platformer jumps happen in its movement step, which also allows late and early presses.
+    if (this.movementMode === 'platformer') {
+      this.pendingJumpPresses++;
+    } else if (!air) {
       this.velocityY = JUMP_VELOCITY;
       this.onGround = false;
       this.jumpedInAir = true;
@@ -423,6 +472,13 @@ export class AvatarController {
 
   update(dt: number, elapsed: number, inputLocked: boolean): void {
     const clampedDt = Math.min(dt, 0.05);
+    const jumpPresses = this.pendingJumpPresses;
+    this.pendingJumpPresses = 0;
+
+    if (inputLocked && this.movementMode === 'platformer') {
+      this.stride.set(0, 0);
+      this.resetPlatformerTimers();
+    }
 
     if (!inputLocked) {
       const forward = (this.keys.has('KeyW') || this.keys.has('ArrowUp') ? 1 : 0) -
@@ -522,6 +578,15 @@ export class AvatarController {
           if (this.flyVel.y < 0) this.flyVel.y = 0;
         }
         this.velocityY = this.isFlying ? this.flyVel.y : this.velocityY;
+      } else if (this.movementMode === 'platformer') {
+        const dx = fwdX * forward + rightX * strafe;
+        const dz = fwdZ * forward + rightZ * strafe;
+        const len = Math.hypot(dx, dz) || 1;
+        this.updatePlatformer(
+          { x: dx / len, z: dz / len, sprint, jumpHeld: this.keys.has('Space'), jumpPressed: jumpPresses > 0 },
+          clampedDt,
+        );
+        if (jumpPresses > 1 && this.jumpedInAir) this.takeOff();
       } else {
         this.jumpT += clampedDt;
         const moveSpeed = sprint ? RUN_SPEED : 8.2;
@@ -565,8 +630,14 @@ export class AvatarController {
       }
 
       // Soft world boundary so nobody wanders into NaN void
-      this.position.x = THREE.MathUtils.clamp(this.position.x, -95, 95);
-      this.position.z = THREE.MathUtils.clamp(this.position.z, -95, 95);
+      const boundedX = THREE.MathUtils.clamp(this.position.x, -95, 95);
+      const boundedZ = THREE.MathUtils.clamp(this.position.z, -95, 95);
+      if (this.movementMode === 'platformer') {
+        if (boundedX !== this.position.x) this.stride.x = 0;
+        if (boundedZ !== this.position.z) this.stride.y = 0;
+      }
+      this.position.x = boundedX;
+      this.position.z = boundedZ;
       this.position.y = THREE.MathUtils.clamp(this.position.y, -10, 75);
     }
 
@@ -615,6 +686,28 @@ export class AvatarController {
     }
   }
 
+  private updatePlatformer(input: MovementInput, dt: number): void {
+    const state = this.platformer;
+    state.velocity.x = this.stride.x;
+    state.velocity.y = this.velocityY;
+    state.velocity.z = this.stride.y;
+    state.grounded = this.onGround;
+
+    const move = stepMovement(state, input, PLATFORMER_TUNING, dt);
+    // Only a jump raises vertical speed. Remember it so that another press in mid-air takes off.
+    if (state.velocity.y > Math.max(0, this.velocityY)) this.jumpedInAir = true;
+
+    this.position.x += move.x;
+    this.position.z += move.z;
+    const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
+    this.position.y = resolveGround(state, this.position.y + move.y, floorY, PLATFORMER_TUNING.groundSnap);
+
+    this.stride.set(state.velocity.x, state.velocity.z);
+    this.velocityY = state.velocity.y;
+    this.onGround = state.grounded;
+    if (this.onGround) this.jumpedInAir = false;
+  }
+
   sampleSurfaceHeight(x: number, z: number): number {
     let bestY = this.terrainHeightFn ? this.terrainHeightFn(x, z) : 0;
     for (const p of this.platforms) {
@@ -641,6 +734,7 @@ export class AvatarController {
     }
     this.keys.add(e.code);
     if (e.code === 'Space' && !e.repeat) this.triggerJumpOrFly();
+    if (e.code === 'KeyG' && !e.repeat && !e.ctrlKey && !e.metaKey) this.toggleMovementMode();
     if (e.code === 'KeyV' && !e.repeat) this.toggleCameraView();
     if (e.code === 'KeyF' && !e.repeat) this.toggleFlight();
   };
@@ -651,6 +745,8 @@ export class AvatarController {
 
   private readonly handleWindowBlur = (): void => {
     this.keys.clear();
+    if (this.movementMode === 'platformer') this.stride.set(0, 0);
+    this.resetPlatformerTimers();
     this.isDraggingLook = false;
   };
 

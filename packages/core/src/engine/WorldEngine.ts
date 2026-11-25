@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import type { MovementMode } from './movement';
 import type {
   AvatarState,
   PlayerView,
@@ -44,6 +45,7 @@ export interface WorldEngineCallbacks {
   onFlightChange?: (flying: boolean) => void;
   onCameraViewChange?: (firstPerson: boolean) => void;
   onPointerLockChange?: (locked: boolean) => void;
+  onMovementModeChange?: (mode: MovementMode) => void;
 }
 
 interface ActiveTransit {
@@ -169,6 +171,7 @@ export class WorldEngine {
       },
       callbacks.onCameraViewChange,
       callbacks.onPointerLockChange,
+      callbacks.onMovementModeChange,
     );
     this.playerView = { position: this.avatar.position };
     this.frameMotion = {
@@ -307,6 +310,7 @@ export class WorldEngine {
       carryThroughPortal(this.avatar.position, sourceOrigin, yawDelta, landing);
       carryThroughPortal(this.camera.position, sourceOrigin, yawDelta, landing);
       this.avatar.yaw += yawDelta;
+      this.avatar.turnMomentum(yawDelta);
       this.camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawDelta));
       this.avatar.syncRigTransform(this.elapsed);
       this.skipNextSpeedSample = true;

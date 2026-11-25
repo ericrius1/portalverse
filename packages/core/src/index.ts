@@ -5,6 +5,7 @@ export * from './net/multiplayerClient';
 export * from './engine/WorldEngine';
 export * from './engine/PortalMesh';
 export * from './engine/AvatarController';
+export * from './engine/movement';
 export * from './engine/signage';
 export * from './shaders/portalShaders';
 export * from './portal/defineRoom';
