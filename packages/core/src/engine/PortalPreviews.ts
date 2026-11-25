@@ -344,6 +344,24 @@ export function framePortal(camera: THREE.PerspectiveCamera, viewer: THREE.Persp
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 }
 
+/**
+ * Stop a portal drawing while leaving its lights on, and return a function that undoes it.
+ * Three.js builds a room's shaders for its set of lights, so a preview must light the
+ * room exactly as the active room does, or every shader is rebuilt on the crossing frame.
+ * Layers rather than `visible`, which would also hide the lights underneath.
+ */
+function hidePortal(handle: PortalVisualHandle | undefined): () => void {
+  const hidden: Array<[THREE.Object3D, number]> = [];
+  handle?.group.traverse(object => {
+    if ((object as THREE.Light).isLight) return;
+    hidden.push([object, object.layers.mask]);
+    object.layers.mask = 0;
+  });
+  return () => {
+    for (const [object, mask] of hidden) object.layers.mask = mask;
+  };
+}
+
 export class PortalPreviews {
   private readonly destinations = new Map<string, Destination>();
   private readonly views = new Map<Aperture, WindowView>();
@@ -513,7 +531,7 @@ export class PortalPreviews {
       sceneFog.near = savedNear + snap.refDistance;
       sceneFog.far = savedFar + snap.refDistance;
     }
-    if (receiving) receiving.group.visible = false;
+    const showReceiving = hidePortal(receiving);
     try {
       this.renderer.setRenderTarget(snap.target);
       this.renderer.render(room.scene, this.captureCamera);
@@ -522,7 +540,7 @@ export class PortalPreviews {
         sceneFog.near = savedNear;
         sceneFog.far = savedFar;
       }
-      if (receiving) receiving.group.visible = true;
+      showReceiving();
       this.renderer.setRenderTarget(previousTarget);
     }
   }
@@ -911,7 +929,7 @@ export class PortalPreviews {
       fog.near = fogNear + fogOffset;
       fog.far = fogFar + fogOffset;
     }
-    if (receiving) receiving.group.visible = false;
+    const showReceiving = hidePortal(receiving);
     try {
       this.renderer.render(room.scene, camera);
     } finally {
@@ -919,7 +937,7 @@ export class PortalPreviews {
         fog.near = fogNear;
         fog.far = fogFar;
       }
-      if (receiving) receiving.group.visible = true;
+      showReceiving();
     }
   }
 
