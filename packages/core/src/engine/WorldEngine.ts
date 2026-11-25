@@ -27,10 +27,11 @@ import {
   canOfferPortalPrompt,
   carryThroughPortal,
   crossingYawDelta,
-  detectFeetCrossing,
+  beginCrossing,
   resolveTransit,
   viewerSide,
   type CrossingSide,
+  type FrameMotion,
 } from './portalCrossing';
 
 const RIPPLE_START_FOV_FRACTION = 0.75;
@@ -47,6 +48,8 @@ export interface WorldEngineCallbacks {
 interface ActiveTransit {
   handle: PortalVisualHandle;
   sideSign: CrossingSide;
+  /** The camera reached the opening first, because the player is backing in. */
+  cameraLed?: boolean;
 }
 
 interface WalkThroughState {
@@ -83,6 +86,8 @@ export class WorldEngine {
   private exitedPortalId?: string;
   private walkThrough?: WalkThroughState;
   private readonly previousFeet = new THREE.Vector3();
+  private readonly previousCamera = new THREE.Vector3();
+  private readonly frameMotion: FrameMotion;
   private readonly previousCamPos = new THREE.Vector3();
   private readonly scratchPlayerCenter = new THREE.Vector3();
   private readonly scratchVecA = new THREE.Vector3();
@@ -149,6 +154,12 @@ export class WorldEngine {
         (this.transitRig.haloMesh.material as THREE.MeshBasicMaterial).color.copy(col);
       },
     );
+    this.frameMotion = {
+      previousFeet: this.previousFeet,
+      feet: this.avatar.position,
+      previousCamera: this.previousCamera,
+      camera: this.camera.position,
+    };
 
     window.addEventListener('resize', this.handleResize);
     window.addEventListener('keydown', this.handleKeyDown);
@@ -490,6 +501,7 @@ export class WorldEngine {
     this.elapsed += dt;
 
     this.previousFeet.copy(this.avatar.position);
+    this.previousCamera.copy(this.camera.position);
 
     if (this.walkThrough) {
       const wt = this.walkThrough;
@@ -568,18 +580,26 @@ export class WorldEngine {
         closest = handle;
       }
 
-      // Detect the character stepping into a portal opening
-      if (!this.inputLocked && !this.transitPortal && now >= this.portalCooldownUntil && dist < GATE_WIDTH + 2) {
+      // Detect the character, or the chase camera when backing in, entering a portal opening
+      if (!this.inputLocked && !this.transitPortal) {
+        const ready = now >= this.portalCooldownUntil && dist < GATE_WIDTH + 2;
         if (handle.passage) {
-          const side = detectFeetCrossing(handle, this.previousFeet, this.avatar.position);
-          if (side && handle.portal.remoteUrl) {
-            // Remote portals hand off to another server as soon as the feet pass through.
-            this.triggerPortal(handle.portal, true);
-          } else if (side) {
-            this.transitPortal = { handle, sideSign: side };
+          const start = beginCrossing(handle, this.frameMotion, this.avatar.firstPerson);
+          if (start?.by === 'feet' && ready) {
+            if (handle.portal.remoteUrl) {
+              // Remote portals hand off to another server as soon as the feet pass through.
+              this.triggerPortal(handle.portal, true);
+            } else {
+              this.transitPortal = { handle, sideSign: start.side };
+              this.previews?.prepare(handle.portal.targetWorldId);
+            }
+          } else if (start?.by === 'camera' && !handle.portal.remoteUrl) {
+            // No cooldown: a camera crossing needs real movement through the opening,
+            // and backing straight out again must switch straight back.
+            this.transitPortal = { handle, sideSign: start.side, cameraLed: true };
             this.previews?.prepare(handle.portal.targetWorldId);
           }
-        } else if (dist < handle.triggerRadius) {
+        } else if (ready && dist < handle.triggerRadius) {
           this.triggerPortal(handle.portal, true);
         }
       }
@@ -587,7 +607,7 @@ export class WorldEngine {
 
     // Check active 3rd-person portal transit: promote synchronously as soon as the camera crosses.
     if (this.transitPortal) {
-      const { handle, sideSign } = this.transitPortal;
+      const { handle, sideSign, cameraLed } = this.transitPortal;
       const decision = resolveTransit(handle, sideSign, this.avatar.position, this.camera.position, {
         walkingThrough: !!this.walkThrough,
         firstPerson: this.avatar.firstPerson,
@@ -600,6 +620,13 @@ export class WorldEngine {
         this.transitPortal = undefined;
         this.walkThrough = undefined;
         const promoted = this.promotePortalSync(handle, sideSign);
+        if (promoted && cameraLed) {
+          // The camera is in the new room but the feet are still behind the portal we
+          // came through. From here that is a crossing back in progress: it completes
+          // when the player backs fully in, or switches back if the camera returns.
+          const receiving = this.room?.portals.find(p => p.portal.id === handle.portal.targetSpawnId);
+          if (receiving) this.transitPortal = { handle: receiving, sideSign: 1 };
+        }
         if (promoted) {
           portals = this.getAllPortals();
           this.room?.update(0, this.elapsed);

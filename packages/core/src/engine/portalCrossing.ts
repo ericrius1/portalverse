@@ -10,7 +10,8 @@ import { isOneWay } from './PortalMesh';
  * A crossing has two phases. When the player's feet pass through an opening, the
  * engine starts a transit and keeps rendering the old room. When the chase camera
  * also passes the plane, the destination room is promoted on that same frame, so
- * the view never jumps.
+ * the view never jumps. Backing in, the camera leads instead: the crossing starts
+ * and promotes as soon as the camera passes through the opening.
  */
 
 /** 1 = entered through the front (+Z) face, -1 = through the back face. */
@@ -51,6 +52,52 @@ export function detectFeetCrossing(
   if (before.z > 0 && after.z <= 0) return 1;
   if (!isOneWay(handle) && before.z < 0 && after.z >= 0) return -1;
   return null;
+}
+
+/** Which face the camera passed through between two frames, or null. It must pass inside the opening. */
+export function detectCameraCrossing(
+  handle: Pick<PortalVisualHandle, 'group' | 'aperture'>,
+  previousCamera: THREE.Vector3,
+  camera: THREE.Vector3,
+): CrossingSide | null {
+  const before = handle.group.worldToLocal(localA.copy(previousCamera));
+  const after = handle.group.worldToLocal(localB.copy(camera));
+  if (Math.hypot(after.x, after.y - PORTAL_CENTER_Y) >= PORTAL_RADIUS - 0.1) return null;
+  if (before.z > 0 && after.z <= 0) return 1;
+  if (!isOneWay(handle) && before.z < 0 && after.z >= 0) return -1;
+  return null;
+}
+
+/** Where the feet and chase camera were last frame and are now. */
+export interface FrameMotion {
+  previousFeet: THREE.Vector3;
+  feet: THREE.Vector3;
+  previousCamera: THREE.Vector3;
+  camera: THREE.Vector3;
+}
+
+export interface CrossingStart {
+  side: CrossingSide;
+  /** What reached the opening first: the feet, or the camera when backing in. */
+  by: 'feet' | 'camera';
+}
+
+/**
+ * Whether the player starts going through a portal this frame. Walking forward the
+ * feet lead. Backing in, the 3rd-person camera reaches the opening first; starting
+ * then keeps it from looking back at the room it's leaving from the far side of the
+ * portal, where the scenery around the ring would snap when the feet finally crossed.
+ */
+export function beginCrossing(
+  handle: Pick<PortalVisualHandle, 'group' | 'aperture'>,
+  motion: FrameMotion,
+  firstPerson: boolean,
+): CrossingStart | null {
+  const feetSide = detectFeetCrossing(handle, motion.previousFeet, motion.feet);
+  if (feetSide) return { side: feetSide, by: 'feet' };
+  if (firstPerson) return null;
+  const cameraSide = detectCameraCrossing(handle, motion.previousCamera, motion.camera);
+  return cameraSide ? { side: cameraSide, by: 'camera' } : null;
 }
 
 /**

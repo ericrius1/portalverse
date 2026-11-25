@@ -9,6 +9,7 @@ import { createArchwayPortal } from '../engine/PortalMesh';
 import { RoomInstance } from '../engine/RoomInstance';
 import { PortalPreviews, portalPixels } from '../engine/PortalPreviews';
 import {
+  beginCrossing,
   canOfferPortalPrompt,
   carryThroughPortal,
   crossingYawDelta,
@@ -336,6 +337,112 @@ describe('live portal windows', () => {
     const after = frame(-20).live.target!;
     expect(after).toBe(before);
     expect([after.width, after.height]).toEqual([1280, 720]);
+    previews.clear();
+  });
+});
+
+describe('backing through a portal', () => {
+  // Eric's exit (z = -36.25) faces into his room. Backing toward it, the player faces +Z
+  // and the 3rd-person camera trails 5.6 m behind their back, so it reaches the exit first.
+  const CAMERA_BEHIND = 5.6;
+  const CAMERA_HEIGHT = 3.5;
+  const cameraFor = (feet: THREE.Vector3, facing: 1 | -1) =>
+    v(feet.x, CAMERA_HEIGHT, feet.z - facing * CAMERA_BEHIND);
+
+  /** Step the feet along z, calling `onFrame` with each frame's motion. */
+  function walk(from: number, to: number, facing: 1 | -1, x: number,
+    onFrame: (motion: { previousFeet: THREE.Vector3; feet: THREE.Vector3; previousCamera: THREE.Vector3; camera: THREE.Vector3 }) => boolean | void) {
+    const step = 0.24 * Math.sign(to - from); // a sprint frame at 60 fps
+    for (let z = from; Math.abs(z - to) > 1e-6 && (z - to) * Math.sign(from - to) > 0; z += step) {
+      const previousFeet = v(x, 0, z);
+      const feet = v(x, 0, z + step);
+      if (onFrame({ previousFeet, feet, previousCamera: cameraFor(previousFeet, facing), camera: cameraFor(feet, facing) })) return;
+    }
+  }
+
+  it('starts the crossing when the camera reaches the opening, not 5.6 m later at the feet', () => {
+    const exit = gate('eric-world', 'exit');
+    let started: { by: string; feetZ: number } | null = null;
+    walk(-28, -40, 1, 0.4, motion => {
+      const start = beginCrossing(exit, motion, false);
+      if (!start) return;
+      started = { by: start.by, feetZ: motion.feet.z };
+      expect(resolveTransit(exit, start.side, motion.feet, motion.camera, { walkingThrough: false, firstPerson: false })).toBe('promote');
+      return true;
+    });
+    expect(started).not.toBeNull();
+    expect(started!.by).toBe('camera');
+    expect(started!.feetZ).toBeCloseTo(-ROUTE_LENGTH / 2 + CAMERA_BEHIND, 0);
+  });
+
+  it('still lets the feet lead walking forward, or in first person, and ignores passing beside the ring', () => {
+    const exit = gate('eric-world', 'exit');
+    const firstStart = (x: number, facing: 1 | -1, firstPerson: boolean) => {
+      let result: string | null = null;
+      walk(-28, -40, facing, x, motion => {
+        const start = beginCrossing(exit, motion, firstPerson);
+        if (start) result = start.by;
+        return !!start;
+      });
+      return result;
+    };
+    expect(firstStart(0.4, -1, false)).toBe('feet'); // facing the exit, camera behind in the room
+    expect(firstStart(0.4, 1, true)).toBe('feet');
+    expect(firstStart(4.5, 1, false)).toBeNull();
+  });
+
+  it('completes once the player backs fully in, or switches back if they walk away', () => {
+    // After switching on the camera, the feet are still behind JP's entrance, the portal back.
+    const back = gate('jp-world', 'entrance');
+    const state = { walkingThrough: false, firstPerson: false };
+    const shift = ROUTE_LENGTH;
+    const decisions = (to: number, facing: 1 | -1) => {
+      const seen: string[] = [];
+      walk(-30.6 + shift, to, facing, 0.4, motion => {
+        const decision = resolveTransit(back, 1, motion.feet, motion.camera, state);
+        if (seen.at(-1) !== decision) seen.push(decision);
+        return decision !== 'wait';
+      });
+      return seen;
+    };
+    expect(decisions(-40 + shift, 1)).toEqual(['wait', 'cancel']); // kept backing: crossing done
+    expect(decisions(-20 + shift, -1)).toEqual(['promote']); // turned and walked away: back to Eric's
+  });
+
+  it('shows the same picture on both sides of the switch', async () => {
+    const W = 1920, H = 1080;
+    const fake = fakeRenderer(W, H);
+    const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
+    const eric = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
+    eric.activate(() => {});
+    const jp = (await previews.prepare('jp-world'))!;
+    const viewer = new THREE.PerspectiveCamera(62, W / H, 0.1, 450);
+    viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
+    const place = (z: number) => {
+      viewer.position.set(0.4, CAMERA_HEIGHT, z);
+      viewer.rotation.set(-0.06, Math.PI, 0, 'YXZ'); // looking +Z, back at the player
+      viewer.updateProjectionMatrix();
+      viewer.updateMatrixWorld();
+    };
+    const lamp = v(1.5, 1.2, -25); // something in Eric's room in front of the camera
+    const full = new THREE.Vector4(0, 0, W, H);
+
+    place(-ROUTE_LENGTH / 2 + 0.001); // camera just inside Eric's exit: sees his room directly
+    const before = screenPixel(lamp, viewer.projectionMatrix.clone().multiply(viewer.matrixWorldInverse), full);
+
+    // Camera passes through: JP becomes the room, and Eric's is seen back through JP's entrance.
+    eric.deactivate();
+    previews.retain('eric-world', eric);
+    expect(previews.takeReady('jp-world')).toBe(jp);
+    jp.activate(() => {});
+    place(-ROUTE_LENGTH / 2 - 0.001 + ROUTE_LENGTH);
+    fake.renders.length = 0;
+    previews.render(jp.portals, viewer, 1 / 60, 1);
+    const ericView = fake.renders.find(r => r.scene === eric.scene)!;
+    expect(ericView.target).toBeNull(); // the opening fills the view, so it's drawn straight to the screen
+    const after = screenPixel(lamp, ericView.viewProjection, full);
+
+    expect(after.distanceTo(before)).toBeLessThan(0.25);
     previews.clear();
   });
 });
