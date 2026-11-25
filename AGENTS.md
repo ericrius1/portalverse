@@ -60,7 +60,7 @@ Everything—both the Vite WebGPU frontend (`dist/`) and the authoritative multi
      - Max **4 MiB** per single file
      - Max **2048 px** per edge for standalone PNG/KTX2 textures
      - GLB models must be uncompressed (no Draco, meshopt, or KTX2); credit third-party assets in `worlds/<room-id>/CREDITS.md`.
-5. Keep `MAX_HOT_ROOMS` in `packages/core/src/engine/PortalPreviews.ts` in mind (currently `10`; rooms beyond that still work and transparently unload/remount as you travel).
+5. Only a window of rooms stays mounted: the player's room plus `ROOM_WINDOW_RADIUS` (currently `2`) each way in the loop (`packages/core/src/engine/roomWindow.ts`). A room left outside it is disposed after a few seconds unseen and mounted fresh on return, so keep nothing that must survive a visit, and keep `mount(ctx)` quick: its synchronous work runs on the render thread while the player walks.
 
 ## 4. Local Development & Tooling
 
