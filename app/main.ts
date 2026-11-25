@@ -20,6 +20,7 @@ import {
   placeHandoffArrival,
   readRouteFromLocation,
 } from '@portalverse/core/portal/handoff';
+import { InteractiveTutorial, hasCompletedTutorial } from './tutorial';
 
 const STORAGE_PROFILE_KEY = 'portalverse.profile.v1';
 const STORAGE_WARP_ZONES_KEY = 'portalverse.debug.warpZones';
@@ -94,6 +95,12 @@ async function boot(): Promise<void> {
   const loadingRingArc = document.getElementById('loading-ring-arc') as unknown as SVGCircleElement;
   const loadingStatusText = document.getElementById('loading-status-text')!;
   const loadingPhaseText = document.getElementById('loading-phase-text')!;
+  const btnGateTutorial = document.getElementById('btn-gate-tutorial') as HTMLButtonElement;
+  const btnGateEnter = document.getElementById('btn-gate-enter') as HTMLButtonElement;
+  const fpsReticle = document.getElementById('fps-reticle')!;
+  const pointerLockBanner = document.getElementById('pointer-lock-banner')!;
+  const mouseLockLabel = document.getElementById('mouse-lock-label')!;
+  const cameraViewLabel = document.getElementById('camera-view-label')!;
   const warpOverlay = document.getElementById('warp-overlay')!;
   const warpLabel = document.getElementById('warp-label')!;
   const hudWorldName = document.getElementById('hud-world-name')!;
@@ -112,10 +119,28 @@ async function boot(): Promise<void> {
   const btnWorlds = document.getElementById('btn-worlds')!;
   const btnLinkPortal = document.getElementById('btn-link-portal')!;
   const btnProfile = document.getElementById('btn-profile')!;
+  const btnControls = document.getElementById('btn-controls')!;
+  const btnReplayTutorial = document.getElementById('btn-replay-tutorial') as HTMLButtonElement;
 
   const modalPortal = document.getElementById('modal-portal')!;
   const modalWorlds = document.getElementById('modal-worlds')!;
   const modalProfile = document.getElementById('modal-profile')!;
+  const modalControls = document.getElementById('modal-controls')!;
+
+  const tutorial = new InteractiveTutorial({
+    card: document.getElementById('tutorial-card')!,
+    stepBadge: document.getElementById('tutorial-step-badge')!,
+    progressFill: document.getElementById('tutorial-progress-fill')!,
+    title: document.getElementById('tutorial-title')!,
+    desc: document.getElementById('tutorial-desc')!,
+    status: document.getElementById('tutorial-status')!,
+    btnNext: document.getElementById('btn-tutorial-next') as HTMLButtonElement,
+    btnSkip: document.getElementById('btn-tutorial-skip') as HTMLButtonElement,
+  });
+
+  if (!hasCompletedTutorial()) {
+    btnGateTutorial.classList.add('recommended');
+  }
 
   const formPortal = document.getElementById('form-portal') as HTMLFormElement;
   const portalLabelInput = document.getElementById('portal-label') as HTMLInputElement;
@@ -214,11 +239,23 @@ async function boot(): Promise<void> {
     hudSyncTimer = window.setTimeout(run, 0);
   }
 
+  let gateExited = false;
+  let shiftHeld = false;
+
+  const allModals = [modalPortal, modalWorlds, modalProfile, modalControls];
+  const isAnyModalOpen = () => allModals.some((m) => !m.classList.contains('hidden'));
+  const syncPointerUi = (locked: boolean) => {
+    fpsReticle.classList.toggle('hidden', !locked);
+    mouseLockLabel.textContent = locked ? 'FPS Locked (Esc)' : 'Click to Lock';
+    pointerLockBanner.classList.toggle('hidden', !gateExited || locked || isAnyModalOpen());
+  };
+
   const engine = new WorldEngine(viewport, identity.color, {
     loadLocalWorld: id => registry.getManifest(id)?.kind === 'local' ? registry.loadWorld(id) : undefined,
     onWorldLoaded: (manifest) => {
       activeManifest = manifest;
       activeWorldId = manifest.id;
+      tutorial.notifyWorldChanged(manifest.id);
       // Defer DOM updates out of the crossing frame's rAF so WebGPU submits first.
       scheduleHudSync(false);
       syncUrlBar();
@@ -244,6 +281,14 @@ async function boot(): Promise<void> {
     },
     onFlightChange: (flying) => {
       flightStatusLabel.textContent = flying ? 'Flight: On' : 'Flight: Off';
+      if (gateExited) tutorial.notifyFlightToggle();
+    },
+    onCameraViewChange: (firstPerson) => {
+      cameraViewLabel.textContent = firstPerson ? 'View: FPS' : 'View: 3rd';
+      if (gateExited) tutorial.notifyCameraToggle();
+    },
+    onPointerLockChange: (locked) => {
+      syncPointerUi(locked);
     },
   });
 
@@ -450,27 +495,31 @@ async function boot(): Promise<void> {
     });
   }
 
-  let gateExited = false;
-
   // Modal helpers
   function openModal(modal: HTMLElement): void {
     if (!gateExited) return;
     closeAllModals();
     modal.classList.remove('hidden');
     engine.setInputLocked(true);
+    syncPointerUi(false);
   }
 
-  function closeAllModals(): void {
-    modalPortal.classList.add('hidden');
-    modalWorlds.classList.add('hidden');
-    modalProfile.classList.add('hidden');
+  function closeAllModals(relockPointer = false): void {
+    for (const modal of allModals) modal.classList.add('hidden');
     engine.setInputLocked(!gateExited);
+    if (relockPointer && gateExited) {
+      engine.requestPointerLock();
+    }
+    syncPointerUi(engine.avatar.pointerLocked);
   }
 
   document.querySelectorAll('[data-close-modal]').forEach((btn) => {
-    btn.addEventListener('click', closeAllModals);
+    btn.addEventListener('click', () => {
+      const shouldRelock = btn.closest('#modal-controls') !== null && btn.classList.contains('btn-primary');
+      closeAllModals(shouldRelock);
+    });
   });
-  [modalPortal, modalWorlds, modalProfile].forEach((backdrop) => {
+  allModals.forEach((backdrop) => {
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) closeAllModals();
     });
@@ -501,6 +550,15 @@ async function boot(): Promise<void> {
     profileColorInput.value = identity.color;
     openModal(modalProfile);
     profileNameInput.focus();
+  });
+
+  btnControls.addEventListener('click', () => {
+    openModal(modalControls);
+  });
+
+  btnReplayTutorial.addEventListener('click', () => {
+    closeAllModals(true);
+    tutorial.start(activeWorldId);
   });
 
   portalModeSelect.addEventListener('change', () => {
@@ -555,8 +613,9 @@ async function boot(): Promise<void> {
     showToast(`Updated explorer identity to ${name}`);
   });
 
-  // Global keyboard shortcuts (P = Link Portal, M = Rooms, Escape = Close modals)
+  // Global keyboard shortcuts (P = Link Portal, M = Rooms, H/? = Controls, Escape = Close modals)
   window.addEventListener('keydown', (e) => {
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') shiftHeld = true;
     if (e.code === 'Escape') {
       closeAllModals();
       return;
@@ -570,7 +629,19 @@ async function boot(): Promise<void> {
     } else if (e.code === 'KeyM') {
       renderWorldDirectory();
       openModal(modalWorlds);
+    } else if (e.code === 'KeyH' || e.key === '?') {
+      if (!modalControls.classList.contains('hidden')) {
+        closeAllModals();
+      } else {
+        openModal(modalControls);
+      }
     }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') shiftHeld = false;
+  });
+  window.addEventListener('blur', () => {
+    shiftHeld = false;
   });
 
   // Yuna-style smooth circular loading gate controller
@@ -635,6 +706,8 @@ async function boot(): Promise<void> {
       loadingGate.setAttribute('aria-busy', 'false');
       loadingGate.setAttribute('aria-label', 'Portalverse ready. Click to enter.');
       loadingMedallion.disabled = false;
+      btnGateTutorial.disabled = false;
+      btnGateEnter.disabled = false;
       loadingMedallion.setAttribute('aria-label', `Enter ${activeManifest.name}`);
       loadingPhaseText.textContent = activeManifest.name.toUpperCase();
       loadingMedallion.focus();
@@ -645,7 +718,7 @@ async function boot(): Promise<void> {
   };
   window.requestAnimationFrame(stepGate);
 
-  loadingMedallion.addEventListener('click', () => {
+  const enterFromGate = (startTutorial: boolean) => {
     if (gateError) {
       window.location.reload();
       return;
@@ -653,12 +726,23 @@ async function boot(): Promise<void> {
     if (!gateReady || gateExited) return;
     gateExited = true;
     loadingMedallion.disabled = true;
+    btnGateTutorial.disabled = true;
+    btnGateEnter.disabled = true;
     loadingGate.classList.add('exiting');
     engine.setInputLocked(false);
+    engine.requestPointerLock();
+    syncPointerUi(engine.avatar.pointerLocked);
+    if (startTutorial) {
+      tutorial.start(activeWorldId);
+    }
     window.setTimeout(() => {
       loadingGate.remove();
     }, 900);
-  });
+  };
+
+  loadingMedallion.addEventListener('click', () => enterFromGate(false));
+  btnGateEnter.addEventListener('click', () => enterFromGate(false));
+  btnGateTutorial.addEventListener('click', () => enterFromGate(true));
 
   // Boot & preload pipeline behind the loading gate
   try {
@@ -715,7 +799,7 @@ async function boot(): Promise<void> {
   }
   renderPresenceRoster();
 
-  // Stream local avatar coordinates to multiplayer server at ~20 Hz
+  // Stream local avatar coordinates to multiplayer server at ~20 Hz (+ sample interactive tutorial)
   window.setInterval(() => {
     net.sendState(
       [
@@ -726,6 +810,19 @@ async function boot(): Promise<void> {
       Number(engine.avatar.yaw.toFixed(3)),
       Number(engine.avatar.velocityY.toFixed(3)),
     );
+    if (tutorial.isActive() && gateExited && !isAnyModalOpen()) {
+      tutorial.sample({
+        x: engine.avatar.position.x,
+        y: engine.avatar.position.y,
+        z: engine.avatar.position.z,
+        yaw: engine.avatar.yaw,
+        pitch: engine.avatar.pitch,
+        velocityY: engine.avatar.velocityY,
+        isFlying: engine.avatar.isFlying,
+        pointerLocked: engine.avatar.pointerLocked,
+        sprinting: shiftHeld,
+      });
+    }
   }, 50);
 
   if (route.handoff) {

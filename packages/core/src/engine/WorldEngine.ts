@@ -42,6 +42,8 @@ export interface WorldEngineCallbacks {
   onPortalProximity?: (portal: PortalDefinition | null) => void;
   onPortalEnter?: (portal: PortalDefinition, crossed: boolean) => void;
   onFlightChange?: (flying: boolean) => void;
+  onCameraViewChange?: (firstPerson: boolean) => void;
+  onPointerLockChange?: (locked: boolean) => void;
 }
 
 interface ActiveTransit {
@@ -165,6 +167,8 @@ export class WorldEngine {
         this.transitRig.bodyMat.color.copy(col);
         this.transitRig.bodyMat.emissive.copy(col);
       },
+      callbacks.onCameraViewChange,
+      callbacks.onPointerLockChange,
     );
     this.playerView = { position: this.avatar.position };
     this.frameMotion = {
@@ -188,6 +192,15 @@ export class WorldEngine {
 
   setInputLocked(locked: boolean): void {
     this.inputLocked = locked;
+    this.avatar.setInputLocked(locked);
+  }
+
+  requestPointerLock(): void {
+    this.avatar.requestPointerLock();
+  }
+
+  exitPointerLock(): void {
+    this.avatar.exitPointerLock();
   }
 
   getCurrentWorldId(): string | null {

@@ -57,13 +57,15 @@ export function createStylizedAvatarRig(hexColor: string): StylizedAvatarRig {
 export class AvatarController {
   readonly position = new THREE.Vector3(0, 0, 10);
   yaw = 0;
-  pitch = -0.12;
+  pitch = 0;
   velocityY = 0;
   isFlying = false;
-  firstPerson = false;
+  firstPerson = true;
+  pointerLocked = false;
 
   private readonly keys = new Set<string>();
   private readonly desiredCamPos = new THREE.Vector3();
+  private inputLocked = false;
   private isDraggingLook = false;
   private dragMoved = false;
   private lastPointerX = 0;
@@ -78,6 +80,8 @@ export class AvatarController {
   private terrainHeightFn: ((x: number, z: number) => number) | null = null;
   private onFlightChange?: (flying: boolean) => void;
   private onColorChange?: (hexColor: string) => void;
+  private onCameraViewChange?: (firstPerson: boolean) => void;
+  private onPointerLockChange?: (locked: boolean) => void;
 
   private readonly domElement: HTMLElement;
   private readonly scene: THREE.Scene;
@@ -90,6 +94,8 @@ export class AvatarController {
     initialColor: string,
     onFlightChange?: (flying: boolean) => void,
     onColorChange?: (hexColor: string) => void,
+    onCameraViewChange?: (firstPerson: boolean) => void,
+    onPointerLockChange?: (locked: boolean) => void,
   ) {
     this.scene = scene;
     this.camera = camera;
@@ -97,16 +103,56 @@ export class AvatarController {
     this.localColor = initialColor;
     this.onFlightChange = onFlightChange;
     this.onColorChange = onColorChange;
+    this.onCameraViewChange = onCameraViewChange;
+    this.onPointerLockChange = onPointerLockChange;
 
     this.localRig = createStylizedAvatarRig(initialColor);
+    this.localRig.group.visible = !this.firstPerson;
     this.scene.add(this.localRig.group);
     this.scene.add(this.remoteRoot);
 
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
+    window.addEventListener('blur', this.handleWindowBlur);
     this.domElement.addEventListener('pointerdown', this.handlePointerDown);
     window.addEventListener('pointermove', this.handlePointerMove);
     window.addEventListener('pointerup', this.handlePointerUp);
+    document.addEventListener('pointerlockchange', this.handlePointerLockChange);
+  }
+
+  setInputLocked(locked: boolean): void {
+    this.inputLocked = locked;
+    if (locked) {
+      this.keys.clear();
+      this.isDraggingLook = false;
+      this.exitPointerLock();
+    }
+  }
+
+  requestPointerLock(): void {
+    if (this.inputLocked || this.pointerLocked) return;
+    if (typeof this.domElement.requestPointerLock !== 'function') return;
+    try {
+      const maybePromise = this.domElement.requestPointerLock() as unknown as Promise<void> | undefined;
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch(() => {
+          // Ignore rejected pointer lock requests (e.g. Esc cooldown or unsupported context)
+        });
+      }
+    } catch {
+      // Ignore pointer lock errors on unsupported platforms
+    }
+  }
+
+  exitPointerLock(): void {
+    if (typeof document === 'undefined') return;
+    if (document.pointerLockElement === this.domElement && typeof document.exitPointerLock === 'function') {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore
+      }
+    }
   }
 
   /** True if the last pointer interaction was a click (not a camera drag). */
@@ -134,7 +180,7 @@ export class AvatarController {
   applySpawn(spawn: SpawnPoint): void {
     this.position.set(spawn.position[0], spawn.position[1], spawn.position[2]);
     this.yaw = spawn.yaw;
-    this.pitch = spawn.pitch ?? -0.14;
+    this.pitch = spawn.pitch ?? (this.firstPerson ? 0 : -0.14);
     this.velocityY = 0;
     this.setFlying(Boolean(spawn.flying));
     this.snapToGroundIfWalking();
@@ -194,6 +240,7 @@ export class AvatarController {
   toggleCameraView(): void {
     this.firstPerson = !this.firstPerson;
     this.localRig.group.visible = !this.firstPerson;
+    this.onCameraViewChange?.(this.firstPerson);
   }
 
   /** Compute a position slightly in front of the avatar for placing a new portal. */
@@ -417,6 +464,7 @@ export class AvatarController {
   }
 
   private readonly handleKeyDown = (e: KeyboardEvent): void => {
+    if (this.inputLocked) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
       return;
     }
@@ -429,8 +477,27 @@ export class AvatarController {
     this.keys.delete(e.code);
   };
 
+  private readonly handleWindowBlur = (): void => {
+    this.keys.clear();
+    this.isDraggingLook = false;
+  };
+
+  private readonly handlePointerLockChange = (): void => {
+    const locked = document.pointerLockElement === this.domElement;
+    if (locked === this.pointerLocked) return;
+    this.pointerLocked = locked;
+    if (locked) {
+      this.isDraggingLook = false;
+    }
+    this.onPointerLockChange?.(locked);
+  };
+
   private readonly handlePointerDown = (e: PointerEvent): void => {
+    if (this.inputLocked) return;
     if (e.button !== 0 && e.button !== 2) return;
+    if (e.button === 0 && !this.pointerLocked && e.pointerType !== 'touch') {
+      this.requestPointerLock();
+    }
     this.isDraggingLook = true;
     this.dragMoved = false;
     this.lastPointerX = e.clientX;
@@ -438,6 +505,16 @@ export class AvatarController {
   };
 
   private readonly handlePointerMove = (e: PointerEvent): void => {
+    if (this.inputLocked) return;
+    if (this.pointerLocked) {
+      const dx = e.movementX;
+      const dy = e.movementY;
+      // Ignore occasional browser focus-change spikes in pointer lock deltas.
+      if (Math.abs(dx) > 250 || Math.abs(dy) > 250) return;
+      this.yaw -= dx * 0.0022;
+      this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0022, -1.38, 1.38);
+      return;
+    }
     if (!this.isDraggingLook) return;
     const dx = e.clientX - this.lastPointerX;
     const dy = e.clientY - this.lastPointerY;
@@ -456,11 +533,14 @@ export class AvatarController {
   };
 
   dispose(): void {
+    this.exitPointerLock();
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
+    window.removeEventListener('blur', this.handleWindowBlur);
     this.domElement.removeEventListener('pointerdown', this.handlePointerDown);
     window.removeEventListener('pointermove', this.handlePointerMove);
     window.removeEventListener('pointerup', this.handlePointerUp);
+    document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
     this.clearRemotePlayers();
     this.scene.remove(this.localRig.group);
     this.scene.remove(this.remoteRoot);

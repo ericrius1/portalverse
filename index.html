@@ -52,7 +52,31 @@
         </span>
         <span class="gate-phase-text" id="loading-phase-text">INITIALIZING WEBGPU</span>
       </button>
+
+      <div class="gate-footer" id="gate-footer">
+        <div class="gate-choice-row" id="gate-choice-row">
+          <button type="button" class="gate-choice-btn gate-choice-tutorial" id="btn-gate-tutorial" disabled>
+            <span class="gate-choice-badge" id="gate-tutorial-badge">30s</span>
+            Interactive Tutorial
+          </button>
+          <button type="button" class="gate-choice-btn gate-choice-enter" id="btn-gate-enter" disabled>
+            Jump Right In
+          </button>
+        </div>
+        <div class="gate-controls-preview">
+          <span><kbd>WASD</kbd> Move</span>
+          <span><kbd>Mouse</kbd> Look (FPS)</span>
+          <span><kbd>Shift</kbd> Sprint</span>
+          <span><kbd>Space</kbd> Jump</span>
+          <span><kbd>F</kbd> Fly</span>
+          <span><kbd>V</kbd> 1st / 3rd</span>
+          <span><kbd>Esc</kbd> Cursor</span>
+        </div>
+      </div>
     </div>
+
+    <!-- FPS Center Reticle (visible while pointer-locked) -->
+    <div id="fps-reticle" class="fps-reticle hidden" aria-hidden="true"></div>
 
     <!-- Warp Transition Overlay -->
     <div id="warp-overlay" aria-hidden="true">
@@ -77,8 +101,34 @@
           <button class="btn glass" id="btn-worlds" title="Rooms & Direct Links (M)">Rooms</button>
           <button class="btn btn-primary glass" id="btn-link-portal" title="Spawn Portal (P)">+ Link Portal</button>
           <button class="btn glass" id="btn-profile" title="Avatar Settings">Avatar</button>
+          <button class="btn glass" id="btn-controls" title="Controls & Tutorial (H)">Controls</button>
         </div>
       </header>
+
+      <!-- Interactive Tutorial HUD Card (top-left, optional) -->
+      <section class="tutorial-card glass hidden" id="tutorial-card" aria-live="polite">
+        <div class="tutorial-header">
+          <span class="tutorial-eyebrow">Interactive Tutorial</span>
+          <div class="tutorial-header-right">
+            <span class="tutorial-step-badge" id="tutorial-step-badge">Step 1 / 5</span>
+            <button type="button" class="tutorial-link-btn" id="btn-tutorial-skip">Skip</button>
+          </div>
+        </div>
+        <div class="tutorial-progress-track">
+          <div class="tutorial-progress-fill" id="tutorial-progress-fill"></div>
+        </div>
+        <h3 class="tutorial-title" id="tutorial-title">Look Around (FPS)</h3>
+        <p class="tutorial-desc" id="tutorial-desc"></p>
+        <div class="tutorial-footer">
+          <span class="tutorial-status" id="tutorial-status">Click anywhere to lock mouse</span>
+          <button type="button" class="btn btn-sm" id="btn-tutorial-next">Next</button>
+        </div>
+      </section>
+
+      <!-- Subtle pointer-lock context banner when cursor is unlocked -->
+      <div id="pointer-lock-banner" class="pointer-lock-banner glass hidden">
+        Click scene to look around (FPS) · <kbd>Esc</kbd> cursor &amp; menus · <kbd>H</kbd> Controls
+      </div>
 
       <aside class="presence-panel glass" id="presence-panel">
         <div class="panel-heading">
@@ -97,13 +147,16 @@
 
       <footer class="hud-bottom">
         <div class="controls-bar glass">
-          <span><kbd>WASD</kbd> Move / Fly</span>
-          <span><kbd>Drag</kbd> Look</span>
-          <span><kbd>E</kbd> Enter Portal</span>
-          <span><kbd>Space</kbd> / <kbd>C</kbd> Up / Down</span>
+          <span><kbd>WASD</kbd> Move</span>
+          <span><kbd>Mouse</kbd> <span id="mouse-lock-label">Click to Lock</span></span>
+          <span><kbd>Shift</kbd> Sprint</span>
+          <span><kbd>Space</kbd>/<kbd>C</kbd> Jump/Down</span>
           <span><kbd>F</kbd> <span id="flight-status-label">Flight: Off</span></span>
-          <span><kbd>V</kbd> Camera</span>
-          <span><kbd>P</kbd> Link Portal</span>
+          <span><kbd>V</kbd> <span id="camera-view-label">View: FPS</span></span>
+          <span><kbd>E</kbd> Portal</span>
+          <span><kbd>P</kbd> Link</span>
+          <span><kbd>M</kbd> Rooms</span>
+          <span><kbd>H</kbd> Help</span>
           <label class="debug-toggle" title="Debug: show each portal's warp zone">
             <input type="checkbox" id="debug-warp-zones" /> Warp zones
           </label>
@@ -202,6 +255,48 @@
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Controls & How to Play Modal -->
+    <div id="modal-controls" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal modal-wide glass">
+        <div class="modal-header">
+          <h2>Controls &amp; How to Play</h2>
+          <button class="icon-btn" data-close-modal>&times;</button>
+        </div>
+        <p class="modal-desc">
+          Portalverse uses first-person (FPS) mouse-look by default. Click the 3D view to lock your cursor, and press <kbd>Esc</kbd> anytime to free your cursor for buttons or menus.
+        </p>
+        <div class="controls-guide-grid">
+          <div class="controls-guide-group">
+            <h4>Movement &amp; Camera</h4>
+            <ul class="controls-guide-list">
+              <li><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / Arrows</span><span>Walk or fly</span></li>
+              <li><span><kbd>Mouse</kbd></span><span>Look around (Pointer Lock)</span></li>
+              <li><span><kbd>Shift</kbd></span><span>Sprint (crosses a room in 5s)</span></li>
+              <li><span><kbd>Space</kbd> / <kbd>C</kbd></span><span>Jump / Fly up &amp; down</span></li>
+              <li><span><kbd>F</kbd></span><span>Toggle 3D free-flight</span></li>
+              <li><span><kbd>V</kbd></span><span>Switch 1st-person / 3rd-person</span></li>
+              <li><span><kbd>Esc</kbd></span><span>Unlock cursor / close menus</span></li>
+            </ul>
+          </div>
+          <div class="controls-guide-group">
+            <h4>Portals &amp; Co-op</h4>
+            <ul class="controls-guide-list">
+              <li><span>Walk through or <kbd>E</kbd></span><span>Enter any glowing portal</span></li>
+              <li><span><kbd>M</kbd></span><span>Browse all rooms &amp; share links</span></li>
+              <li><span><kbd>P</kbd></span><span>Spawn a live local or remote portal</span></li>
+              <li><span><kbd>H</kbd> or <kbd>?</kbd></span><span>Open this controls guide</span></li>
+              <li><span>Explorers panel</span><span>Click a friend's name to join them</span></li>
+              <li><span>Avatar button</span><span>Change your display name &amp; color</span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" id="btn-replay-tutorial">Start Interactive Tutorial</button>
+          <button type="button" class="btn btn-primary" data-close-modal>Resume Exploring</button>
+        </div>
       </div>
     </div>
 

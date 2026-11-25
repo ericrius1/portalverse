@@ -39,13 +39,14 @@ The repo pins pnpm 12.23.0 through `packageManager` in `package.json`, and CI in
 
 ### Controls
 
+- **Look (FPS + Pointer Lock):** Click the 3D scene to lock your mouse and look around (`Esc` unlocks cursor for menus)
 - **Move / Fly:** `WASD` or Arrow keys
 - **Sprint:** Hold `Shift` while moving (the two circular gates are 5 sprint seconds apart)
-- **Look:** Click & drag anywhere on canvas
 - **Enter Portal:** Walk/fly straight through any circular portal, or press `E` while facing it nearby
 - **Ascend / Descend (Flight) / Jump:** `Space` / `C` (or `Q`)
 - **Toggle Flight Mode:** `F`
-- **Toggle 1st / 3rd Person Camera:** `V`
+- **Toggle 1st / 3rd Person Camera:** `V` (defaults to 1st-person FPS)
+- **Controls & Interactive Tutorial:** `H` or `?` (or choose **Interactive Tutorial** on the loading gate)
 - **Debug — Warp zones:** tick the checkbox in the controls bar to see each portal's warp zone (a wireframe sphere, and the floor circle the warp is measured on)
 - **Spawn Live Portal:** `P`
 - **Rooms & Direct Share Links:** `M`
