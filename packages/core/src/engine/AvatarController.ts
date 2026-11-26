@@ -2,6 +2,14 @@ import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
 import type { AvatarState, PlatformCollider, RoomCollider, SpawnPoint, TerrainHeight, Vec3Tuple, WalkBounds } from '../types';
 import {
+  createCharacterRig,
+  DEFAULT_CHARACTER_ID,
+  getCharacterDefinition,
+  IDLE_MOTION_STATE,
+  type AvatarMotionState,
+  type CharacterRig,
+} from '../characters';
+import {
   PLATFORMER_TUNING,
   createMovementState,
   resolveGround,
@@ -14,13 +22,18 @@ import { createFloatingLabel } from './signage';
 import { FLOOR_LIMIT } from './falling';
 
 interface RemoteAvatarVisual {
-  group: THREE.Group;
-  bodyMat: THREE.MeshStandardMaterial;
+  rig: CharacterRig;
   label: { sprite: THREE.Sprite; dispose: () => void };
   targetPos: THREE.Vector3;
+  prevPos: THREE.Vector3;
   targetYaw: number;
+  prevYaw: number;
+  velocityY: number;
+  isFlying: boolean;
+  motion: AvatarMotionState;
   name: string;
   color: string;
+  characterId: string;
   dispose: () => void;
 }
 
@@ -113,6 +126,14 @@ export class AvatarController {
   pointerLocked = false;
 
   private readonly keys = new Set<string>();
+  private virtualForward = 0;
+  private virtualStrafe = 0;
+  private virtualVertical = 0;
+  private virtualSprint = false;
+  private virtualBoost = false;
+  private virtualJumpHeld = false;
+  private touchLookHandledExternally = false;
+  private activeDragPointerId: number | null = null;
   private readonly desiredCamPos = new THREE.Vector3();
   private readonly flyVel = new THREE.Vector3();
   private readonly takeoffDrift = new THREE.Vector3();
@@ -133,8 +154,15 @@ export class AvatarController {
   private readonly platformer = createMovementState();
   private pendingJumpPresses = 0;
 
-  private localRig: StylizedAvatarRig;
+  private localRig: CharacterRig;
+  private localCharacterId: string;
   private localColor: string;
+  private readonly localMotion: AvatarMotionState = { ...IDLE_MOTION_STATE };
+  private readonly prevRigPos = new THREE.Vector3();
+  private prevRigYaw = 0;
+  private landImpact = 0;
+  private groundSprintBlend = 0;
+  private skipMotionSample = true;
   private readonly remoteMap = new Map<string, RemoteAvatarVisual>();
   private readonly remoteRoot = new THREE.Group();
   private platforms: PlatformCollider[] = [];
@@ -147,6 +175,7 @@ export class AvatarController {
   private onCameraViewChange?: (firstPerson: boolean) => void;
   private onPointerLockChange?: (locked: boolean) => void;
   private onMovementModeChange?: (mode: MovementMode) => void;
+  private onCharacterChange?: (characterId: string) => void;
 
   private readonly domElement: HTMLElement;
   private readonly scene: THREE.Scene;
@@ -162,18 +191,22 @@ export class AvatarController {
     onCameraViewChange?: (firstPerson: boolean) => void,
     onPointerLockChange?: (locked: boolean) => void,
     onMovementModeChange?: (mode: MovementMode) => void,
+    initialCharacterId: string = DEFAULT_CHARACTER_ID,
+    onCharacterChange?: (characterId: string) => void,
   ) {
     this.scene = scene;
     this.camera = camera;
     this.domElement = domElement;
     this.localColor = initialColor;
+    this.localCharacterId = getCharacterDefinition(initialCharacterId).id;
     this.onFlightChange = onFlightChange;
     this.onColorChange = onColorChange;
     this.onCameraViewChange = onCameraViewChange;
     this.onPointerLockChange = onPointerLockChange;
     this.onMovementModeChange = onMovementModeChange;
+    this.onCharacterChange = onCharacterChange;
 
-    this.localRig = createStylizedAvatarRig(initialColor);
+    this.localRig = createCharacterRig(this.localCharacterId, { accentColor: initialColor });
     this.localRig.group.visible = !this.firstPerson;
     this.scene.add(this.localRig.group);
     this.scene.add(this.remoteRoot);
@@ -191,12 +224,74 @@ export class AvatarController {
     this.inputLocked = locked;
     if (locked) {
       this.keys.clear();
+      this.clearVirtualInputs();
       this.flyVel.set(0, 0, 0);
       this.stride.set(0, 0);
       this.resetPlatformerTimers();
       this.isDraggingLook = false;
+      this.activeDragPointerId = null;
       this.exitPointerLock();
     }
+  }
+
+  /** Set analog movement axes from touch joystick (-1..1). */
+  setVirtualMove(forward: number, strafe: number, sprint = false): void {
+    this.virtualForward = THREE.MathUtils.clamp(forward, -1, 1);
+    this.virtualStrafe = THREE.MathUtils.clamp(strafe, -1, 1);
+    this.virtualSprint = sprint;
+  }
+
+  /** Set vertical flight axis from touch Rise/Land buttons (-1 = descend/land, +1 = rise). */
+  setVirtualVertical(vertical: number): void {
+    this.virtualVertical = THREE.MathUtils.clamp(vertical, -1, 1);
+  }
+
+  /** Hold/release sprint/boost from a touch button. */
+  setVirtualBoost(active: boolean): void {
+    this.virtualBoost = active;
+  }
+
+  /** Trigger jump on ground or takeoff when pressed again mid-air (identical to Space). */
+  pressJumpOrFly(): void {
+    if (this.inputLocked) return;
+    this.triggerJumpOrFly();
+  }
+
+  /** Hold/release virtual jump for variable jump height. */
+  setJumpHeld(held: boolean): void {
+    this.virtualJumpHeld = held;
+  }
+
+  /** Apply camera look delta from dedicated multi-touch look pad (pixels). */
+  applyLookDelta(dx: number, dy: number, sensitivity = 0.0046): void {
+    if (this.inputLocked) return;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    this.yaw -= dx * sensitivity;
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * sensitivity, -1.32, 1.15);
+  }
+
+  /** When mobile touch controls own multi-touch look, ignore raw touch drags on the canvas. */
+  setTouchLookHandled(handled: boolean): void {
+    this.touchLookHandledExternally = handled;
+  }
+
+  /** True if currently sprinting via keyboard or touch controls. */
+  isSprinting(): boolean {
+    return (
+      this.keys.has('ShiftLeft') ||
+      this.keys.has('ShiftRight') ||
+      this.virtualSprint ||
+      this.virtualBoost
+    );
+  }
+
+  clearVirtualInputs(): void {
+    this.virtualForward = 0;
+    this.virtualStrafe = 0;
+    this.virtualVertical = 0;
+    this.virtualSprint = false;
+    this.virtualBoost = false;
+    this.virtualJumpHeld = false;
   }
 
   requestPointerLock(): void {
@@ -236,10 +331,34 @@ export class AvatarController {
 
   setLocalColor(hexColor: string): void {
     this.localColor = hexColor;
-    const col = new THREE.Color(hexColor);
-    this.localRig.bodyMat.color.copy(col);
-    this.localRig.bodyMat.emissive.copy(col);
+    this.localRig.setAccentColor?.(hexColor);
     this.onColorChange?.(hexColor);
+  }
+
+  getCharacterId(): string {
+    return this.localCharacterId;
+  }
+
+  setCharacter(characterId: string): void {
+    const resolved = getCharacterDefinition(characterId).id;
+    if (resolved === this.localCharacterId) return;
+    this.localCharacterId = resolved;
+
+    const wasVisible = this.localRig.group.visible;
+    this.scene.remove(this.localRig.group);
+    this.localRig.dispose();
+
+    this.localRig = createCharacterRig(resolved, { accentColor: this.localColor });
+    this.localRig.group.position.copy(this.position);
+    this.localRig.group.rotation.y = this.yaw;
+    this.localRig.group.visible = wasVisible;
+    this.localRig.update(0, 0, this.localMotion);
+    this.scene.add(this.localRig.group);
+    this.onCharacterChange?.(resolved);
+  }
+
+  getMotionState(): Readonly<AvatarMotionState> {
+    return this.localMotion;
   }
 
   /** `lowestY` is as far down as the player can go; rooms that allow falling pass something deep. */
@@ -275,16 +394,17 @@ export class AvatarController {
     this.velocityY = 0;
     this.setFlying(Boolean(spawn.flying));
     this.snapToGroundIfWalking();
+    this.skipMotionSample = true;
+    this.prevRigPos.copy(this.position);
+    this.prevRigYaw = this.yaw;
     this.syncRigTransform();
     this.snapCameraToTarget();
   }
 
   syncRigTransform(elapsed = 0): void {
     this.localRig.group.position.copy(this.position);
-    if (this.isFlying) {
-      this.localRig.group.position.y += Math.sin(elapsed * 3.0) * 0.14;
-    }
     this.localRig.group.rotation.y = this.yaw;
+    this.localRig.update(0, elapsed, this.localMotion);
   }
 
   snapCameraToTarget(): void {
@@ -414,10 +534,15 @@ export class AvatarController {
     this.localRig.group.visible = !this.firstPerson && horizontalDistance > 0.55;
   }
 
-  toggleCameraView(): void {
-    this.firstPerson = !this.firstPerson;
+  setFirstPerson(firstPerson: boolean): void {
+    if (this.firstPerson === firstPerson) return;
+    this.firstPerson = firstPerson;
     this.localRig.group.visible = !this.firstPerson;
     this.onCameraViewChange?.(this.firstPerson);
+  }
+
+  toggleCameraView(): void {
+    this.setFirstPerson(!this.firstPerson);
   }
 
   /** Compute a position slightly in front of the avatar for placing a new portal. */
@@ -438,48 +563,75 @@ export class AvatarController {
       if (p.id === localPlayerId) continue;
       activeIds.add(p.id);
 
+      const charDef = getCharacterDefinition(p.characterId);
       let vis = this.remoteMap.get(p.id);
       if (!vis) {
-        const rig = createStylizedAvatarRig(p.color);
+        const rig = charDef.createRig({ accentColor: p.color });
         const label = createFloatingLabel({
           title: p.name,
           accentColor: p.color,
           width: 2.4,
         });
-        label.sprite.position.set(0, 2.02, 0);
+        label.sprite.position.set(0, charDef.labelHeight, 0);
         rig.group.add(label.sprite);
         rig.group.position.set(p.position[0], p.position[1], p.position[2]);
+        rig.group.rotation.y = p.yaw;
         this.remoteRoot.add(rig.group);
+        const startPos = new THREE.Vector3(p.position[0], p.position[1], p.position[2]);
         vis = {
-          group: rig.group,
-          bodyMat: rig.bodyMat,
+          rig,
           label,
-          targetPos: new THREE.Vector3(p.position[0], p.position[1], p.position[2]),
+          targetPos: startPos.clone(),
+          prevPos: startPos.clone(),
           targetYaw: p.yaw,
+          prevYaw: p.yaw,
+          velocityY: p.velocityY,
+          isFlying: Boolean(p.isFlying),
+          motion: { ...IDLE_MOTION_STATE, isFlying: Boolean(p.isFlying), grounded: !p.isFlying },
           name: p.name,
           color: p.color,
+          characterId: charDef.id,
           dispose: () => {
-            rig.dispose();
-            label.dispose();
+            vis!.rig.dispose();
+            vis!.label.dispose();
           },
         };
         this.remoteMap.set(p.id, vis);
       } else {
         vis.targetPos.set(p.position[0], p.position[1], p.position[2]);
         vis.targetYaw = p.yaw;
+        vis.velocityY = p.velocityY;
+        if (typeof p.isFlying === 'boolean') vis.isFlying = p.isFlying;
+
+        if (vis.characterId !== charDef.id) {
+          const oldGroup = vis.rig.group;
+          const pos = oldGroup.position.clone();
+          const yaw = oldGroup.rotation.y;
+          oldGroup.remove(vis.label.sprite);
+          this.remoteRoot.remove(oldGroup);
+          vis.rig.dispose();
+
+          const newRig = charDef.createRig({ accentColor: p.color });
+          newRig.group.position.copy(pos);
+          newRig.group.rotation.y = yaw;
+          vis.label.sprite.position.set(0, charDef.labelHeight, 0);
+          newRig.group.add(vis.label.sprite);
+          this.remoteRoot.add(newRig.group);
+          vis.rig = newRig;
+          vis.characterId = charDef.id;
+        }
+
         if (vis.name !== p.name || vis.color !== p.color) {
-          const col = new THREE.Color(p.color);
-          vis.bodyMat.color.copy(col);
-          vis.bodyMat.emissive.copy(col);
-          vis.group.remove(vis.label.sprite);
+          vis.rig.setAccentColor?.(p.color);
+          vis.rig.group.remove(vis.label.sprite);
           vis.label.dispose();
           const newLabel = createFloatingLabel({
             title: p.name,
             accentColor: p.color,
             width: 2.4,
           });
-          newLabel.sprite.position.set(0, 2.02, 0);
-          vis.group.add(newLabel.sprite);
+          newLabel.sprite.position.set(0, charDef.labelHeight, 0);
+          vis.rig.group.add(newLabel.sprite);
           vis.label = newLabel;
           vis.name = p.name;
           vis.color = p.color;
@@ -489,7 +641,7 @@ export class AvatarController {
 
     for (const [id, vis] of this.remoteMap.entries()) {
       if (!activeIds.has(id)) {
-        this.remoteRoot.remove(vis.group);
+        this.remoteRoot.remove(vis.rig.group);
         vis.dispose();
         this.remoteMap.delete(id);
       }
@@ -498,7 +650,7 @@ export class AvatarController {
 
   clearRemotePlayers(): void {
     for (const vis of this.remoteMap.values()) {
-      this.remoteRoot.remove(vis.group);
+      this.remoteRoot.remove(vis.rig.group);
       vis.dispose();
     }
     this.remoteMap.clear();
@@ -508,6 +660,8 @@ export class AvatarController {
     const clampedDt = Math.min(dt, 0.05);
     const jumpPresses = this.pendingJumpPresses;
     this.pendingJumpPresses = 0;
+    const wasGrounded = this.onGround;
+    const prevVelY = this.velocityY;
 
     if (inputLocked && this.movementMode === 'platformer') {
       this.stride.set(0, 0);
@@ -515,11 +669,18 @@ export class AvatarController {
     }
 
     if (!inputLocked) {
-      const forward = (this.keys.has('KeyW') || this.keys.has('ArrowUp') ? 1 : 0) -
+      const keyForward = (this.keys.has('KeyW') || this.keys.has('ArrowUp') ? 1 : 0) -
         (this.keys.has('KeyS') || this.keys.has('ArrowDown') ? 1 : 0);
-      const strafe = (this.keys.has('KeyD') || this.keys.has('ArrowRight') ? 1 : 0) -
+      const keyStrafe = (this.keys.has('KeyD') || this.keys.has('ArrowRight') ? 1 : 0) -
         (this.keys.has('KeyA') || this.keys.has('ArrowLeft') ? 1 : 0);
-      const sprint = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+      const forward = THREE.MathUtils.clamp(keyForward + this.virtualForward, -1, 1);
+      const strafe = THREE.MathUtils.clamp(keyStrafe + this.virtualStrafe, -1, 1);
+      const sprint =
+        this.keys.has('ShiftLeft') ||
+        this.keys.has('ShiftRight') ||
+        this.virtualSprint ||
+        this.virtualBoost;
+      const jumpHeld = this.keys.has('Space') || this.virtualJumpHeld;
 
       const fwdX = -Math.sin(this.yaw);
       const fwdZ = -Math.cos(this.yaw);
@@ -527,11 +688,11 @@ export class AvatarController {
       const rightZ = -Math.sin(this.yaw);
 
       if (this.isFlying) {
-        // Earth-style flight: WASD steers along view, Q (or Space) rises, E sinks & lands onto floor,
-        // Shift boosts smoothly (holding Shift alone flies forward where you look).
-        const riseInput = this.keys.has('KeyQ') || this.keys.has('Space') ? 1 : 0;
-        const sinkInput = this.keys.has('KeyE') || this.keys.has('KeyC') || this.keys.has('ControlLeft') ? 1 : 0;
-        const verticalInput = riseInput - sinkInput;
+        // Earth-style flight: WASD/stick steers along view, Q (or Space) rises, E sinks & lands onto floor,
+        // Shift/Boost boosts smoothly (holding Shift/Boost alone flies forward where you look).
+        const riseInput = this.keys.has('KeyQ') || this.keys.has('Space') || this.virtualJumpHeld ? 1 : 0;
+        const sinkInput = this.keys.has('KeyE') || this.keys.has('ControlLeft') ? 1 : 0;
+        const verticalInput = THREE.MathUtils.clamp(riseInput - sinkInput + this.virtualVertical, -1, 1);
 
         let fwdInput = forward;
         const moving = Math.abs(fwdInput) > 0.05 || Math.abs(strafe) > 0.05 || Math.abs(verticalInput) > 0.05;
@@ -617,9 +778,10 @@ export class AvatarController {
       } else if (this.movementMode === 'platformer') {
         const dx = fwdX * forward + rightX * strafe;
         const dz = fwdZ * forward + rightZ * strafe;
-        const len = Math.hypot(dx, dz) || 1;
+        const len = Math.hypot(dx, dz);
+        const norm = len > 1 ? len : 1;
         this.updatePlatformer(
-          { x: dx / len, z: dz / len, sprint, jumpHeld: this.keys.has('Space'), jumpPressed: jumpPresses > 0 },
+          { x: dx / norm, z: dz / norm, sprint, jumpHeld, jumpPressed: jumpPresses > 0 },
           clampedDt,
         );
         if (jumpPresses > 1 && this.jumpedInAir) this.takeOff();
@@ -629,7 +791,7 @@ export class AvatarController {
         let dx = fwdX * forward + rightX * strafe;
         let dz = fwdZ * forward + rightZ * strafe;
         const len = Math.hypot(dx, dz);
-        if (len > 0.001) {
+        if (len > 1) {
           dx /= len;
           dz /= len;
         }
@@ -650,7 +812,7 @@ export class AvatarController {
           this.velocityY > 0 &&
           this.jumpT > JUMP_HOLD_FROM &&
           this.jumpT < JUMP_HOLD_UNTIL &&
-          this.keys.has('Space');
+          jumpHeld;
         if (!holdingJump) {
           this.velocityY -= JUMP_GRAVITY * clampedDt;
         }
@@ -680,12 +842,66 @@ export class AvatarController {
       this.position.y = THREE.MathUtils.clamp(this.position.y, this.lowestY, 75);
     }
 
+    // Compute rich per-frame motion telemetry for character rigging & shaders
+    if (!wasGrounded && this.onGround && !this.isFlying) {
+      this.landImpact = THREE.MathUtils.clamp(Math.abs(prevVelY) / 14, 0.25, 1.0);
+    } else {
+      this.landImpact = Math.max(0, this.landImpact - clampedDt * 4.5);
+    }
+
+    let vx = 0;
+    let vz = 0;
+    let turnRate = 0;
+    if (this.skipMotionSample || clampedDt <= 1e-5) {
+      this.skipMotionSample = false;
+    } else {
+      const dx = this.position.x - this.prevRigPos.x;
+      const dz = this.position.z - this.prevRigPos.z;
+      const stepDist = Math.hypot(dx, dz);
+      // Ignore portal-crossing teleports when computing locomotion velocity
+      if (stepDist < 4.5) {
+        vx = dx / clampedDt;
+        vz = dz / clampedDt;
+      }
+      const dyaw = Math.atan2(
+        Math.sin(this.yaw - this.prevRigYaw),
+        Math.cos(this.yaw - this.prevRigYaw),
+      );
+      if (Math.abs(dyaw) < 1.2) {
+        turnRate = dyaw / clampedDt;
+      }
+    }
+    this.prevRigPos.copy(this.position);
+    this.prevRigYaw = this.yaw;
+
+    const fwdX = -Math.sin(this.yaw);
+    const fwdZ = -Math.cos(this.yaw);
+    const rightX = Math.cos(this.yaw);
+    const rightZ = -Math.sin(this.yaw);
+    const speed = Math.hypot(vx, vz);
+    const speedNorm = speed / RUN_SPEED;
+    const targetGroundSprint =
+      !this.isFlying && this.onGround && !inputLocked && this.isSprinting() && speedNorm > 0.5
+        ? 1
+        : 0;
+    this.groundSprintBlend = damp(this.groundSprintBlend, targetGroundSprint, 8.0, clampedDt);
+
+    this.localMotion.speed = speed;
+    this.localMotion.speedNorm = speedNorm;
+    this.localMotion.forwardSpeed = vx * fwdX + vz * fwdZ;
+    this.localMotion.strafeSpeed = vx * rightX + vz * rightZ;
+    this.localMotion.velocityY = this.velocityY;
+    this.localMotion.turnRate = turnRate;
+    this.localMotion.grounded = this.onGround && !this.isFlying;
+    this.localMotion.isFlying = this.isFlying;
+    this.localMotion.boost = this.isFlying ? this.boostT : this.groundSprintBlend;
+    this.localMotion.pitch = this.pitch;
+    this.localMotion.landImpact = this.landImpact;
+
     // Update local avatar rig
     this.localRig.group.position.copy(this.position);
-    if (this.isFlying) {
-      this.localRig.group.position.y += Math.sin(elapsed * 3.0) * 0.14;
-    }
     this.localRig.group.rotation.y = this.yaw;
+    this.localRig.update(clampedDt, elapsed, this.localMotion);
 
     // Update camera (3rd person chase OR 1st person eye)
     const eyeY = this.position.y + 1.65;
@@ -713,15 +929,46 @@ export class AvatarController {
       );
     }
 
-    // Smoothly interpolate remote players
+    // Smoothly interpolate & animate remote players
     const alpha = Math.min(1, clampedDt * 11);
     for (const vis of this.remoteMap.values()) {
-      vis.group.position.lerp(vis.targetPos, alpha);
+      vis.rig.group.position.lerp(vis.targetPos, alpha);
       const dyaw = Math.atan2(
-        Math.sin(vis.targetYaw - vis.group.rotation.y),
-        Math.cos(vis.targetYaw - vis.group.rotation.y),
+        Math.sin(vis.targetYaw - vis.rig.group.rotation.y),
+        Math.cos(vis.targetYaw - vis.rig.group.rotation.y),
       );
-      vis.group.rotation.y += dyaw * alpha;
+      vis.rig.group.rotation.y += dyaw * alpha;
+
+      const rdx = vis.rig.group.position.x - vis.prevPos.x;
+      const rdz = vis.rig.group.position.z - vis.prevPos.z;
+      const rvx = clampedDt > 1e-5 ? rdx / clampedDt : 0;
+      const rvz = clampedDt > 1e-5 ? rdz / clampedDt : 0;
+      const rSpeed = Math.hypot(rvx, rvz);
+      const rYaw = vis.rig.group.rotation.y;
+      const rFwdX = -Math.sin(rYaw);
+      const rFwdZ = -Math.cos(rYaw);
+      const rRightX = Math.cos(rYaw);
+      const rRightZ = -Math.sin(rYaw);
+      const rTurn =
+        clampedDt > 1e-5
+          ? Math.atan2(Math.sin(rYaw - vis.prevYaw), Math.cos(rYaw - vis.prevYaw)) / clampedDt
+          : 0;
+
+      vis.prevPos.copy(vis.rig.group.position);
+      vis.prevYaw = rYaw;
+
+      vis.motion.speed = rSpeed;
+      vis.motion.speedNorm = rSpeed / RUN_SPEED;
+      vis.motion.forwardSpeed = rvx * rFwdX + rvz * rFwdZ;
+      vis.motion.strafeSpeed = rvx * rRightX + rvz * rRightZ;
+      vis.motion.velocityY = vis.velocityY;
+      vis.motion.turnRate = rTurn;
+      vis.motion.isFlying = vis.isFlying;
+      vis.motion.grounded = !vis.isFlying && Math.abs(vis.velocityY) < 0.35;
+      vis.motion.boost = vis.isFlying && rSpeed > FLY_CRUISE_SPEED + 2 ? 0.85 : 0;
+      vis.motion.pitch = 0;
+      vis.motion.landImpact = 0;
+      vis.rig.update(clampedDt, elapsed, vis.motion);
     }
   }
 
@@ -803,11 +1050,13 @@ export class AvatarController {
 
   private readonly handlePointerDown = (e: PointerEvent): void => {
     if (this.inputLocked) return;
+    if (e.pointerType === 'touch' && this.touchLookHandledExternally) return;
     if (e.button !== 0 && e.button !== 2) return;
     if (e.button === 0 && !this.pointerLocked && e.pointerType !== 'touch') {
       this.requestPointerLock();
     }
     this.isDraggingLook = true;
+    this.activeDragPointerId = e.pointerId;
     this.dragMoved = false;
     this.lastPointerX = e.clientX;
     this.lastPointerY = e.clientY;
@@ -825,6 +1074,7 @@ export class AvatarController {
       return;
     }
     if (!this.isDraggingLook) return;
+    if (this.activeDragPointerId !== null && e.pointerId !== this.activeDragPointerId) return;
     const dx = e.clientX - this.lastPointerX;
     const dy = e.clientY - this.lastPointerY;
     if (Math.abs(dx) + Math.abs(dy) > 4) {
@@ -837,8 +1087,10 @@ export class AvatarController {
     this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0045, -1.32, 1.15);
   };
 
-  private readonly handlePointerUp = (): void => {
+  private readonly handlePointerUp = (e: PointerEvent): void => {
+    if (this.activeDragPointerId !== null && e.pointerId !== this.activeDragPointerId) return;
     this.isDraggingLook = false;
+    this.activeDragPointerId = null;
   };
 
   dispose(): void {

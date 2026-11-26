@@ -22,12 +22,30 @@ import {
   readRouteFromLocation,
 } from '@portalverse/core/portal/handoff';
 import { InteractiveTutorial, hasCompletedTutorial } from './tutorial';
+import { CharacterSelectScreen } from './characterSelect';
+import { MobileControls } from './mobileControls';
+import { DEFAULT_CHARACTER_ID, getCharacterDefinition } from '@portalverse/core/characters';
+import {
+  detectPerformanceProfile,
+  isMobileTouchDevice,
+  parsePerformanceProfilePreference,
+  resolvePerformanceProfile,
+  type PerformanceProfilePreference,
+} from '@portalverse/core/engine/performanceProfile';
 import { Soundtrack } from '@portalverse/core/audio/Soundtrack';
 import { vibeFor, type StemId } from '@portalverse/core/audio/musicMix';
 
 const STORAGE_PROFILE_KEY = 'portalverse.profile.v1';
 const STORAGE_MOVEMENT_MODE_KEY = 'portalverse.movement.mode';
 const STORAGE_WARP_ZONES_KEY = 'portalverse.debug.warpZones';
+const STORAGE_PERF_PROFILE_KEY = 'portalverse.perf.profile';
+const STORAGE_TOUCH_CONTROLS_KEY = 'portalverse.touch.controls';
+
+type TouchControlsPreference = 'auto' | 'on' | 'off';
+
+function parseTouchPreference(value: unknown): TouchControlsPreference {
+  return value === 'on' || value === 'off' ? value : 'auto';
+}
 
 function loadOrCreateIdentity(): PlayerIdentity {
   try {
@@ -35,7 +53,12 @@ function loadOrCreateIdentity(): PlayerIdentity {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PlayerIdentity>;
       if (parsed.id && parsed.name && parsed.color) {
-        return { id: parsed.id, name: parsed.name, color: parsed.color };
+        return {
+          id: parsed.id,
+          name: parsed.name,
+          color: parsed.color,
+          characterId: getCharacterDefinition(parsed.characterId).id,
+        };
       }
     }
   } catch {
@@ -47,6 +70,7 @@ function loadOrCreateIdentity(): PlayerIdentity {
     id,
     name: `Explorer ${id.slice(-4).toUpperCase()}`,
     color: palette[Math.floor(Math.random() * palette.length)],
+    characterId: DEFAULT_CHARACTER_ID,
   };
   saveIdentity(identity);
   return identity;
@@ -124,6 +148,7 @@ async function boot(): Promise<void> {
 
   const btnShareLink = document.getElementById('btn-share-link')!;
   const btnWorlds = document.getElementById('btn-worlds')!;
+  const btnCharacters = document.getElementById('btn-characters')!;
   const btnLinkPortal = document.getElementById('btn-link-portal')!;
   const btnProfile = document.getElementById('btn-profile')!;
   const btnControls = document.getElementById('btn-controls')!;
@@ -131,8 +156,13 @@ async function boot(): Promise<void> {
 
   const modalPortal = document.getElementById('modal-portal')!;
   const modalWorlds = document.getElementById('modal-worlds')!;
+  const modalCharacters = document.getElementById('modal-characters')!;
   const modalProfile = document.getElementById('modal-profile')!;
   const modalControls = document.getElementById('modal-controls')!;
+  const mobileControlsRoot = document.getElementById('mobile-controls')!;
+  const perfProfileSelect = document.getElementById('perf-profile-select') as HTMLSelectElement;
+  const perfProfileSummary = document.getElementById('perf-profile-summary')!;
+  const touchControlsSelect = document.getElementById('touch-controls-select') as HTMLSelectElement;
 
   const tutorial = new InteractiveTutorial({
     card: document.getElementById('tutorial-card')!,
@@ -191,6 +221,9 @@ async function boot(): Promise<void> {
       ...identity,
       name: route.handoff.playerName || identity.name,
       color: route.handoff.playerColor || identity.color,
+      characterId: route.handoff.characterId
+        ? getCharacterDefinition(route.handoff.characterId).id
+        : identity.characterId,
     };
     saveIdentity(identity);
   }
@@ -246,15 +279,44 @@ async function boot(): Promise<void> {
     hudSyncTimer = window.setTimeout(run, 0);
   }
 
+  const isTouchHardware = isMobileTouchDevice();
+  const detectedPerfProfile = detectPerformanceProfile();
+  const urlProfileParam = new URLSearchParams(window.location.search).get('profile');
+  let perfPreference: PerformanceProfilePreference = 'auto';
+  try {
+    perfPreference = parsePerformanceProfilePreference(
+      urlProfileParam ?? localStorage.getItem(STORAGE_PERF_PROFILE_KEY),
+    );
+  } catch {
+    perfPreference = parsePerformanceProfilePreference(urlProfileParam);
+  }
+  let activePerfProfile = resolvePerformanceProfile(perfPreference);
+
+  let touchPreference: TouchControlsPreference = 'auto';
+  try {
+    touchPreference = parseTouchPreference(localStorage.getItem(STORAGE_TOUCH_CONTROLS_KEY));
+  } catch {
+    touchPreference = 'auto';
+  }
+  const shouldUseTouchControls = () =>
+    touchPreference === 'on' || (touchPreference === 'auto' && isTouchHardware);
+
+  document.body.classList.toggle('is-mobile-device', isTouchHardware);
+
+  let mobileControls: MobileControls | null = null;
   let gateExited = false;
   let shiftHeld = false;
 
-  const allModals = [modalPortal, modalWorlds, modalProfile, modalControls];
+  const allModals = [modalPortal, modalWorlds, modalCharacters, modalProfile, modalControls];
   const isAnyModalOpen = () => allModals.some((m) => !m.classList.contains('hidden'));
   const syncPointerUi = (locked: boolean) => {
-    fpsReticle.classList.toggle('hidden', !locked);
+    const touchActive = Boolean(mobileControls?.isEnabled());
+    fpsReticle.classList.toggle('hidden', !locked || touchActive);
     mouseLockLabel.textContent = locked ? 'FPS Locked (Esc)' : 'Click to Lock';
-    pointerLockBanner.classList.toggle('hidden', !gateExited || locked || isAnyModalOpen() || fallOverlay.classList.contains('active'));
+    pointerLockBanner.classList.toggle(
+      'hidden',
+      touchActive || !gateExited || locked || isAnyModalOpen() || fallOverlay.classList.contains('active'),
+    );
   };
 
   // Adaptive soundtrack: Suno Studio stems blended by room and by distance to each gate.
@@ -267,6 +329,7 @@ async function boot(): Promise<void> {
   );
 
   const engine = new WorldEngine(viewport, identity.color, {
+    performanceProfile: activePerfProfile,
     loadLocalWorld: id => registry.getManifest(id)?.kind === 'local' ? registry.loadWorld(id) : undefined,
     onWorldLoaded: (manifest) => {
       soundtrack.enterRoom(manifest.id);
@@ -301,10 +364,12 @@ async function boot(): Promise<void> {
     },
     onFlightChange: (flying) => {
       flightStatusLabel.textContent = flying ? 'Flying (Hold E to Land)' : 'Fly';
+      mobileControls?.setFlying(flying);
       if (gateExited) tutorial.notifyFlightToggle(flying);
     },
     onCameraViewChange: (firstPerson) => {
       cameraViewLabel.textContent = firstPerson ? 'View: FPS' : 'View: 3rd';
+      mobileControls?.setFirstPerson(firstPerson);
       if (gateExited) tutorial.notifyCameraToggle();
     },
     onPointerLockChange: (locked) => {
@@ -317,13 +382,14 @@ async function boot(): Promise<void> {
       // The button isn't focused for you, so a Space press meant as a jump can't click it.
       if (fallen) closeAllModals();
       else respawnButton.blur();
+      mobileControls?.setInputLocked(fallen || !gateExited || isAnyModalOpen());
       syncPointerUi(engine.avatar.pointerLocked);
     },
     onMovementModeChange: (mode) => {
       physicsModeLabel.textContent = mode === 'platformer' ? 'Physics: Platformer' : 'Physics: Classic';
       try { localStorage.setItem(STORAGE_MOVEMENT_MODE_KEY, mode); } catch { /* storage unavailable */ }
     },
-  });
+  }, identity.characterId);
   if (import.meta.env.DEV) (window as unknown as { engine: WorldEngine }).engine = engine;
 
   // Walking physics (G), remembered between reloads.
@@ -509,6 +575,7 @@ async function boot(): Promise<void> {
         version: 1,
         playerName: identity.name,
         playerColor: identity.color,
+        characterId: identity.characterId,
         fromWorldId: activeWorldId,
         fromWorldName: activeManifest.name,
         returnUrl,
@@ -535,19 +602,97 @@ async function boot(): Promise<void> {
     });
   }
 
+  const characterSelect = new CharacterSelectScreen(modalCharacters, {
+    getEquippedId: () => engine.avatar.getCharacterId(),
+    getAccentColor: () => identity.color,
+    onSelect: (char, switchToThirdPerson) => {
+      identity = { ...identity, characterId: char.id };
+      saveIdentity(identity);
+      engine.avatar.setCharacter(char.id);
+      net.updateProfile(identity.name, identity.color, char.id);
+      if (switchToThirdPerson && engine.avatar.firstPerson) {
+        engine.avatar.setFirstPerson(false);
+      }
+      renderPresenceRoster();
+      showToast(`Playing as ${char.name} (${char.title})`);
+    },
+    onClose: (relockPointer) => {
+      closeAllModals(relockPointer);
+    },
+  });
+
+  // Mobile multi-touch controls + performance profile selector
+  mobileControls = new MobileControls(mobileControlsRoot, engine.avatar, {
+    onOpenCharacters: () => openModal(modalCharacters),
+    onToggleCameraView: () => engine.avatar.toggleCameraView(),
+  });
+  mobileControls.setEnabled(shouldUseTouchControls());
+  mobileControls.setFlying(engine.avatar.isFlying);
+  mobileControls.setFirstPerson(engine.avatar.firstPerson);
+  mobileControls.setInputLocked(true);
+
+  const syncPerfProfileUi = () => {
+    const autoOpt = perfProfileSelect.querySelector<HTMLOptionElement>('option[value="auto"]');
+    if (autoOpt) {
+      autoOpt.textContent = `Auto (Detected: ${detectedPerfProfile.label})`;
+    }
+    perfProfileSelect.value = perfPreference;
+    touchControlsSelect.value = touchPreference;
+    perfProfileSummary.textContent = `Active: ${activePerfProfile.label} — ${activePerfProfile.summary}`;
+  };
+  syncPerfProfileUi();
+
+  perfProfileSelect.addEventListener('change', () => {
+    perfPreference = parsePerformanceProfilePreference(perfProfileSelect.value);
+    activePerfProfile = resolvePerformanceProfile(perfPreference);
+    engine.setPerformanceProfile(activePerfProfile);
+    try {
+      localStorage.setItem(STORAGE_PERF_PROFILE_KEY, perfPreference);
+    } catch {
+      /* storage unavailable */
+    }
+    syncPerfProfileUi();
+    perfProfileSelect.blur();
+    showToast(`Graphics profile: ${activePerfProfile.label}`);
+  });
+
+  touchControlsSelect.addEventListener('change', () => {
+    touchPreference = parseTouchPreference(touchControlsSelect.value);
+    try {
+      localStorage.setItem(STORAGE_TOUCH_CONTROLS_KEY, touchPreference);
+    } catch {
+      /* storage unavailable */
+    }
+    mobileControls?.setEnabled(shouldUseTouchControls());
+    syncPointerUi(engine.avatar.pointerLocked);
+    touchControlsSelect.blur();
+  });
+
+  // Make the nearby portal prompt tappable on mobile (and clickable on desktop)
+  portalPromptEl.addEventListener('click', () => {
+    engine.triggerNearestPortal();
+  });
+
   // Modal helpers
   function openModal(modal: HTMLElement): void {
     if (!gateExited) return;
     closeAllModals();
     modal.classList.remove('hidden');
+    if (modal === modalCharacters) {
+      characterSelect.show();
+    }
     engine.setInputLocked(true);
+    mobileControls?.setInputLocked(true);
     syncPointerUi(false);
   }
 
   function closeAllModals(relockPointer = false): void {
+    characterSelect.hide();
     for (const modal of allModals) modal.classList.add('hidden');
-    engine.setInputLocked(!gateExited);
-    if (relockPointer && gateExited) {
+    const locked = !gateExited || engine.hasFallen;
+    engine.setInputLocked(locked);
+    mobileControls?.setInputLocked(locked);
+    if (relockPointer && gateExited && !mobileControls?.isEnabled()) {
       engine.requestPointerLock();
     }
     syncPointerUi(engine.avatar.pointerLocked);
@@ -578,6 +723,10 @@ async function boot(): Promise<void> {
     renderWorldDirectory();
     worldDirectoryList.scrollTop = 0;
     openModal(modalWorlds);
+  });
+
+  btnCharacters.addEventListener('click', () => {
+    openModal(modalCharacters);
   });
 
   btnLinkPortal.addEventListener('click', () => {
@@ -648,7 +797,7 @@ async function boot(): Promise<void> {
     identity = { ...identity, name, color };
     saveIdentity(identity);
     engine.avatar.setLocalColor(color);
-    net.updateProfile(name, color);
+    net.updateProfile(name, color, identity.characterId);
     renderPresenceRoster();
     closeAllModals();
     showToast(`Updated explorer identity to ${name}`);
@@ -658,7 +807,8 @@ async function boot(): Promise<void> {
   const respawn = () => {
     if (!engine.hasFallen) return;
     engine.respawn();
-    engine.requestPointerLock();
+    mobileControls?.setInputLocked(false);
+    if (!mobileControls?.isEnabled()) engine.requestPointerLock();
   };
   respawnButton.addEventListener('click', respawn);
 
@@ -683,6 +833,12 @@ async function boot(): Promise<void> {
     if (e.code === 'KeyP') {
       renderWorldDirectory();
       openModal(modalPortal);
+    } else if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!modalCharacters.classList.contains('hidden')) {
+        closeAllModals(true);
+      } else {
+        openModal(modalCharacters);
+      }
     } else if (e.code === 'KeyM') {
       renderWorldDirectory();
       worldDirectoryList.scrollTop = 0;
@@ -823,7 +979,10 @@ async function boot(): Promise<void> {
     btnGateEnter.disabled = true;
     loadingGate.classList.add('exiting');
     engine.setInputLocked(false);
-    engine.requestPointerLock();
+    mobileControls?.setInputLocked(false);
+    if (!mobileControls?.isEnabled()) {
+      engine.requestPointerLock();
+    }
     syncPointerUi(engine.avatar.pointerLocked);
     if (startTutorial) {
       tutorial.start(activeWorldId);
@@ -898,6 +1057,7 @@ async function boot(): Promise<void> {
       ],
       Number(engine.avatar.yaw.toFixed(3)),
       Number(engine.avatar.velocityY.toFixed(3)),
+      engine.avatar.isFlying,
     );
     if (tutorial.isActive() && gateExited && !isAnyModalOpen()) {
       tutorial.sample({
@@ -909,7 +1069,7 @@ async function boot(): Promise<void> {
         velocityY: engine.avatar.velocityY,
         isFlying: engine.avatar.isFlying,
         pointerLocked: engine.avatar.pointerLocked,
-        sprinting: shiftHeld,
+        sprinting: shiftHeld || engine.avatar.isSprinting(),
       });
     }
   }, 50);

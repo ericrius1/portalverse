@@ -37,6 +37,16 @@ export interface PortalPreviewOptions {
   order?: readonly string[];
   /** Resolves when there is spare time for the next step of background loading. */
   idle?: () => Promise<void>;
+  /** Number of rooms preloaded on each side of the active room (default 2; 1 on mobile). */
+  windowRadius?: number;
+  /** Maximum live portals rendered per frame (default 4; 1-2 on mobile). */
+  maxLivePortals?: number;
+  /** Whether to render depth-2 portals visible through near portals (default true; false on mobile). */
+  renderFarPortals?: boolean;
+  /** Resolution in px for cached portal snapshots (default 512; 256 on mobile). */
+  snapshotSize?: number;
+  /** Internal resolution scale (0.5..1.0) for live portal render targets. */
+  portalResolutionScale?: number;
 }
 
 const catalogOrder = (catalog as unknown as RegistryFile).worlds
@@ -100,6 +110,8 @@ interface WindowViewSlot {
   pixels: THREE.Vector4;
   /** Target size in texels, used to map screen pixels to texture coordinates. */
   targetSize: { value: THREE.Vector2 };
+  /** Resolution multiplier from screen pixels to target texels (1.0 on desktop, <1 on mobile). */
+  resScale: { value: number };
   liveBlend: { value: number };
   hasSnap: { value: number };
   lens: SnapshotLens;
@@ -417,6 +429,11 @@ export class PortalPreviews {
   private lastElapsed = 0;
   private readonly idle: () => Promise<void>;
   private readonly order: readonly string[];
+  private windowRadius: number;
+  private maxLivePortals: number;
+  private renderFarPortalsEnabled: boolean;
+  private snapshotSize: number;
+  private portalResolutionScale: number;
   /** Outer rooms of the window still waiting to load, in order. */
   private queue: string[] = [];
   private queueVersion = 0;
@@ -437,7 +454,29 @@ export class PortalPreviews {
   ) {
     this.idle = options.idle ?? nextIdle;
     this.order = options.order ?? catalogOrder;
+    this.windowRadius = options.windowRadius ?? 2;
+    this.maxLivePortals = options.maxLivePortals ?? 4;
+    this.renderFarPortalsEnabled = options.renderFarPortals ?? true;
+    this.snapshotSize = options.snapshotSize ?? SNAPSHOT_SIZE;
+    this.portalResolutionScale = THREE.MathUtils.clamp(options.portalResolutionScale ?? 1.0, 0.4, 1.0);
     this.farProxy.matrixAutoUpdate = false;
+  }
+
+  /** Update performance knobs at runtime (for switching between mobile & desktop profiles). */
+  setPerformanceOptions(opts: {
+    windowRadius?: number;
+    maxLivePortals?: number;
+    renderFarPortals?: boolean;
+    snapshotSize?: number;
+    portalResolutionScale?: number;
+  }): void {
+    if (opts.windowRadius !== undefined) this.windowRadius = Math.max(1, opts.windowRadius);
+    if (opts.maxLivePortals !== undefined) this.maxLivePortals = Math.max(1, opts.maxLivePortals);
+    if (opts.renderFarPortals !== undefined) this.renderFarPortalsEnabled = opts.renderFarPortals;
+    if (opts.snapshotSize !== undefined) this.snapshotSize = Math.max(128, opts.snapshotSize);
+    if (opts.portalResolutionScale !== undefined) {
+      this.portalResolutionScale = THREE.MathUtils.clamp(opts.portalResolutionScale, 0.4, 1.0);
+    }
   }
 
   private destination(id: string, elapsed: number): Destination | undefined {
@@ -616,7 +655,7 @@ export class PortalPreviews {
     this.finishTrip();
     this.activeRoom = room;
     const center = room.module.manifest.id;
-    const window = roomWindow(this.order, center, heading);
+    const window = roomWindow(this.order, center, heading, this.windowRadius);
     const neighbours = new Set(window.filter(entry => entry.distance === 1).map(entry => entry.id));
     for (const { portal } of room.portals) {
       if (!portal.remoteUrl && (portal.id === 'exit' || portal.id === 'entrance')) {
@@ -647,7 +686,7 @@ export class PortalPreviews {
 
   /** Whether `id` is one of the rooms kept loaded around `centerId`. */
   keeps(centerId: string, id: string): boolean {
-    return roomWindow(this.order, centerId).some(entry => entry.id === id);
+    return roomWindow(this.order, centerId, 1, this.windowRadius).some(entry => entry.id === id);
   }
 
   private needsLoad(id: string): boolean {
@@ -706,7 +745,7 @@ export class PortalPreviews {
     const key = snapshotKey(room.module.manifest.id, spawnId);
     let snap = this.snapshots.get(key);
     if (!snap) {
-      const target = createSceneTarget(SNAPSHOT_SIZE, SNAPSHOT_SIZE);
+      const target = createSceneTarget(this.snapshotSize, this.snapshotSize);
       snap = { target, radius: SNAPSHOT_RADIUS, refDistance: SNAPSHOT_REF_DISTANCE };
       this.snapshots.set(key, snap);
     }
@@ -842,22 +881,27 @@ export class PortalPreviews {
     }
 
     const isWebGPU = this.renderer.coordinateSystem === THREE.WebGPUCoordinateSystem;
-    const target = createSceneTarget(this.size.x, this.size.y);
+    const scale = this.portalResolutionScale;
+    const targetW = Math.max(1, Math.round(this.size.x * scale));
+    const targetH = Math.max(1, Math.round(this.size.y * scale));
+    const target = createSceneTarget(targetW, targetH);
     const material = new THREE.MeshBasicNodeMaterial();
     material.side = oneWay ? THREE.FrontSide : THREE.DoubleSide;
     material.fog = false;
 
-    const bounds = new THREE.Vector4(0, 0, target.width, target.height);
+    const bounds = new THREE.Vector4(0, 0, this.size.x, this.size.y);
     const pixels = bounds.clone();
     const rect = uniform(pixels);
     const targetSize = uniform(new THREE.Vector2(target.width, target.height));
+    const resScale = uniform(scale);
     const liveBlend = uniform(1.0);
     const hasSnap = uniform(0.0);
     const lens = createSnapshotLens(SNAPSHOT_RADIUS * 2.0);
 
-    // The live view sits in the target's top-left corner at one texel per pixel of the pass that draws the opening.
+    // The live view sits in the target's top-left corner at `resScale` texels per screen pixel.
     // Clamp inside the active sub-viewport so linear filtering never bleeds cleared texels at tiny portal edges.
-    const samplePx = clamp(screenCoordinate.sub(rect.xy), vec2(0.5), max(rect.zw.sub(0.5), vec2(0.5)));
+    const scaledExtent = max(rect.zw.mul(resScale).sub(0.5), vec2(0.5));
+    const samplePx = clamp(screenCoordinate.sub(rect.xy).mul(resScale), vec2(0.5), scaledExtent);
     const liveColor = texture(target.texture, samplePx.div(targetSize));
     const snapTexNode = texture(target.texture, lens.uv);
     const blended = mix(snapTexNode, liveColor, liveBlend);
@@ -868,23 +912,32 @@ export class PortalPreviews {
     const nearZ = isWebGPU ? 0 : mvp.w.negate();
     material.vertexNode = vec4(mvp.xy, mvp.z.max(nearZ), mvp.w);
 
-    return { oneWay, target, material, bounds, pixels, targetSize, liveBlend, hasSnap, lens, snapTexNode };
+    return { oneWay, target, material, bounds, pixels, targetSize, resScale, liveBlend, hasSnap, lens, snapTexNode };
   }
 
   /**
-   * Size a window's target to the drawing buffer (only when the window size changes)
+   * Size a window's target to the scaled drawing buffer (only when size/scale changes)
    * and limit this frame's render to the portal's on-screen rectangle. `origin` is the
    * screen position of the pass that will draw the opening (zero for the main view).
    */
   private fitViewTarget(slot: WindowViewSlot, bounds: THREE.Vector4, originX = 0, originY = 0): void {
     const { target } = slot;
-    if (target.width !== this.size.x || target.height !== this.size.y) {
-      target.setSize(this.size.x, this.size.y);
-      slot.targetSize.value.set(this.size.x, this.size.y);
+    const scale = this.portalResolutionScale;
+    const wantW = Math.max(1, Math.round(this.size.x * scale));
+    const wantH = Math.max(1, Math.round(this.size.y * scale));
+    if (target.width !== wantW || target.height !== wantH) {
+      target.setSize(wantW, wantH);
+      slot.targetSize.value.set(wantW, wantH);
     }
+    slot.resScale.value = scale;
     slot.bounds.copy(bounds);
     slot.pixels.set(bounds.x - originX, bounds.y - originY, bounds.z, bounds.w);
-    target.viewport.set(0, 0, bounds.z, bounds.w);
+    target.viewport.set(
+      0,
+      0,
+      Math.max(1, Math.round(bounds.z * scale)),
+      Math.max(1, Math.round(bounds.w * scale)),
+    );
   }
 
   private view(
@@ -978,7 +1031,7 @@ export class PortalPreviews {
       aperture.updateWorldMatrix(true, false);
       return this.frustum.intersectsObject(aperture);
     }).sort((a, b) => a.triggerCenter.distanceToSquared(viewer.position) -
-      b.triggerCenter.distanceToSquared(viewer.position)).slice(0, 4);
+      b.triggerCenter.distanceToSquared(viewer.position)).slice(0, this.maxLivePortals);
 
     const used = new Set<Aperture>();
     const animated = new Set<RoomInstance>();
@@ -1003,7 +1056,9 @@ export class PortalPreviews {
         const direct = this.fillsView(aperture, viewer);
 
         // Draw the portal at the far end of this room first, so this room's view shows it live.
-        this.renderFarPortal(handle, room, spawn, viewer, direct, dt, elapsed, animated, used);
+        if (this.renderFarPortalsEnabled) {
+          this.renderFarPortal(handle, room, spawn, viewer, direct, dt, elapsed, animated, used);
+        }
 
         if (direct) {
           this.camera.projectionMatrix.copy(viewer.projectionMatrix);

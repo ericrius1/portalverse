@@ -152,6 +152,8 @@ export function sanitizeHandoffPayload(value: unknown): PortalHandoffPayload | n
     fromWorldName: sanitizeText(raw.fromWorldName, 40) ?? fromWorldId,
     sentAt: isFiniteNumber(raw.sentAt) ? raw.sentAt : 0,
   };
+  const characterId = sanitizeId(raw.characterId);
+  if (characterId) payload.characterId = characterId;
   if (returnUrl) payload.returnUrl = returnUrl;
   const targetWorldId = sanitizeId(raw.targetWorldId);
   if (targetWorldId) payload.targetWorldId = targetWorldId;

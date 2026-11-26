@@ -32,7 +32,12 @@ function sanitizeIdentity(value: unknown): PlayerIdentity | null {
   const name = sanitizeText(value.name, MAX_PLAYER_NAME_LENGTH);
   const color = sanitizeColor(value.color);
   if (!id || !name || !color) return null;
-  return { id, name, color };
+  const identity: PlayerIdentity = { id, name, color };
+  if (value.characterId !== undefined) {
+    const characterId = sanitizeId(value.characterId);
+    if (characterId) identity.characterId = characterId;
+  }
+  return identity;
 }
 
 /**
@@ -114,7 +119,14 @@ export function parseClientMessage(raw: string): ClientNetMessage | null {
     case 'state': {
       const position = sanitizeVec3(data.position);
       if (!position || !isFiniteNumber(data.yaw) || !isFiniteNumber(data.velocityY)) return null;
-      return { type: 'state', position, yaw: data.yaw, velocityY: data.velocityY };
+      const msg: Extract<ClientNetMessage, { type: 'state' }> = {
+        type: 'state',
+        position,
+        yaw: data.yaw,
+        velocityY: data.velocityY,
+      };
+      if (typeof data.isFlying === 'boolean') msg.isFlying = data.isFlying;
+      return msg;
     }
     case 'switch_world': {
       const worldId = sanitizeId(data.worldId);
@@ -126,7 +138,16 @@ export function parseClientMessage(raw: string): ClientNetMessage | null {
       const name = sanitizeText(data.name, MAX_PLAYER_NAME_LENGTH);
       const color = sanitizeColor(data.color);
       if (!name || !color) return null;
-      return { type: 'update_profile', name, color };
+      const msg: Extract<ClientNetMessage, { type: 'update_profile' }> = {
+        type: 'update_profile',
+        name,
+        color,
+      };
+      if (data.characterId !== undefined) {
+        const characterId = sanitizeId(data.characterId);
+        if (characterId) msg.characterId = characterId;
+      }
+      return msg;
     }
     case 'spawn_portal': {
       const worldId = sanitizeId(data.worldId);

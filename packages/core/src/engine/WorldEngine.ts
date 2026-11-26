@@ -20,11 +20,9 @@ import { requestSharedDevice } from './gpuDevice';
 import { PortalPreviews } from './PortalPreviews';
 import { PortalRipplePass } from './PortalRipplePass';
 import type { Heading } from './roomWindow';
-import {
-  AvatarController,
-  createStylizedAvatarRig,
-  type StylizedAvatarRig,
-} from './AvatarController';
+import { AvatarController } from './AvatarController';
+import { createCharacterRig, DEFAULT_CHARACTER_ID, type CharacterRig } from '../characters';
+import { PERFORMANCE_PROFILES, type PerformanceProfile } from './performanceProfile';
 import { createArchwayPortal } from './PortalMesh';
 import { portalWarp, smoothSpeed, warpSpeedFactor } from './portalWarp';
 import { respawnHeight } from './falling';
@@ -49,6 +47,9 @@ export interface WorldEngineCallbacks {
   onCameraViewChange?: (firstPerson: boolean) => void;
   onPointerLockChange?: (locked: boolean) => void;
   onMovementModeChange?: (mode: MovementMode) => void;
+  onCharacterChange?: (characterId: string) => void;
+  /** Initial graphics / memory optimization profile (desktop, iphone, android, mobile-lite). */
+  performanceProfile?: PerformanceProfile;
   /** The player fell out of the room (true) or came back from a fall (false). */
   onFallChange?: (fallen: boolean) => void;
 }
@@ -83,11 +84,12 @@ export class WorldEngine {
 
   private readonly container: HTMLElement;
   private readonly callbacks: WorldEngineCallbacks;
+  private performanceProfile: PerformanceProfile;
   private room?: RoomInstance;
   private adjacentReady: Promise<void> = Promise.resolve();
   private readonly previews?: PortalPreviews;
   private readonly ripplePass: PortalRipplePass;
-  private readonly transitRig: StylizedAvatarRig;
+  private transitRig: CharacterRig;
   private readonly transitAvatarPos = new THREE.Vector3();
   private mountSequence = 0;
   private readonly dynamicPortalRoot = new THREE.Group();
@@ -142,9 +144,15 @@ export class WorldEngine {
   private elapsed = 0;
   private running = false;
 
-  constructor(container: HTMLElement, initialAvatarColor: string, callbacks: WorldEngineCallbacks = {}) {
+  constructor(
+    container: HTMLElement,
+    initialAvatarColor: string,
+    callbacks: WorldEngineCallbacks = {},
+    initialCharacterId: string = DEFAULT_CHARACTER_ID,
+  ) {
     this.container = container;
     this.callbacks = callbacks;
+    this.performanceProfile = callbacks.performanceProfile ?? PERFORMANCE_PROFILES.desktop;
 
     this.scene.add(this.dynamicPortalRoot);
     this.warpZones.visible = false;
@@ -154,19 +162,27 @@ export class WorldEngine {
       62,
       Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight),
       0.1,
-      450,
+      this.performanceProfile.cameraFar,
     );
 
-    this.renderer = new THREE.WebGPURenderer({ antialias: true });
-    if (callbacks.loadLocalWorld) this.previews = new PortalPreviews(this.renderer, callbacks.loadLocalWorld);
+    this.renderer = new THREE.WebGPURenderer({ antialias: this.performanceProfile.antialias });
+    if (callbacks.loadLocalWorld) {
+      this.previews = new PortalPreviews(this.renderer, callbacks.loadLocalWorld, {
+        windowRadius: this.performanceProfile.roomWindowRadius,
+        maxLivePortals: this.performanceProfile.maxLivePortals,
+        renderFarPortals: this.performanceProfile.renderFarPortals,
+        snapshotSize: this.performanceProfile.snapshotSize,
+        portalResolutionScale: this.performanceProfile.portalResolutionScale,
+      });
+    }
     this.ripplePass = new PortalRipplePass(this.renderer);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.performanceProfile.maxPixelRatio));
     this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
-    this.transitRig = createStylizedAvatarRig(initialAvatarColor);
+    this.transitRig = createCharacterRig(initialCharacterId, { accentColor: initialAvatarColor });
     this.transitAvatarState = {
       rig: this.transitRig.group,
       position: this.transitAvatarPos,
@@ -181,13 +197,20 @@ export class WorldEngine {
       initialAvatarColor,
       callbacks.onFlightChange,
       (hexColor) => {
-        const col = new THREE.Color(hexColor);
-        this.transitRig.bodyMat.color.copy(col);
-        this.transitRig.bodyMat.emissive.copy(col);
+        this.transitRig.setAccentColor?.(hexColor);
       },
       callbacks.onCameraViewChange,
       callbacks.onPointerLockChange,
       callbacks.onMovementModeChange,
+      initialCharacterId,
+      (characterId) => {
+        this.transitRig.dispose();
+        this.transitRig = createCharacterRig(characterId, {
+          accentColor: this.avatar.getLocalColor(),
+        });
+        this.transitAvatarState.rig = this.transitRig.group;
+        callbacks.onCharacterChange?.(characterId);
+      },
     );
     this.playerView = { position: this.avatar.position, camera: this.camera };
     this.frameMotion = {
@@ -248,6 +271,39 @@ export class WorldEngine {
 
   getCurrentWorldId(): string | null {
     return this.currentManifest?.id ?? null;
+  }
+
+  getPerformanceProfile(): PerformanceProfile {
+    return this.performanceProfile;
+  }
+
+  /** Apply a new performance profile at runtime (DPR, portal limits, clip distance, post-pass). */
+  setPerformanceProfile(profile: PerformanceProfile): void {
+    this.performanceProfile = profile;
+    const dpr = Math.min(window.devicePixelRatio || 1, profile.maxPixelRatio);
+    this.renderer.setPixelRatio(dpr);
+    const w = this.container.clientWidth || window.innerWidth;
+    const h = this.container.clientHeight || window.innerHeight;
+    this.renderer.setSize(w, h);
+    this.camera.far = profile.cameraFar;
+    this.camera.updateProjectionMatrix();
+    this.previews?.setPerformanceOptions({
+      windowRadius: profile.roomWindowRadius,
+      maxLivePortals: profile.maxLivePortals,
+      renderFarPortals: profile.renderFarPortals,
+      snapshotSize: profile.snapshotSize,
+      portalResolutionScale: profile.portalResolutionScale,
+    });
+    if (this.room) {
+      this.adjacentReady = this.previews?.syncPinnedForRoom(this.room, 1, false) ?? Promise.resolve();
+    }
+  }
+
+  /** Enter the currently highlighted nearby portal (used by mobile tap prompt & E key). */
+  triggerNearestPortal(): boolean {
+    if (this.inputLocked || this.avatar.isFlying || !this.nearestPortal) return false;
+    this.requestPortalEntry(this.nearestPortal.portal);
+    return true;
   }
 
   /** Show or hide each portal's warp zone (debug). */
@@ -315,10 +371,14 @@ export class WorldEngine {
     }
     // Pre-allocate the persistent post-processing target and compile both the ripple
     // composite pipeline and active room portal pipelines during the loading gate.
-    this.ripplePass.warmUp();
     this.currentFramePortals = this.getAllPortals();
     this.currentFrameDt = 0;
-    this.ripplePass.render(this.renderMainPass);
+    if (this.performanceProfile.useRipplePass) {
+      this.ripplePass.warmUp();
+      this.ripplePass.render(this.renderMainPass);
+    } else {
+      this.renderMainPass();
+    }
   }
 
   private installRoom(
@@ -602,8 +662,8 @@ export class WorldEngine {
 
     // Keep transit avatar proxy animation synced with the live character
     this.transitAvatarPos.copy(this.avatar.position);
-    if (this.avatar.isFlying) {
-      this.transitAvatarPos.y += Math.sin(this.elapsed * 3.0) * 0.14;
+    if (!this.avatar.firstPerson) {
+      this.transitRig.update(dt, this.elapsed, this.avatar.getMotionState());
     }
 
     this.room?.update(dt, this.elapsed);
@@ -691,9 +751,6 @@ export class WorldEngine {
         if (promoted) {
           portals = this.getAllPortals();
           this.transitAvatarPos.copy(this.avatar.position);
-          if (this.avatar.isFlying) {
-            this.transitAvatarPos.y += Math.sin(this.elapsed * 3.0) * 0.14;
-          }
           this.room?.update(0, this.elapsed);
           for (const h of portals) h.update?.(0, this.elapsed);
         } else {
@@ -734,8 +791,12 @@ export class WorldEngine {
     this.currentFramePortals = portals;
     this.currentFrameDt = dt;
 
-    // Always render through the persistent post-processing buffer (zero buildup/teardown hitches)
-    this.ripplePass.render(this.renderMainPass);
+    // Render through the persistent post-processing buffer, or directly on lite mobile profiles
+    if (this.performanceProfile.useRipplePass) {
+      this.ripplePass.render(this.renderMainPass);
+    } else {
+      this.renderMainPass();
+    }
   };
 
   private readonly handleResize = (): void => {

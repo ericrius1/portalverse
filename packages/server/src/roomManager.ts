@@ -159,11 +159,11 @@ export class RoomManager {
 
     switch (msg.type) {
       case 'state':
-        return this.handleState(session, msg.position, msg.yaw, msg.velocityY);
+        return this.handleState(session, msg.position, msg.yaw, msg.velocityY, msg.isFlying);
       case 'switch_world':
         return this.handleSwitchWorld(session, msg.worldId, msg.position, msg.yaw);
       case 'update_profile':
-        return this.handleUpdateProfile(session, msg.name, msg.color);
+        return this.handleUpdateProfile(session, msg.name, msg.color, msg.characterId);
       case 'spawn_portal':
         return this.handleSpawnPortal(session, msg.worldId, msg.portal);
       case 'remove_portal':
@@ -204,6 +204,7 @@ export class RoomManager {
       id: playerId,
       name: msg.player.name,
       color: msg.player.color,
+      ...(msg.player.characterId ? { characterId: msg.player.characterId } : {}),
       worldId,
       position: this.clampPosition(msg.position),
       yaw: normalizeYaw(msg.yaw),
@@ -224,25 +225,25 @@ export class RoomManager {
     position: Vec3Tuple,
     yaw: number,
     velocityY: number,
+    isFlying?: boolean,
   ): Outbound[] {
     const a = session.avatar;
     a.position = this.clampPosition(position);
     a.yaw = normalizeYaw(yaw);
     a.velocityY = clamp(velocityY, -this.maxVelocityY, this.maxVelocityY);
+    if (typeof isFlying === 'boolean') a.isFlying = isFlying;
     a.updatedAt = this.now();
-    return this.toWorld(
-      a.worldId,
-      {
-        type: 'player_state',
-        playerId: a.id,
-        worldId: a.worldId,
-        position: [...a.position] as Vec3Tuple,
-        yaw: a.yaw,
-        velocityY: a.velocityY,
-        updatedAt: a.updatedAt,
-      },
-      session.connectionId,
-    ).filter((o) => o.to.length > 0);
+    const stateMsg: Extract<ServerNetMessage, { type: 'player_state' }> = {
+      type: 'player_state',
+      playerId: a.id,
+      worldId: a.worldId,
+      position: [...a.position] as Vec3Tuple,
+      yaw: a.yaw,
+      velocityY: a.velocityY,
+      ...(typeof a.isFlying === 'boolean' ? { isFlying: a.isFlying } : {}),
+      updatedAt: a.updatedAt,
+    };
+    return this.toWorld(a.worldId, stateMsg, session.connectionId).filter((o) => o.to.length > 0);
   }
 
   private handleSwitchWorld(
@@ -273,15 +274,21 @@ export class RoomManager {
     ].filter((o) => o.to.length > 0);
   }
 
-  private handleUpdateProfile(session: Session, name: string, color: string): Outbound[] {
+  private handleUpdateProfile(
+    session: Session,
+    name: string,
+    color: string,
+    characterId?: string,
+  ): Outbound[] {
     const a = session.avatar;
     const oldName = a.name;
     a.name = name;
     a.color = color;
+    if (characterId) a.characterId = characterId;
     a.updatedAt = this.now();
     const event = oldName !== name ? `${oldName} is now known as ${name}` : undefined;
     return [
-      // player_joined doubles as an upsert so peers refresh name/color.
+      // player_joined doubles as an upsert so peers refresh name/color/character.
       ...this.toWorld(a.worldId, { type: 'player_joined', player: cloneAvatar(a) }, session.connectionId),
       this.rosterUpdate(event),
     ].filter((o) => o.to.length > 0);

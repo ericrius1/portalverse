@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#040914" />
     <title>Portalverse — Co-op WebGPU Metaverse</title>
     <link rel="stylesheet" href="/app/styles.css" />
   </head>
@@ -63,14 +69,21 @@
             Jump Right In
           </button>
         </div>
-        <div class="gate-controls-preview">
+        <div class="gate-controls-preview gate-controls-desktop">
           <span><kbd>WASD</kbd> Move</span>
           <span><kbd>Mouse</kbd> Look (FPS)</span>
           <span><kbd>Shift</kbd> Sprint / Boost</span>
           <span><kbd>Space ×2</kbd> Fly</span>
           <span><kbd>Q</kbd> Up · <kbd>E</kbd> Down / Land</span>
           <span><kbd>V</kbd> 1st / 3rd</span>
+          <span><kbd>C</kbd> Characters</span>
           <span><kbd>Esc</kbd> Cursor</span>
+        </div>
+        <div class="gate-controls-preview gate-controls-mobile">
+          <span>Left Stick: Move &amp; Sprint</span>
+          <span>Drag Screen: Look</span>
+          <span>Tap Fly / Jump / Boost</span>
+          <span>Tap Char: Switch Character</span>
         </div>
       </div>
     </div>
@@ -114,6 +127,7 @@
           </button>
           <button class="btn glass" id="btn-share-link" title="Copy direct shareable link to this room">Share Link</button>
           <button class="btn glass" id="btn-worlds" title="Rooms & Direct Links (M)">Rooms</button>
+          <button class="btn glass" id="btn-characters" title="Choose Playable Character (C)">Characters</button>
           <button class="btn btn-primary glass" id="btn-link-portal" title="Spawn Portal (P)">+ Link Portal</button>
           <button class="btn glass" id="btn-profile" title="Avatar Settings">Avatar</button>
           <button class="btn glass" id="btn-controls" title="Controls & Tutorial (H)">Controls</button>
@@ -169,9 +183,32 @@
         <ul class="player-list" id="player-list"></ul>
       </aside>
 
-      <div id="portal-prompt" class="portal-prompt glass hidden">
+      <button type="button" id="portal-prompt" class="portal-prompt glass hidden">
         <span class="prompt-key">E</span>
         <span id="portal-prompt-text">Step through portal</span>
+      </button>
+
+      <!-- Mobile Multi-Touch Controls (iPhone / Android / Tablets) -->
+      <div id="mobile-controls" class="mobile-controls hidden" aria-label="Touch controls">
+        <div id="mobile-look-zone" class="mobile-look-zone" aria-hidden="true"></div>
+
+        <div id="mobile-stick-zone" class="mobile-stick-zone" aria-label="Move joystick">
+          <div id="mobile-stick-base" class="mobile-stick-base">
+            <div id="mobile-stick-knob" class="mobile-stick-knob"></div>
+          </div>
+        </div>
+
+        <div class="mobile-actions" aria-label="Action buttons">
+          <div class="mobile-quick-row">
+            <button type="button" class="mobile-pill-btn" id="btn-mobile-view" aria-pressed="false">3rd View</button>
+            <button type="button" class="mobile-pill-btn" id="btn-mobile-char">Char</button>
+          </div>
+          <div class="mobile-thumb-arc">
+            <button type="button" class="mobile-action-btn mobile-btn-boost" id="btn-mobile-boost">Sprint</button>
+            <button type="button" class="mobile-action-btn mobile-btn-fly" id="btn-mobile-fly">Fly</button>
+            <button type="button" class="mobile-action-btn mobile-btn-jump" id="btn-mobile-jump">Jump</button>
+          </div>
+        </div>
       </div>
 
       <div id="toast-stack" class="toast-stack"></div>
@@ -184,6 +221,7 @@
           <span><kbd>Space ×2</kbd> <span id="flight-status-label">Fly</span></span>
           <span><kbd>Q</kbd>/<kbd>E</kbd> Rise / Land</span>
           <span><kbd>V</kbd> <span id="camera-view-label">View: FPS</span></span>
+          <span><kbd>C</kbd> Characters</span>
           <span><kbd>G</kbd> <span id="physics-mode-label">Physics: Classic</span></span>
           <span><kbd>P</kbd> Link</span>
           <span><kbd>M</kbd> Rooms</span>
@@ -283,6 +321,58 @@
       </div>
     </div>
 
+    <!-- Character Select Modal -->
+    <div id="modal-characters" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="character-modal-title">
+      <div class="modal modal-characters glass">
+        <div class="modal-header">
+          <div>
+            <h2 id="character-modal-title">Choose Your Character</h2>
+            <p class="character-modal-sub" id="character-roster-count">2 playable · more coming soon</p>
+          </div>
+          <button class="icon-btn" data-close-modal aria-label="Close character select">&times;</button>
+        </div>
+
+        <div class="character-select-layout">
+          <div class="character-stage-col">
+            <div class="character-stage-frame">
+              <canvas id="character-preview-canvas" aria-label="Interactive 3D character preview"></canvas>
+              <span class="character-stage-hint">Drag to rotate 360°</span>
+            </div>
+            <div class="character-pose-bar" role="group" aria-label="Preview animation">
+              <button type="button" class="character-pose-btn active" data-preview-pose="idle" aria-pressed="true">Idle</button>
+              <button type="button" class="character-pose-btn" data-preview-pose="walk" aria-pressed="false">Walk</button>
+              <button type="button" class="character-pose-btn" data-preview-pose="fly" aria-pressed="false">Fly</button>
+              <button type="button" class="character-pose-btn" data-preview-pose="boost" aria-pressed="false">Boost</button>
+            </div>
+          </div>
+
+          <div class="character-info-col">
+            <div id="character-roster" class="character-roster" role="listbox" aria-label="Playable characters"></div>
+
+            <div class="character-detail-box">
+              <div class="character-detail-header">
+                <h3 id="character-detail-name">Barnaby Buzz</h3>
+                <span class="character-detail-title" id="character-detail-title">Executive Bumblebee</span>
+              </div>
+              <p class="character-detail-desc" id="character-detail-desc"></p>
+              <div class="character-traits" id="character-detail-traits"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer modal-footer-between">
+          <label class="character-view-toggle">
+            <input type="checkbox" id="character-third-person-toggle" checked />
+            <span>Switch to 3rd-person view (<kbd>V</kbd> anytime)</span>
+          </label>
+          <div class="character-footer-actions">
+            <button type="button" class="btn" data-close-modal>Cancel</button>
+            <button type="button" class="btn btn-primary" id="btn-equip-character">Play as Barnaby Buzz</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Avatar Profile Modal -->
     <div id="modal-profile" class="modal-backdrop hidden" role="dialog" aria-modal="true">
       <div class="modal glass">
@@ -337,6 +427,7 @@
             <h4>Portals &amp; Co-op</h4>
             <ul class="controls-guide-list">
               <li><span>Walk through or <kbd>E</kbd></span><span>Enter any glowing portal</span></li>
+              <li><span><kbd>C</kbd></span><span>Choose playable character</span></li>
               <li><span><kbd>M</kbd></span><span>Browse all rooms &amp; share links</span></li>
               <li><span><kbd>P</kbd></span><span>Spawn a live local or remote portal</span></li>
               <li><span><kbd>?</kbd></span><span>Open this controls guide</span></li>
@@ -345,6 +436,31 @@
             </ul>
           </div>
         </div>
+        <div class="perf-settings-box">
+          <h4>Performance &amp; Mobile Profile</h4>
+          <div class="perf-settings-row">
+            <label>
+              Optimization Profile
+              <select id="perf-profile-select">
+                <option value="auto">Auto (Detect Device)</option>
+                <option value="desktop">Desktop (High)</option>
+                <option value="iphone">iPhone / iPad</option>
+                <option value="android">Android</option>
+                <option value="mobile-lite">Mobile Lite (Battery)</option>
+              </select>
+            </label>
+            <label>
+              Touch Controls
+              <select id="touch-controls-select">
+                <option value="auto">Auto (Touch Devices)</option>
+                <option value="on">Always On</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+          </div>
+          <p class="perf-settings-summary" id="perf-profile-summary"></p>
+        </div>
+
         <div class="modal-footer">
           <button type="button" class="btn" id="btn-replay-tutorial">Start Interactive Tutorial</button>
           <button type="button" class="btn btn-primary" data-close-modal>Resume Exploring</button>

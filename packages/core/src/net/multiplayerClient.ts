@@ -93,6 +93,7 @@ export class MultiplayerClient {
   private position: Vec3Tuple = [0, 0, 0];
   private yaw = 0;
   private velocityY = 0;
+  private isFlying: boolean | undefined = undefined;
   private pendingState = false;
 
   private players = new Map<string, AvatarState>();
@@ -172,11 +173,12 @@ export class MultiplayerClient {
   // -------------------------------------------------------------------------
 
   /** Queues the local pose; sent at most every `stateIntervalMs` (trailing edge kept). */
-  sendState(position: Vec3Tuple, yaw: number, velocityY: number): void {
+  sendState(position: Vec3Tuple, yaw: number, velocityY: number, isFlying?: boolean): void {
     if (![...position, yaw, velocityY].every(Number.isFinite)) return;
     this.position = [position[0], position[1], position[2]];
     this.yaw = yaw;
     this.velocityY = velocityY;
+    this.isFlying = isFlying;
     this.pendingState = true;
     if (this.state !== 'connected') return;
 
@@ -208,15 +210,27 @@ export class MultiplayerClient {
     this.send({ type: 'switch_world', worldId, position: [...this.position] as Vec3Tuple, yaw });
   }
 
-  updateProfile(name: string, color: string): void {
+  updateProfile(name: string, color: string, characterId?: string): void {
     const cleanName = sanitizeText(name, 32);
     const cleanColor = sanitizeColor(color);
     if (!cleanName || !cleanColor) {
       this.options.onError?.('Invalid name or color');
       return;
     }
-    this.identity = { ...this.identity, name: cleanName, color: cleanColor };
-    if (!this.send({ type: 'update_profile', name: cleanName, color: cleanColor })) {
+    const cleanChar = characterId ? sanitizeId(characterId) ?? undefined : this.identity.characterId;
+    this.identity = {
+      ...this.identity,
+      name: cleanName,
+      color: cleanColor,
+      ...(cleanChar ? { characterId: cleanChar } : {}),
+    };
+    const msg: Extract<ClientNetMessage, { type: 'update_profile' }> = {
+      type: 'update_profile',
+      name: cleanName,
+      color: cleanColor,
+      ...(cleanChar ? { characterId: cleanChar } : {}),
+    };
+    if (!this.send(msg)) {
       this.emitRoster();
     }
   }
@@ -380,6 +394,7 @@ export class MultiplayerClient {
         existing.position = [...msg.position] as Vec3Tuple;
         existing.yaw = msg.yaw;
         existing.velocityY = msg.velocityY;
+        if (typeof msg.isFlying === 'boolean') existing.isFlying = msg.isFlying;
         existing.updatedAt = msg.updatedAt;
         this.emitPlayers();
         break;
@@ -420,6 +435,7 @@ export class MultiplayerClient {
       position: [...this.position] as Vec3Tuple,
       yaw: this.yaw,
       velocityY: this.velocityY,
+      ...(typeof this.isFlying === 'boolean' ? { isFlying: this.isFlying } : {}),
     });
   }
 
@@ -462,10 +478,12 @@ export class MultiplayerClient {
       id: this.localPlayerId,
       name: this.identity.name,
       color: this.identity.color,
+      ...(this.identity.characterId ? { characterId: this.identity.characterId } : {}),
       worldId: this.worldId,
       position: [...this.position] as Vec3Tuple,
       yaw: this.yaw,
       velocityY: this.velocityY,
+      ...(typeof this.isFlying === 'boolean' ? { isFlying: this.isFlying } : {}),
       updatedAt: Date.now(),
     };
   }

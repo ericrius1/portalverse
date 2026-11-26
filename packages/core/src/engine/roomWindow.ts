@@ -13,12 +13,13 @@ export function roomWindow(
   order: readonly string[],
   center: string,
   heading: Heading = 1,
+  radius = ROOM_WINDOW_RADIUS,
 ): Array<{ id: string; distance: number }> {
   const at = order.indexOf(center);
   if (at < 0) return [];
   const seen = new Set([center]);
   const window: Array<{ id: string; distance: number }> = [];
-  for (let distance = 1; distance <= ROOM_WINDOW_RADIUS; distance++) {
+  for (let distance = 1; distance <= radius; distance++) {
     for (const side of [heading, -heading]) {
       const id = order[(((at + side * distance) % order.length) + order.length) % order.length];
       if (seen.has(id)) continue;

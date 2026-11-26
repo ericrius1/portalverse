@@ -2,6 +2,27 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Playable characters, Character Select screen & mobile support — Unreleased (2026-11-26)
+
+### Added
+
+- **Extensible playable character system (`packages/core/src/characters/`)** — replaced the static capsule avatar with an articulated, motion-driven `CharacterRig` registry (`CHARACTERS`, `createCharacterRig`, `AvatarMotionState`) driving local, portal-transit, remote multiplayer, and character-select preview avatars.
+- **Barnaby Buzz (`suit-bee`)** — the fuzzy Honey Hood bumblebee in a tailored navy suit, crisp white shirt, pocket square, gold buttons, and crimson necktie, rebuilt as a fully rigged playable character (`Y = 0` soles, facing `-Z`) with articulated bipedal legs, swinging arms, bouncing antennae, blinking eyes, fluttering tie, tilting striped abdomen, and iridescent TSL buzzing wings for walking, jumping, hovering, and boosting.
+- **Zephyr (`sky-drake`)** — a second playable creature co-crafted as a celestial Prism Sky Drake: articulated skeleton with IK bipedal foot placement, dynamic billowing aurora wing membranes that fold neatly on foot and unfurl wide in flight, 4-segment sinuous tail with glowing star-vane, flowing cosmic scarf, and ten procedural DataTexture + TSL WebGPU shaders (beveled twilight scales with normal/roughness maps, ivory belly plates, carved pearl-gold horns, star-veined translucent aurora wings, slit-pupil amber irises, and flight/boost energy pulses).
+- **Character Select screen (`C` key & HUD button, `app/characterSelect.ts`)** — glassmorphic hero roster modal featuring a live interactive 360° WebGPU turntable preview with **Idle / Walk / Fly / Boost** animation modes, character trait cards, optional auto-switch to 3rd-person view, keyboard navigation, and `localStorage` persistence.
+- **Multiplayer character & flight sync (`packages/core/src/types.ts`, `packages/server/src/protocol.ts`, `packages/server/src/roomManager.ts`, `packages/core/src/net/multiplayerClient.ts`)** — extended `hello`, `update_profile`, `state`, and `PortalHandoffPayload` with optional `characterId` and `isFlying` fields so co-op friends see each other's chosen character and live walking/flying animations.
+- **Mobile multi-touch controls (`app/mobileControls.ts`, `AvatarController.ts`, `index.html`, `app/styles.css`)** — added full iPhone/iPad/Android touch playability: floating analog left thumbstick with outer-rim auto-sprint, independent multi-touch right drag-look pad, ergonomic right-hand Jump/Rise, Fly/Land, Boost/Sprint, 1st/3rd View, and Character Select buttons, tappable portal prompts, safe-area inset padding (`viewport-fit=cover`, `100dvh`), and a compact mobile HUD.
+- **iPhone, Android & Mobile Lite optimization profiles (`packages/core/src/engine/performanceProfile.ts`, `PortalPreviews.ts`, `WorldEngine.ts`, `roomWindow.ts`)** — automatic device detection and runtime-switchable profiles in the Controls modal (`Auto`, `Desktop`, `iPhone / iPad`, `Android`, `Mobile Lite`) tuning DPR caps (`1.5×` iPhone, `1.35×` Android, `1.0×` Lite), MSAA, 3-room memory window (`roomWindowRadius = 1` to avoid iOS Safari Jetsam tab reloads), live portal count & resolution scaling (`75%`/`70%`/`55%`), 256 px portal snapshots, depth-2 far-portal skipping, and optional direct-render bypass of the liquid ripple pass on low-RAM phones.
+
+### Changed
+
+- **Flight descend keybinding (`packages/core/src/engine/AvatarController.ts`)** — freed `C` from the undocumented flight-descend alias (keeping `E` and `ControlLeft`) so pressing `C` opens/closes the Character Select screen cleanly whether walking or flying.
+
+### Design & engineering decisions
+
+- **Shared `AvatarMotionState` telemetry across every rig context** — computing speed, local forward/strafe velocity, turn rate, pitch, boost blend, grounded state, and landing squash impulse once in `AvatarController` (and inferring it for remote players) lets every future character plug into the registry without touching controller physics or portal-transit rendering.
+- **Deterministic headless-safe `DataTexture` procedural maps + ref-counted texture cache** — building Zephyr's normal, roughness, scale, iris, scarf, and wing-vein textures as pure `THREE.DataTexture` buffers ensures identical rendering on WebGPU and zero-DOM crashes in Vitest, while ref-counting prevents disposing a preview or remote rig from breaking an active player's textures.
+
 ## Palace collisions and room walls — Unreleased (2026-11-26)
 
 ### Added

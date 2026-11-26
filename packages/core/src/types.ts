@@ -67,16 +67,19 @@ export interface PlayerIdentity {
   id: string;
   name: string;
   color: string;
+  characterId?: string;
 }
 
 export interface AvatarState {
   id: string;
   name: string;
   color: string;
+  characterId?: string;
   worldId: string;
   position: Vec3Tuple;
   yaw: number;
   velocityY: number;
+  isFlying?: boolean;
   updatedAt: number;
 }
 
@@ -84,6 +87,7 @@ export interface PortalHandoffPayload {
   version: 1;
   playerName: string;
   playerColor: string;
+  characterId?: string;
   fromWorldId: string;
   fromWorldName: string;
   returnUrl?: string;
@@ -112,6 +116,7 @@ export type ClientNetMessage =
       position: Vec3Tuple;
       yaw: number;
       velocityY: number;
+      isFlying?: boolean;
     }
   | {
       type: 'switch_world';
@@ -123,6 +128,7 @@ export type ClientNetMessage =
       type: 'update_profile';
       name: string;
       color: string;
+      characterId?: string;
     }
   | {
       type: 'spawn_portal';
@@ -165,6 +171,7 @@ export type ServerNetMessage =
       position: Vec3Tuple;
       yaw: number;
       velocityY: number;
+      isFlying?: boolean;
       updatedAt: number;
     }
   | {
