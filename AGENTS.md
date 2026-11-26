@@ -36,7 +36,7 @@ Contributors without write access open a pull request instead, with the CHANGELO
    ```bash
    git push origin main
    ```
-5. **Auto-deploy happens automatically on Railway** (typically ~45–90 seconds; no Railway CLI login is required).
+5. **Auto-deploy happens automatically via GitHub Actions → Railway** once the `validate` job passes on `main` (typically ~1–2 minutes; works for any maintainer or merged PR author with no Railway CLI login or manual approval needed).
 6. Verify the live redeploy before finishing:
    - Check `GET https://portalverse-server-production.up.railway.app/api/health` returns `200 OK` with `"ok": true` and includes any newly added room IDs in `worlds`.
    - Check `GET https://portalverse-server-production.up.railway.app/` returns `200 OK`.
