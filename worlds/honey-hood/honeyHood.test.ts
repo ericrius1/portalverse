@@ -140,36 +140,35 @@ describe('bee and birds', () => {
     expect(clearance).toBeLessThan(1);
   });
 
-  it('eats every bird that spawns, without ever dropping low or teleporting', () => {
-    for (let seed = 1; seed <= 12; seed++) {
-      const rand = seededRandom(seed);
-      const hunt = createHunt(rand);
-      let spawned = 0;
-      let eaten = 0;
-      let age = 0;
-      for (let i = 0; i < 60 * 120; i++) {
-        const before = { ...hunt.bee };
-        const event = stepHunt(hunt, DT, rand);
-        if (event === 'spawn') { spawned++; age = 0; }
-        if (event === 'eat') {
-          eaten++;
-          expect(distance(hunt.bee, hunt.bird!)).toBeLessThanOrEqual(BEE_MOUTH + 0.5);
-        }
-        if (hunt.mode === 'hunting') age += DT;
-        expect(age).toBeLessThan(10);
-        expect(hunt.bee.y).toBeGreaterThanOrEqual(BEE_HOVER_Y);
-        expect(distance(before, hunt.bee)).toBeLessThan(0.4);
-        // Over the open middle of the room, clear of trunks and branches.
-        for (const thing of [hunt.bee, hunt.bird]) {
-          if (!thing) continue;
-          expect(Math.abs(thing.x)).toBeLessThanOrEqual(7);
-          expect(Math.abs(thing.z)).toBeLessThanOrEqual(30);
-          expect(thing.y).toBeLessThanOrEqual(BEE_HOVER_Y + 3.5);
-        }
+  const huntSeeds = Array.from({ length: 12 }, (_, i) => i + 1);
+  it.each(huntSeeds)('eats each bird without dropping low or teleporting (seed %i)', seed => {
+    const rand = seededRandom(seed);
+    const hunt = createHunt(rand);
+    let spawned = 0;
+    let eaten = 0;
+    let age = 0;
+    for (let i = 0; i < 60 * 120; i++) {
+      const before = { ...hunt.bee };
+      const event = stepHunt(hunt, DT, rand);
+      if (event === 'spawn') { spawned++; age = 0; }
+      if (event === 'eat') {
+        eaten++;
+        expect(distance(hunt.bee, hunt.bird!)).toBeLessThanOrEqual(BEE_MOUTH + 0.5);
       }
-      expect(spawned).toBeGreaterThanOrEqual(5);
-      expect(spawned - eaten).toBeLessThanOrEqual(1);
+      if (hunt.mode === 'hunting') age += DT;
+      expect(age).toBeLessThan(10);
+      expect(hunt.bee.y).toBeGreaterThanOrEqual(BEE_HOVER_Y);
+      expect(distance(before, hunt.bee)).toBeLessThan(0.4);
+      // Over the open middle of the room, clear of trunks and branches.
+      for (const thing of [hunt.bee, hunt.bird]) {
+        if (!thing) continue;
+        expect(Math.abs(thing.x)).toBeLessThanOrEqual(7);
+        expect(Math.abs(thing.z)).toBeLessThanOrEqual(30);
+        expect(thing.y).toBeLessThanOrEqual(BEE_HOVER_Y + 3.5);
+      }
     }
+    expect(spawned).toBeGreaterThanOrEqual(5);
+    expect(spawned - eaten).toBeLessThanOrEqual(1);
   });
 
   it('removes the bird after chewing and goes back to patrolling', () => {
