@@ -99,8 +99,141 @@ function driftNode(clock: FloatNode, at: Vec3Node, motion: Vec4Node, phase: Vec4
   return riseNode(clock, motion, phase).add(sx.mul(at.x.sub(motion.x))).add(sz.mul(at.z.sub(motion.y)));
 }
 
+interface AbyssLayout {
+  walkway: Walkway;
+  stones: THREE.BufferGeometry;
+  wisps: THREE.BufferGeometry;
+  sparkles: ReturnType<typeof moteAttributes>;
+  halos: ReturnType<typeof moteAttributes>;
+  flatSheet: THREE.BufferGeometry;
+  swellSheet: THREE.BufferGeometry;
+  spireShapes: THREE.BufferGeometry[];
+  spires: THREE.Matrix4[][];
+}
+
+let shared: Promise<AbyssLayout> | undefined;
+
+/** Hand control back to the browser so it can draw a frame between the heavy steps. */
+const breathe = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
+/**
+ * Everything about the room that never changes: the stones and the walkway, and
+ * the vertex data for the stones, smoke, motes, fog sheets and spires. Built once,
+ * in steps of a frame or two each, and shared by every mount, so mounting stays
+ * quick (the engine mounts rooms while the player walks).
+ */
+function abyssLayout(): Promise<AbyssLayout> {
+  shared ??= buildLayout();
+  return shared;
+}
+
+async function buildLayout(): Promise<AbyssLayout> {
+  abyssNoisePixels();
+  await breathe();
+  const line = centreline();
+  const pathStones = buildPathStones(seededRandom(7), line);
+  const stones = [...pathStones, ...buildStrayStones(seededRandom(8), line)];
+  await breathe();
+
+  // Sparkles drifting under each stone, and a soft halo of light beneath it.
+  const moteRand = seededRandom(11);
+  const sparkles: Mote[] = [];
+  const halos: Mote[] = [];
+  for (const stone of stones) {
+    const slabBottom = stone.topY - stone.thickness;
+    for (let i = 0, count = stone.walkable ? 5 : 8; i < count; i++) {
+      const a = moteRand() * Math.PI * 2;
+      const r = Math.sqrt(moteRand()) * stone.radius * 0.9;
+      sparkles.push({
+        stone,
+        x: stone.cx + Math.cos(a) * r,
+        y: slabBottom - 0.2 - moteRand() * (stone.depth + 1.6),
+        z: stone.cz + Math.sin(a) * r,
+        size: 0.05 + moteRand() * 0.09,
+        seed: moteRand(),
+      });
+    }
+    halos.push({
+      stone,
+      x: stone.cx,
+      y: slabBottom - stone.depth * 0.55,
+      z: stone.cz,
+      size: stone.radius * 2.6 * (0.8 + moteRand() * 0.4),
+      seed: moteRand(),
+    });
+  }
+
+  // Smoke hangs from about half the path stones and every loose one.
+  const wispRand = seededRandom(12);
+  const wisps: Wisp[] = [];
+  for (const stone of stones) {
+    if (stone.walkable && wispRand() > 0.55) continue;
+    wisps.push({
+      stone,
+      origin: stoneUnderside(stone),
+      width: (0.6 + wispRand() * 0.5) * stone.radius,
+      length: stone.walkable ? 4 + wispRand() * 6 : 8 + wispRand() * 9,
+      seed: wispRand(),
+    });
+  }
+
+  // Spires: a few close in, more in the middle distance, and most far out toward the haze.
+  const rand = seededRandom(13);
+  const spireShapes = [0, 1, 2, 3].map(() => buildSpikeGeometry(rand));
+  const spires: THREE.Matrix4[][] = spireShapes.map(() => []);
+  const rotation = new THREE.Quaternion();
+  const euler = new THREE.Euler();
+  let placed = 0;
+  for (let tries = 0; placed < SPIRES && tries < 8000; tries++) {
+    const band = rand();
+    const distance = band < 0.15 ? 6 + rand() * 54 : band < 0.5 ? 60 + rand() * 140 : 200 + rand() * 210;
+    const angle = rand() * Math.PI * 2;
+    const x = Math.sin(angle) * distance;
+    const z = Math.cos(angle) * distance;
+    if (distanceToPath(line, x, z) < 3) continue;
+    const top = band < 0.15 ? SPIRE_TOP - rand() * 35 : band < 0.5 ? SPIRE_TOP - 5 - rand() * 55 : SPIRE_TOP - 8 - rand() * 70;
+    const radius = band < 0.15 ? 0.8 + rand() * 1.4 : band < 0.5 ? 1.6 + rand() * 2.4 : 3 + rand() * 4;
+    euler.set((rand() - 0.5) * 0.1, rand() * Math.PI * 2, (rand() - 0.5) * 0.1);
+    spires[placed % spireShapes.length].push(new THREE.Matrix4().compose(
+      new THREE.Vector3(x, SPIRE_BASE, z),
+      rotation.setFromEuler(euler),
+      new THREE.Vector3(radius, top - SPIRE_BASE, radius),
+    ));
+    placed++;
+  }
+  await breathe();
+  const stoneGeometry = buildStoneGeometry(stones, seededRandom(9));
+  await breathe();
+
+  return {
+    walkway: new Walkway(pathStones),
+    stones: stoneGeometry,
+    wisps: buildWispGeometry(wisps),
+    // One set of instance buffers for every mount, so remounting doesn't add GPU buffers.
+    sparkles: moteAttributes(sparkles),
+    halos: moteAttributes(halos),
+    flatSheet: new THREE.PlaneGeometry(1100, 1100).rotateX(-Math.PI / 2),
+    swellSheet: new THREE.PlaneGeometry(1100, 1100, 120, 120).rotateX(-Math.PI / 2),
+    spireShapes,
+    spires,
+  };
+}
+
+/** A geometry of this mount's own over shared vertex data, so each mount uploads and disposes its own copy on the GPU. */
+function copyOf(template: THREE.BufferGeometry): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  for (const [name, attribute] of Object.entries(template.attributes)) {
+    geometry.setAttribute(name, new THREE.BufferAttribute(attribute.array, attribute.itemSize));
+  }
+  if (template.index) geometry.setIndex(new THREE.BufferAttribute(template.index.array, 1));
+  if (!template.boundingSphere) template.computeBoundingSphere();
+  geometry.boundingSphere = template.boundingSphere!.clone();
+  return geometry;
+}
+
 export default defineRoom('jp-abyss', {
-  mount(ctx) {
+  async mount(ctx) {
+    const layout = await abyssLayout();
     const root = new THREE.Group();
     ctx.scene.add(root);
     const geometries: THREE.BufferGeometry[] = [];
@@ -113,11 +246,7 @@ export default defineRoom('jp-abyss', {
     };
 
     // The stones, and the surface you walk on, follow one shared clock.
-    const line = centreline();
-    const pathStones = buildPathStones(seededRandom(7), line);
-    const strays = buildStrayStones(seededRandom(8), line);
-    const stones = [...pathStones, ...strays];
-    const walkway = new Walkway(pathStones);
+    const { walkway } = layout;
     const clock = uniform(0);
     let now = 0;
     ctx.setTerrainHeight((x, z) => walkway.heightAt(x, z, now));
@@ -194,38 +323,11 @@ export default defineRoom('jp-abyss', {
       const crackGlow = cracks.mul(look.x).mul(pulse).mul(topFace.add(underFace)).mul(0.7);
       material.emissiveNode = hue.mul(underGlow.add(lichenGlow).add(crackGlow));
 
-      root.add(new THREE.Mesh(own(buildStoneGeometry(stones, seededRandom(9))), material));
+      root.add(new THREE.Mesh(own(copyOf(layout.stones)), material));
     }
 
     // Glowing motes: sparkles drifting under each stone, and a soft halo of light beneath it.
-    const moteRand = seededRandom(11);
-    const sparkles: Mote[] = [];
-    const halos: Mote[] = [];
-    for (const stone of stones) {
-      const slabBottom = stone.topY - stone.thickness;
-      for (let i = 0, count = stone.walkable ? 5 : 8; i < count; i++) {
-        const a = moteRand() * Math.PI * 2;
-        const r = Math.sqrt(moteRand()) * stone.radius * 0.9;
-        sparkles.push({
-          stone,
-          x: stone.cx + Math.cos(a) * r,
-          y: slabBottom - 0.2 - moteRand() * (stone.depth + 1.6),
-          z: stone.cz + Math.sin(a) * r,
-          size: 0.05 + moteRand() * 0.09,
-          seed: moteRand(),
-        });
-      }
-      halos.push({
-        stone,
-        x: stone.cx,
-        y: slabBottom - stone.depth * 0.55,
-        z: stone.cz,
-        size: stone.radius * 2.6 * (0.8 + moteRand() * 0.4),
-        seed: moteRand(),
-      });
-    }
-    const addMotes = (motes: Mote[], shade: (seed: FloatNode, soft: FloatNode) => { tint: Vec3Node; alpha: FloatNode; scale: FloatNode; wander: Vec3Node }) => {
-      const buffers = moteAttributes(motes);
+    const addMotes = (buffers: AbyssLayout['sparkles'], shade: (seed: FloatNode, soft: FloatNode) => { tint: Vec3Node; alpha: FloatNode; scale: FloatNode; wander: Vec3Node }) => {
       const rest = instancedBufferAttribute(buffers.rest) as unknown as Vec4Node;
       const motion = instancedBufferAttribute(buffers.motion) as unknown as Vec4Node;
       const phase = instancedBufferAttribute(buffers.phase) as unknown as Vec4Node;
@@ -239,11 +341,11 @@ export default defineRoom('jp-abyss', {
       material.colorNode = tint;
       material.opacityNode = alpha;
       const mesh = new THREE.Mesh(own(new THREE.PlaneGeometry(1, 1)), material);
-      mesh.count = motes.length;
+      mesh.count = buffers.rest.count;
       mesh.frustumCulled = false;
       root.add(mesh);
     };
-    addMotes(sparkles, (seed, soft) => {
+    addMotes(layout.sparkles, (seed, soft) => {
       const twinkle = pow(sin(time.mul(seed.mul(2.5).add(1.2)).add(seed.mul(60))).mul(0.5).add(0.5), 3);
       const orbit = time.mul(seed.mul(0.25).add(0.15)).add(seed.mul(40));
       return {
@@ -253,7 +355,7 @@ export default defineRoom('jp-abyss', {
         wander: vec3(cos(orbit).mul(0.35), sin(time.mul(seed.add(0.5)).add(seed.mul(20))).mul(0.25), sin(orbit).mul(0.35)),
       };
     });
-    addMotes(halos, (seed, soft) => ({
+    addMotes(layout.halos, (seed, soft) => ({
       tint: mix(color(GLOW), color(GLOW_VIOLET), smoothstep(0.8, 0.84, seed)),
       alpha: soft.mul(soft).mul(0.07).mul(sin(time.mul(0.6).add(seed.mul(30))).mul(0.25).add(0.75)),
       scale: float(1),
@@ -262,18 +364,6 @@ export default defineRoom('jp-abyss', {
 
     // Smoke falling from beneath the stones, twisting and blown about as it goes (after JP's coffee smoke).
     {
-      const wispRand = seededRandom(12);
-      const wisps: Wisp[] = [];
-      for (const stone of stones) {
-        if (stone.walkable && wispRand() > 0.55) continue;
-        wisps.push({
-          stone,
-          origin: stoneUnderside(stone),
-          width: (0.6 + wispRand() * 0.5) * stone.radius,
-          length: stone.walkable ? 4 + wispRand() * 6 : 8 + wispRand() * 9,
-          seed: wispRand(),
-        });
-      }
       const origin = attribute<'vec4'>('aOrigin', 'vec4');
       const motion = attribute<'vec4'>('aMotion', 'vec4');
       const phase = attribute<'vec4'>('aPhase', 'vec4');
@@ -297,7 +387,7 @@ export default defineRoom('jp-abyss', {
       const edges = clamp(min(min(along.mul(6), float(1).sub(along).mul(1.4)), min(across.mul(4), float(1).sub(across).mul(4))), 0, 1);
       material.colorNode = mix(color(GLOW), color('#8c86c9'), along);
       material.opacityNode = puff.mul(edges).mul(0.32);
-      const mesh = new THREE.Mesh(own(buildWispGeometry(wisps)), material);
+      const mesh = new THREE.Mesh(own(copyOf(layout.wisps)), material);
       mesh.frustumCulled = false;
       root.add(mesh);
     }
@@ -308,8 +398,8 @@ export default defineRoom('jp-abyss', {
 
     // Fog far below: an opaque floor and translucent banks drifting over it at their own heights and speeds.
     {
-      const flatSheet = own(new THREE.PlaneGeometry(1100, 1100).rotateX(-Math.PI / 2));
-      const swellSheet = own(new THREE.PlaneGeometry(1100, 1100, 120, 120).rotateX(-Math.PI / 2));
+      const flatSheet = own(copyOf(layout.flatSheet));
+      const swellSheet = own(copyOf(layout.swellSheet));
       FOG_LAYERS.forEach((layer, i) => {
         const solid = i === 0;
         const flow = positionGeometry.xz.add(vec2(layer.drift[0], layer.drift[1]).mul(time));
@@ -339,40 +429,16 @@ export default defineRoom('jp-abyss', {
 
     // Needle spires rising out of the fog, fading into it toward their roots and into the haze far off.
     {
-      const rand = seededRandom(13);
       const material = own(new THREE.MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0.3, fog: false }));
       const sunk = float(1).sub(smoothstep(-140, -60, positionWorld.y));
       const rim = pow(float(1).sub(clamp(dot(normalView, positionViewDirection), 0, 1)), 3);
       material.colorNode = color('#15121c').mul(float(1).sub(sunk)).mul(float(1).sub(haze));
       const glow = color('#3a3656').mul(sunk).add(color('#6d5bd6').mul(rim).mul(0.25).mul(float(1).sub(sunk)));
       material.emissiveNode = mix(glow, color(HORIZON), haze);
-      const shapes = [0, 1, 2, 3].map(() => own(buildSpikeGeometry(rand)));
-      const placements: THREE.Matrix4[][] = shapes.map(() => []);
-      const rotation = new THREE.Quaternion();
-      const euler = new THREE.Euler();
-      let placed = 0;
-      for (let tries = 0; placed < SPIRES && tries < 8000; tries++) {
-        // A few close in, more in the middle distance, and most far out toward the haze.
-        const band = rand();
-        const distance = band < 0.15 ? 6 + rand() * 54 : band < 0.5 ? 60 + rand() * 140 : 200 + rand() * 210;
-        const angle = rand() * Math.PI * 2;
-        const x = Math.sin(angle) * distance;
-        const z = Math.cos(angle) * distance;
-        if (distanceToPath(line, x, z) < 3) continue;
-        const top = band < 0.15 ? SPIRE_TOP - rand() * 35 : band < 0.5 ? SPIRE_TOP - 5 - rand() * 55 : SPIRE_TOP - 8 - rand() * 70;
-        const radius = band < 0.15 ? 0.8 + rand() * 1.4 : band < 0.5 ? 1.6 + rand() * 2.4 : 3 + rand() * 4;
-        euler.set((rand() - 0.5) * 0.1, rand() * Math.PI * 2, (rand() - 0.5) * 0.1);
-        placements[placed % shapes.length].push(new THREE.Matrix4().compose(
-          new THREE.Vector3(x, SPIRE_BASE, z),
-          rotation.setFromEuler(euler),
-          new THREE.Vector3(radius, top - SPIRE_BASE, radius),
-        ));
-        placed++;
-      }
-      shapes.forEach((shape, i) => {
-        const spires = new THREE.InstancedMesh(shape, material, placements[i].length);
+      layout.spireShapes.forEach((shape, i) => {
+        const spires = new THREE.InstancedMesh(own(copyOf(shape)), material, layout.spires[i].length);
         instanced.push(spires);
-        placements[i].forEach((matrix, j) => spires.setMatrixAt(j, matrix));
+        layout.spires[i].forEach((matrix, j) => spires.setMatrixAt(j, matrix));
         spires.computeBoundingSphere();
         root.add(spires);
       });

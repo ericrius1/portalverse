@@ -36,38 +36,55 @@ function valueNoise(values: Float32Array, period: number, u: number, v: number):
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
-function fractal(rand: () => number, periods: number[]): (u: number, v: number) => number {
-  const octaves = periods.map((period, i) => ({ period, weight: 0.5 ** i, values: lattice(period, rand) }));
-  return (u, v) => octaves.reduce((sum, o) => sum + o.weight * valueNoise(o.values, o.period, u, v), 0);
+/** Fractal value noise, one octave per period, each half the weight of the last. */
+function fractalPlane(rand: () => number, periods: number[]): Float32Array {
+  const plane = new Float32Array(NOISE_SIZE * NOISE_SIZE);
+  periods.forEach((period, octave) => {
+    const values = lattice(period, rand);
+    const weight = 0.5 ** octave;
+    for (let y = 0; y < NOISE_SIZE; y++) {
+      for (let x = 0; x < NOISE_SIZE; x++) {
+        plane[y * NOISE_SIZE + x] += weight * valueNoise(values, period, x / NOISE_SIZE, y / NOISE_SIZE);
+      }
+    }
+  });
+  return plane;
 }
 
 /** F2 − F1 of a jittered grid of points that wraps every `cells` cells: 0 on the borders between cells. */
-function cellEdges(rand: () => number, cells: number): (u: number, v: number) => number {
+function cellEdgePlane(rand: () => number, cells: number): Float32Array {
   const points = new Float32Array(cells * cells * 2);
   for (let i = 0; i < points.length; i++) points[i] = rand();
-  return (u, v) => {
-    const x = u * cells;
-    const y = v * cells;
-    const xi = Math.floor(x);
+  const plane = new Float32Array(NOISE_SIZE * NOISE_SIZE);
+  for (let py = 0; py < NOISE_SIZE; py++) {
+    const y = (py / NOISE_SIZE) * cells;
     const yi = Math.floor(y);
-    let f1 = Infinity;
-    let f2 = Infinity;
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const cx = xi + dx;
+    for (let px = 0; px < NOISE_SIZE; px++) {
+      const x = (px / NOISE_SIZE) * cells;
+      const xi = Math.floor(x);
+      let f1 = Infinity;
+      let f2 = Infinity;
+      for (let dy = -1; dy <= 1; dy++) {
         const cy = yi + dy;
-        const wrapped = (((cy % cells) + cells) % cells) * cells + (((cx % cells) + cells) % cells);
-        const d = Math.hypot(cx + points[wrapped * 2] - x, cy + points[wrapped * 2 + 1] - y);
-        if (d < f1) {
-          f2 = f1;
-          f1 = d;
-        } else if (d < f2) {
-          f2 = d;
+        const row = ((cy % cells) + cells) % cells;
+        for (let dx = -1; dx <= 1; dx++) {
+          const cx = xi + dx;
+          const wrapped = row * cells + (((cx % cells) + cells) % cells);
+          const ox = cx + points[wrapped * 2] - x;
+          const oy = cy + points[wrapped * 2 + 1] - y;
+          const d = Math.sqrt(ox * ox + oy * oy);
+          if (d < f1) {
+            f2 = f1;
+            f1 = d;
+          } else if (d < f2) {
+            f2 = d;
+          }
         }
       }
+      plane[py * NOISE_SIZE + px] = f2 - f1;
     }
-    return f2 - f1;
-  };
+  }
+  return plane;
 }
 
 /** Stretch to the full 0..1 range. */
@@ -84,22 +101,13 @@ function normalise(values: Float32Array): void {
 export function abyssNoisePixels(): Uint8Array {
   if (pixels) return pixels;
   const rand = seededRandom(1307);
-  const channels = [
-    fractal(rand, [4, 8, 16, 32, 64]),
-    fractal(rand, [6, 12, 24, 48]),
-    cellEdges(rand, 9),
-    fractal(rand, [64, 128]),
+  // Built in this order so each channel draws the same random numbers as before.
+  const planes = [
+    fractalPlane(rand, [4, 8, 16, 32, 64]),
+    fractalPlane(rand, [6, 12, 24, 48]),
+    cellEdgePlane(rand, 9),
+    fractalPlane(rand, [64, 128]),
   ];
-  const planes = channels.map(() => new Float32Array(NOISE_SIZE * NOISE_SIZE));
-  for (let y = 0; y < NOISE_SIZE; y++) {
-    for (let x = 0; x < NOISE_SIZE; x++) {
-      const u = x / NOISE_SIZE;
-      const v = y / NOISE_SIZE;
-      channels.forEach((channel, c) => {
-        planes[c][y * NOISE_SIZE + x] = channel(u, v);
-      });
-    }
-  }
   planes.forEach(normalise);
   pixels = new Uint8Array(NOISE_SIZE * NOISE_SIZE * 4);
   for (let i = 0; i < NOISE_SIZE * NOISE_SIZE; i++) {

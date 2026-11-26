@@ -2,7 +2,7 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
-## Opt-in falling and a looser path rule — Unreleased
+## Opt-in falling and a looser path rule — `jp/abyss-room`, merged in `61512a6` (2026-11-25)
 
 ### Added
 
@@ -28,7 +28,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
   - Arriving in any room also clears a fall.
 - Player-placed portals over a drop with no ground now use the player's own height.
 
-## Abyss Stepping Stones room — Unreleased
+## Abyss Stepping Stones room — `jp/abyss-room`, merged in `61512a6` (2026-11-25)
 
 ### Added
 
@@ -78,6 +78,11 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 - **The whole room is procedural**
   - *Decision*: There are no asset files, and the layout is seeded, so the room looks the same on every visit.
   - *Decision*: The stones are one mesh, the smoke one mesh, and the sparkles and halos one instanced sprite mesh each, to keep the draw-call count low while the room renders as a preview through portals.
+- **Mounting is quick, for the five-room window loader**
+  - *Why*: The loader mounts rooms while you walk, so a slow `mount` stalls the frame. At first this room took 33–50 ms per mount, and about 100 ms the first time.
+  - *Decision*: The layout and all vertex data are built once per page and shared by every mount. Each mount only wraps the shared arrays in its own geometries and makes its materials, which takes about 2 ms.
+  - *Decision*: The first build runs in steps with a pause between each so the browser can draw. Its longest step is the 29 ms noise texture, down from 45 ms after a loop rewrite that gives identical pixels.
+  - *Decision*: The sparkle and halo instance buffers are shared too, so remounting the room doesn't add GPU buffers.
 
 ## Five-room window loader — `feat/room-window-loader` (2026-11-25)
 

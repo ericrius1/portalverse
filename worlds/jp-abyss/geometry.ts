@@ -24,8 +24,9 @@ export function buildStoneGeometry(stones: Stone[], rand: () => number): THREE.B
   const inside = new THREE.Vector3();
 
   for (const stone of stones) {
-    const attrs = stoneAttributes(stone);
-    const stoneLook = [stone.glow, stone.seed, stone.topY, stone.thickness];
+    const [m0, m1, m2, m3] = stoneAttributes(stone).motion;
+    const [p0, p1, p2, p3] = stone.phases;
+    const [l0, l1, l2, l3] = [stone.glow, stone.seed, stone.topY, stone.thickness];
     const plane = (x: number, z: number) => stone.topY + stone.slopeX * (x - stone.cx) + stone.slopeZ * (z - stone.cz);
     const ring = (points: Array<[number, number]>, drop: number) =>
       points.map(([x, z]) => new THREE.Vector3(x, plane(x, z) - drop, z));
@@ -65,9 +66,9 @@ export function buildStoneGeometry(stones: Stone[], rand: () => number): THREE.B
       for (const v of [a, p, q]) {
         position.push(v.x, v.y, v.z);
         normal.push(n.x, n.y, n.z);
-        motion.push(...attrs.motion);
-        phase.push(...attrs.phase);
-        look.push(...stoneLook);
+        motion.push(m0, m1, m2, m3);
+        phase.push(p0, p1, p2, p3);
+        look.push(l0, l1, l2, l3);
       }
     };
 
