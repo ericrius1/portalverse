@@ -2,6 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Leaner screen output and compressed downloads — Unreleased (2026-11-26)
+
+### Changed
+
+- **One full-screen pass instead of two** — `PortalRipplePass` now applies tone mapping and the sRGB conversion in its own shader and draws straight to the canvas. The desktop profile no longer asks for a multisampled canvas.
+- **Compressed downloads** — the build writes Brotli and gzip copies of its scripts, styles, models and HDR image (`scripts/precompress.ts`), and the server sends them to browsers that accept them.
+
+### Design & engineering decisions
+
+- The 4× MSAA buffer smoothed nothing: rooms are drawn into a single-sample target, and only a full-screen quad reached the multisampled buffer. With tone mapping set on the renderer, Three also routed that quad through an extra buffer and a second full-screen pass. The picture is meant to be unchanged, and the GPU memory and fill work for both are gone.
+- If something is ever drawn directly to the canvas on a profile that uses the ripple pass, it gets no antialiasing and, inside `composite()`, no tone mapping. Draw it inside `renderScene` instead.
+- Compressing once at build time costs a few seconds per build and nothing per request. The server only picks a file, so it stays dependency-free.
+
 ## Palace Lagoon boardwalk over water, arching celestial ascent, Arabic mosaic dome-roof portal & colonnade Z-fighting fix — Unreleased (2026-11-26)
 
 ### Added

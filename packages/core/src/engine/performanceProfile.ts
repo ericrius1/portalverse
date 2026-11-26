@@ -7,7 +7,10 @@ export interface PerformanceProfile {
   readonly summary: string;
   /** Maximum canvas devicePixelRatio cap. */
   readonly maxPixelRatio: number;
-  /** Whether to request hardware antialiasing on the main renderer. */
+  /**
+   * Whether to request hardware antialiasing on the main renderer's canvas. With the ripple
+   * pass only a full-screen quad is drawn there, so it would cost memory and smooth nothing.
+   */
   readonly antialias: boolean;
   /** Number of rooms preloaded on each side of the active room in the promenade loop. */
   readonly roomWindowRadius: number;
@@ -31,9 +34,9 @@ export const PERFORMANCE_PROFILES: Readonly<Record<PerformanceProfileId, Perform
   desktop: {
     id: 'desktop',
     label: 'Desktop (High)',
-    summary: 'Full 2× DPR, MSAA, 4 live portals, depth-2 far portals, 5-room preload window.',
+    summary: 'Full 2× DPR, 4 live portals, depth-2 far portals, 5-room preload window.',
     maxPixelRatio: 2.0,
-    antialias: true,
+    antialias: false,
     roomWindowRadius: 2,
     maxLivePortals: 4,
     renderFarPortals: true,

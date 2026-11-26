@@ -61,19 +61,38 @@ function defaultStaticDir(): string | undefined {
   return existsSync(join(dir, 'index.html')) ? dir : undefined;
 }
 
+/** Copies the build writes beside a file (scripts/precompress.ts), best first. */
+const ENCODINGS = [
+  { name: 'br', suffix: '.br' },
+  { name: 'gzip', suffix: '.gz' },
+] as const;
+
+/** Whether an Accept-Encoding header names this encoding without refusing it (`q=0`). */
+function accepts(header: string, encoding: string): boolean {
+  return header.split(',').some((entry) => {
+    const [name, ...params] = entry.split(';').map((part) => part.trim().toLowerCase());
+    return name === encoding && !params.some((p) => p.startsWith('q=') && Number(p.slice(2)) === 0);
+  });
+}
+
 function serveFile(res: ServerResponse, filePath: string, method: string, cacheControl: string): void {
-  const stat = statSync(filePath);
   const contentType = MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+  const copies = ENCODINGS.filter((e) => existsSync(filePath + e.suffix));
+  const acceptEncoding = String(res.req.headers['accept-encoding'] ?? '');
+  const encoding = copies.find((e) => accepts(acceptEncoding, e.name));
+  const sentPath = encoding ? filePath + encoding.suffix : filePath;
   res.writeHead(200, {
     'Content-Type': contentType,
-    'Content-Length': stat.size,
+    'Content-Length': statSync(sentPath).size,
     'Cache-Control': cacheControl,
+    ...(copies.length ? { Vary: 'Accept-Encoding' } : {}),
+    ...(encoding ? { 'Content-Encoding': encoding.name } : {}),
   });
   if (method === 'HEAD') {
     res.end();
     return;
   }
-  createReadStream(filePath).pipe(res);
+  createReadStream(sentPath).pipe(res);
 }
 
 function tryServeStatic(staticRoot: string, pathname: string, method: string, res: ServerResponse): boolean {

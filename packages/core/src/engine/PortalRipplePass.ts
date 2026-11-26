@@ -7,6 +7,7 @@ import {
   exp,
   float,
   length,
+  renderOutput,
   screenUV,
   sin,
   smoothstep,
@@ -14,6 +15,7 @@ import {
   uniform,
   vec2,
   vec3,
+  vec4,
 } from 'three/tsl';
 import { createSceneTarget } from './sceneTarget';
 
@@ -55,7 +57,7 @@ export class PortalRipplePass {
       this.renderer.setRenderTarget(rt);
       this.renderer.clear();
       this.renderer.setRenderTarget(null);
-      this.renderer.render(this.scene, this.camera);
+      this.composite();
     } finally {
       this.renderer.setRenderTarget(prevTarget);
     }
@@ -141,7 +143,13 @@ export class PortalRipplePass {
         return vec3(r, g, b);
       });
 
-      mat.colorNode = rippleFn();
+      // Tone map and convert to the screen's colour space here, in the one pass that draws
+      // to the screen (see composite()).
+      mat.colorNode = renderOutput(
+        vec4(rippleFn(), 1),
+        this.renderer.toneMapping,
+        this.renderer.outputColorSpace,
+      );
       this.material = mat;
       this.quad = new THREE.Mesh(this.quadGeo, mat);
       this.scene.add(this.quad);
@@ -162,7 +170,25 @@ export class PortalRipplePass {
       // Name the screen outright: a background precompile can leave another target set.
       this.renderer.setRenderTarget(null);
     }
-    this.renderer.render(this.scene, this.camera);
+    this.composite();
+  }
+
+  /**
+   * Draw the quad to the screen with the renderer's own output transform off. Left on,
+   * Three would draw it into an extra buffer first and transform that in a second
+   * full-screen pass; the quad's shader has already done the transform.
+   */
+  private composite(): void {
+    const renderer = this.renderer;
+    const { toneMapping, outputColorSpace } = renderer;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    try {
+      renderer.render(this.scene, this.camera);
+    } finally {
+      renderer.toneMapping = toneMapping;
+      renderer.outputColorSpace = outputColorSpace;
+    }
   }
 
   dispose(): void {
