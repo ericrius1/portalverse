@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
+Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
 ## `breathe()` and the 10-second loading budget — Unreleased
 

@@ -1,10 +1,10 @@
 # Portalverse
 
-A co-op **Three.js WebGPU + TSL** portal metaverse built for **Eric (`ericrius1`)** and **JP (`jpwhitaker`)** to co-develop in parallel — with isolated personal rooms linked in a seamless circular portal loop, live perspective-correct portal previews, real-time multiplayer presence, live portal linking, and federated cross-URL portal handoffs.
+An open-source, community-built **Three.js WebGPU + TSL** portal metaverse. Contributors each build their own room, and the rooms are linked in a seamless circular portal loop. The engine adds live perspective-correct portal previews, real-time multiplayer presence, live portal linking, and federated portal handoffs between servers.
 
-Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through the circular portals to explore the connected loop. The [room authoring guide](./COLLAB.md#building-your-room) covers the shared `defineRoom` contract, spawns, and budgets.
+Anyone can add a room: create `worlds/<your-room>/index.ts`, then walk or sprint through the circular portals to explore the connected loop. The [room authoring guide](./COLLAB.md#building-your-room) covers the shared `defineRoom` contract, spawns, and budgets. See [CHANGELOG.md](./CHANGELOG.md) for recent changes and architectural decisions.
 
-Rooms load while players walk through others, so each room gets about 10 seconds to get ready, and only about 5 if someone is boosting in flight. That loading runs on the same thread that draws every frame. Break slow setup into small pieces with `await ctx.breathe()`, build unchanging data once and share it across mounts, and move heavy pure maths to Web Workers. [Loading: about 10 seconds, in small pieces](./COLLAB.md#loading-about-10-seconds-in-small-pieces) explains how. See [CHANGELOG.md](./CHANGELOG.md) for recent changes and architectural decisions.
+Rooms load while players walk through others, so each room gets about 10 seconds to get ready, and only about 5 if someone is boosting in flight. That loading runs on the same thread that draws every frame. Break slow setup into small pieces with `await ctx.breathe()`, build unchanging data once and share it across mounts, and move heavy pure maths to Web Workers. [Loading: about 10 seconds, in small pieces](./COLLAB.md#loading-about-10-seconds-in-small-pieces) explains how.
 
 ## Features
 
@@ -94,4 +94,4 @@ pnpm test        # Run Vitest suite (server, protocol, handoff, registry, portal
 pnpm build       # Production build
 ```
 
-See [COLLAB.md](./COLLAB.md) for the Eric + JP co-working guide in **T3 Code**, and [CHANGELOG.md](./CHANGELOG.md) for detailed change history and engineering decisions.
+See [COLLAB.md](./COLLAB.md) for the contributor guide (building a room, sharing agent sessions in **T3 Code**, and deploying), and [CHANGELOG.md](./CHANGELOG.md) for detailed change history and engineering decisions.

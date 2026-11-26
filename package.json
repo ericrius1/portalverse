@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.23.0",
-  "description": "Co-op Three.js WebGPU + TSL portal metaverse built for multi-author & multi-agent workflows in T3 Code",
+  "description": "Open-source, community-built Three.js WebGPU + TSL portal metaverse, made for many authors and their agents",
   "scripts": {
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "vite",

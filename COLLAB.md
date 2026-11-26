@@ -1,16 +1,16 @@
-# Co-Working Guide — Eric (`ericrius1`) & JP (`jpwhitaker`) in T3 Code
+# Contributor Guide
 
-This repo is structured so you both—plus **Claude Opus 5.5** and **Gemini 4 Neon**—can build simultaneously with zero merge conflicts.
+Portalverse is an open-source, community-built portal metaverse. Each contributor builds their own rooms in their own folders, so many people, and their AI agents (such as **Claude Opus 5.5** and **Gemini 4 Neon**), can build at once without merge conflicts.
 
 ## 1. File Ownership (No Merge Hell)
 
-- **Eric builds freely in:** `worlds/eric-world/` (plus any new `worlds/eric-*/` worlds)
-- **JP builds freely in:** `worlds/jp-world/` (plus any new `worlds/jp-*/` worlds)
-- **Shared SDK (`packages/core/`, `packages/server/`, `registry.json`):** Update via short PRs or in a shared T3 Code session.
+- **Your rooms**: build freely in your own room folders under `worlds/`. Each room's `owner` in `registry.json` says whose it is; ask the owner before changing someone else's room. Starting folder names with your handle (as in `worlds/eric-world/` and `worlds/jp-abyss/`) makes them easy to tell apart.
+- **Shared code (`packages/core/`, `packages/server/`, `app/`, `registry.json`)**: change it through short, tested pull requests, or in a shared T3 Code session.
+- **Without write access?** Fork the repo and open a pull request; a maintainer reviews and merges it.
 
 ### Building your room
 
-Open `/?world=jp-world` while editing `worlds/jp-world/index.ts`. Eric can do the same in `worlds/eric-world/index.ts`. To see your room through a portal, open a second tab at the room before yours in the loop (for JP that's `/?world=eric-world`) and look down the room at its exit. Move sideways to check the perspective, then walk through the opening to enter.
+Open `/?world=<your-room>` while editing `worlds/<your-room>/index.ts`. To see your room through a portal, open a second tab at the room before yours in the loop (for `jp-world` that's `/?world=eric-world`) and look down the room at its exit. Move sideways to check the perspective, then walk through the opening to enter.
 
 Each room exports `defineRoom(id, { mount(ctx) })`. The engine calls the same builder for a visit and for a view through a local portal. Keep mutable scene objects inside `mount` so each instance can animate and unload independently.
 
@@ -95,15 +95,15 @@ The byte totals cover local files and bundled imports. Runtime downloads, textur
 
 Pick the workflow that fits your session:
 
-1. **Live Pair Session (Fastest tonight — Guest Links)**
+1. **Live Pair Session (Fastest — Guest Links)**
    - Host enables **T3 Connect** and **Settings → Labs → Guest links**.
    - Right-click the active thread → **Share with guest** and send the URL.
    - Guest watches the agent stream live and submits prompts (host approves requests).
 2. **True Shared Agent Room (Shared Dev Box / VPS)**
    - Run T3 Code on a shared cloud VM (`npx t3 serve` + `npx t3 pair`, or T3 Connect + **Settings → Sharing & access → Authorized clients**).
-   - Both of you connect your T3 Code clients to that environment and work in isolated git worktrees side by side.
+   - Everyone connects their T3 Code clients to that environment and works in isolated git worktrees side by side.
 3. **Linked Local Machines (Peer Agent Delegation)**
-   - Both enable **Settings → Labs → Linked environments**.
+   - Each person enables **Settings → Labs → Linked environments**.
    - Exchange a pairing link under **Settings → Sharing & access → Authorized clients → Create link**.
    - Your agents can inspect each other's threads and delegate tasks across machines.
 
@@ -116,15 +116,14 @@ Pick the workflow that fits your session:
 
 ## 4. Playing Together & Auto-Deploying (Railway)
 
-Portalverse runs full-stack (Vite WebGPU frontend + authoritative `/ws` multiplayer server on one origin) on **Railway** and **auto-deploys whenever Eric or JP pushes/merges to `main`**:
+Portalverse runs full-stack (Vite WebGPU frontend + authoritative `/ws` multiplayer server on one origin) on **Railway** and **auto-deploys whenever a maintainer pushes or merges to `main`**:
 
 - **Live Main URL:** `https://portalverse-server-production.up.railway.app`
 - **Health / Presence API:** `https://portalverse-server-production.up.railway.app/api/health`
-- **Share Eric's Room:** `https://portalverse-server-production.up.railway.app/?world=eric-world`
-- **Share JP's Meadow:** `https://portalverse-server-production.up.railway.app/?world=jp-world`
+- **Share a room:** `https://portalverse-server-production.up.railway.app/?world=eric-world`
 - **Share any room, arriving at its far end:** `https://portalverse-server-production.up.railway.app/?world=fishpond&spawn=exit`
 
-To deploy changes, run `pnpm run build && pnpm test`, merge cleanly into `main`, and `git push origin main` — Railway automatically rebuilds and redeploys within ~1 minute (no Railway CLI login or Vercel account required). See [AGENTS.md](./AGENTS.md) for the full agent checklist.
+To deploy changes, a maintainer runs `pnpm run build && pnpm test`, merges cleanly into `main`, and runs `git push origin main`. Railway automatically rebuilds and redeploys within ~1 minute (no Railway CLI login or Vercel account required). See [AGENTS.md](./AGENTS.md) for the full agent checklist.
 
 The Rooms menu (`M`) copies a link to every room.
 

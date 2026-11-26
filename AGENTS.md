@@ -1,6 +1,6 @@
 # Portalverse — Agent & Collaboration Guide
 
-Portalverse is a co-op **Three.js WebGPU + TSL** portal metaverse co-developed by **Eric (`ericrius1`)** and **JP (`jpwhitaker`)**.
+Portalverse is an open-source, community-built **Three.js WebGPU + TSL** portal metaverse. Contributors each build their own rooms, and the shared engine links them into one loop. Maintainers merge to `main` and deploy; anyone else contributes through pull requests.
 
 ## 1. Push & Auto-Deploy (Live Production)
 
@@ -10,13 +10,15 @@ Everything—both the Vite WebGPU frontend (`dist/`) and the authoritative multi
 - **Health / Presence API:** https://portalverse-server-production.up.railway.app/api/health
 - **Multiplayer WebSocket:** `wss://portalverse-server-production.up.railway.app/ws` (same-origin, no env vars needed)
 
-### Always Keep `CHANGELOG.md` Updated (Shared Context Between Eric, JP & Agents)
-- **At the start of feature work**, skim the top of [CHANGELOG.md](./CHANGELOG.md) so you know what the other collaborator recently changed and *why*.
+### Always Keep `CHANGELOG.md` Updated (Shared Context for Contributors & Agents)
+- **At the start of feature work**, skim the top of [CHANGELOG.md](./CHANGELOG.md) so you know what other contributors recently changed and *why*.
 - **For every feature or notable change**, update [CHANGELOG.md](./CHANGELOG.md) (newest first) *before pushing* with:
   - **What changed** (`Added` / `Changed` / `Fixed` / `Removed`)
-  - **Why it changed** (`Design & engineering decisions` — capture the prompting intent, problem solved, and tradeoffs so both collaborators and future agents stay aligned).
+  - **Why it changed** (`Design & engineering decisions` — capture the prompting intent, problem solved, and tradeoffs so contributors and future agents stay aligned).
 
-### When Eric or JP asks to "push" or "deploy":
+### When a maintainer asks to "push" or "deploy":
+Contributors without write access open a pull request instead, with the CHANGELOG entry included; a maintainer merges it.
+
 1. Make sure [CHANGELOG.md](./CHANGELOG.md) reflects the feature(s) and the *why* behind them.
 2. Verify locally first:
    ```bash
@@ -29,22 +31,22 @@ Everything—both the Vite WebGPU frontend (`dist/`) and the authoritative multi
    git checkout main
    git pull --rebase origin main
    ```
-   *(If working on a feature branch like `eric/...` or `jp/...`, merge it cleanly into `main`, re-run `pnpm run build && pnpm test`, then push.)*
+   *(If working on a feature branch like `<handle>/<topic>`, merge it cleanly into `main`, re-run `pnpm run build && pnpm test`, then push.)*
 4. Push to `main`:
    ```bash
    git push origin main
    ```
-5. **Auto-deploy happens automatically on Railway** (typically ~45–90 seconds; no Railway CLI login is required for either collaborator).
+5. **Auto-deploy happens automatically on Railway** (typically ~45–90 seconds; no Railway CLI login is required).
 6. Verify the live redeploy before finishing:
    - Check `GET https://portalverse-server-production.up.railway.app/api/health` returns `200 OK` with `"ok": true` and includes any newly added room IDs in `worlds`.
    - Check `GET https://portalverse-server-production.up.railway.app/` returns `200 OK`.
 
 ## 2. File Ownership & Branch Conventions
 
-- **Eric (`ericrius1`)**: builds freely in `worlds/eric-world/` and `worlds/eric-*/` (branches: `eric/<topic>`).
-- **JP (`jpwhitaker`)**: builds freely in `worlds/jp-world/` and `worlds/jp-*/` (branches: `jp/<topic>`).
+- **Rooms**: each contributor builds freely in their own room folders under `worlds/`. A room's `owner` in `registry.json` says whose it is; don't change someone else's room without their OK. Folder names often start with the owner's handle (`worlds/eric-*/`, `worlds/jp-*/`).
+- **Branches**: `<handle>/<topic>` (for example `jp/abyss-room`). Contributors without write access work in a fork and open a pull request.
 - **Shared code** (`packages/core/`, `packages/server/`, `app/`, `registry.json`): keep changes small, well-tested, and synced cleanly with `origin/main`.
-- **Shared T3 Code threads**: prefix thread titles with **`[Eric]`**, **`[JP]`**, or **`[Shared]`** so both collaborators can immediately tell whose thread is whose.
+- **Shared T3 Code threads**: prefix thread titles with your name in brackets (for example **`[JP]`**) or **`[Shared]`**, so everyone can tell whose thread is whose.
 
 ## 3. Adding or Editing a Room
 
