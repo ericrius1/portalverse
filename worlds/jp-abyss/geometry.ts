@@ -142,7 +142,7 @@ export function buildWispGeometry(wisps: Wisp[]): THREE.BufferGeometry {
         const u = c / COLS;
         const v = r / ROWS;
         position.push((u - 0.5) * wisp.width, -v, 0);
-        lengths.push(wisp.lengthFraction, Number(wisp.stone.walkable));
+        lengths.push(wisp.lengthFraction, Number(wisp.stone.pathRow !== undefined));
         uv.push(u, v);
         origin.push(wisp.origin.x, wisp.origin.y, wisp.origin.z, wisp.seed);
         motion.push(...attrs.motion);

@@ -219,6 +219,9 @@ export interface PlatformCollider {
   topY: number;
 }
 
+/** The controller supplies the feet height before vertical movement to support stacked one-way surfaces. */
+export type TerrainHeight = (x: number, z: number, fromY?: number) => number;
+
 /** How falling works in a room that lets players fall (see `WorldContext.allowFalling`). */
 export interface FallSettings {
   /**
@@ -274,7 +277,7 @@ export interface WorldContext {
    * that allows falling, return `NO_GROUND` (from `rooms/kit`) where there is nothing
    * to stand on.
    */
-  setTerrainHeight: (fn: (x: number, z: number) => number) => void;
+  setTerrainHeight: (fn: TerrainHeight) => void;
   /**
    * Let players fall wherever there's no ground: no platform underneath and the
    * terrain height is `NO_GROUND`. Rooms that don't call this keep a floor everywhere.

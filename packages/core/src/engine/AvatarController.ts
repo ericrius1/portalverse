@@ -1,6 +1,6 @@
 import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
-import type { AvatarState, PlatformCollider, SpawnPoint, Vec3Tuple } from '../types';
+import type { AvatarState, PlatformCollider, SpawnPoint, TerrainHeight, Vec3Tuple } from '../types';
 import {
   PLATFORMER_TUNING,
   createMovementState,
@@ -133,7 +133,7 @@ export class AvatarController {
   private readonly remoteMap = new Map<string, RemoteAvatarVisual>();
   private readonly remoteRoot = new THREE.Group();
   private platforms: PlatformCollider[] = [];
-  private terrainHeightFn: ((x: number, z: number) => number) | null = null;
+  private terrainHeightFn: TerrainHeight | null = null;
   private lowestY = FLOOR_LIMIT;
   private onFlightChange?: (flying: boolean) => void;
   private onColorChange?: (hexColor: string) => void;
@@ -238,7 +238,7 @@ export class AvatarController {
   /** `lowestY` is as far down as the player can go; rooms that allow falling pass something deep. */
   setWorldCollision(
     platforms: PlatformCollider[],
-    terrainHeightFn: ((x: number, z: number) => number) | null,
+    terrainHeightFn: TerrainHeight | null,
     lowestY = FLOOR_LIMIT,
   ): void {
     this.platforms = platforms;
@@ -567,10 +567,10 @@ export class AvatarController {
         }
 
         this.position.x += this.flyVel.x * clampedDt;
-        this.position.y += this.flyVel.y * clampedDt;
         this.position.z += this.flyVel.z * clampedDt;
 
         const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
+        this.position.y += this.flyVel.y * clampedDt;
         const overFloor = this.position.y - floorY;
         if (overFloor > FLY_ARMED_HEIGHT) this.flyArmed = true;
 
@@ -628,9 +628,8 @@ export class AvatarController {
         if (!holdingJump) {
           this.velocityY -= JUMP_GRAVITY * clampedDt;
         }
-        this.position.y += this.velocityY * clampedDt;
-
         const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
+        this.position.y += this.velocityY * clampedDt;
         // Walking (not jumping) follows ground that falls away a little, instead of hopping off it each frame.
         const follows = this.onGround && this.velocityY <= 0 && this.position.y - floorY <= GROUND_SNAP;
         if (this.position.y <= floorY || follows) {
@@ -723,7 +722,7 @@ export class AvatarController {
   }
 
   sampleSurfaceHeight(x: number, z: number): number {
-    let bestY = this.terrainHeightFn ? this.terrainHeightFn(x, z) : 0;
+    let bestY = this.terrainHeightFn ? this.terrainHeightFn(x, z, this.position.y) : 0;
     for (const p of this.platforms) {
       if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ) {
         if (p.topY > bestY) bestY = p.topY;

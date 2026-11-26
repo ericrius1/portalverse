@@ -172,9 +172,36 @@ describe('abyss path', () => {
 
   it('keeps loose stones clear of the path and the views through the gates', () => {
     for (const stone of buildStrayStones(seededRandom(8), line)) {
-      expect(stone.walkable).toBe(false);
       expect(distanceToPath(line, stone.cx, stone.cz)).toBeGreaterThan(7);
       if (Math.abs(stone.cz) > 26) expect(Math.abs(stone.cx)).toBeGreaterThanOrEqual(7 - stone.radius);
     }
+  });
+
+  it('lands on each drifting loose stone and lights only that stone', () => {
+    const loose = buildStrayStones(seededRandom(8), line);
+    const surfaces = new Walkway([...stones, ...loose]);
+    for (const [i, stone] of loose.entries()) {
+      for (const t of times) {
+        const x = (stone.cx + stone.polygon[0][0]) / 2;
+        const z = (stone.cz + stone.polygon[0][1]) / 2;
+        const top = stoneTopAt(stone, x, z, t);
+        expect(surfaces.heightAt(x, z, t, top + 0.5)).toBeCloseTo(top, 8);
+        const hit = surfaces.stoneAtFeet(x, top, z, t);
+        expect(hit).toBe(stones.length + i);
+        expect(surfaces.stepSpan(hit, true)).toEqual([hit, hit]);
+      }
+    }
+  });
+
+  it('supports stacked slabs independently and leaves open air outside their rims', () => {
+    const base = buildStrayStones(seededRandom(8), line)[0];
+    const slab = { ...base, cx: 0, cz: 0, polygon: [[-1, -1], [1, -1], [1, 1], [-1, 1]] as typeof base.polygon,
+      topY: -20, amp: 0, slopeX: 0, slopeZ: 0, chamfer: 0.1 };
+    const surfaces = new Walkway([slab, { ...slab, topY: 4 }]);
+    expect(surfaces.heightAt(0, 0, 0, 10)).toBe(4);
+    expect(surfaces.heightAt(0, 0, 0, 2)).toBe(-20);
+    expect(surfaces.heightAt(0, 0, 0, -21)).toBe(NO_GROUND);
+    expect(surfaces.heightAt(0.96, 0, 0, 5)).toBeCloseTo(3.94);
+    expect(surfaces.heightAt(1.01, 0, 0, 5)).toBe(NO_GROUND);
   });
 });

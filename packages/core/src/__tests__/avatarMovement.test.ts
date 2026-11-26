@@ -52,6 +52,20 @@ function setup() {
   return { avatar, onMode, run, drift, coasting };
 }
 
+describe.each(['classic', 'platformer'] as const)('one-way landing in %s', mode => {
+  it('catches a fast descent and allows passing beneath the same surface', () => {
+    const { avatar, run } = setup();
+    avatar.setMovementMode(mode);
+    avatar.setWorldCollision([], (_x, _z, fromY = Infinity) => fromY >= -12 ? -12 : -Infinity, -100);
+    avatar.applySpawn({ position: [0, 18, 0], yaw: 0 });
+    run(240);
+    expect(avatar.position.y).toBe(-12);
+    avatar.applySpawn({ position: [0, -14, 0], yaw: 0 });
+    run(10);
+    expect(avatar.position.y).toBeLessThan(-14);
+  });
+});
+
 describe('movement mode toggle', () => {
   it('starts in classic and G switches both ways', () => {
     const { avatar, onMode } = setup();

@@ -252,7 +252,6 @@ export interface Stone {
   /** 0..1, how strongly the stone's cracks glow. */
   glow: number;
   seed: number;
-  walkable: boolean;
 }
 
 /**
@@ -370,7 +369,6 @@ export function buildPathStones(rand: () => number, line = centreline()): Stone[
       phases: [rand() * 6.283, rand() * 6.283, rand() * 6.283, rand() * 6.283],
       glow: rand() < 0.3 ? 0.5 + rand() * 0.5 : rand() * 0.15,
       seed: rand(),
-      walkable: true,
     });
   }
   return stones;
@@ -422,7 +420,6 @@ export function buildStrayStones(rand: () => number, line = centreline()): Stone
       phases: [rand() * 6.283, rand() * 6.283, rand() * 6.283, rand() * 6.283],
       glow: rand() < 0.4 ? 0.4 + rand() * 0.6 : rand() * 0.2,
       seed: rand(),
-      walkable: false,
     });
   }
   return stones;
@@ -451,7 +448,7 @@ export function distanceToPolygon(poly: Point[], x: number, z: number): number {
 /**
  * The surface the player walks on. It rises and falls with the stones, but blends
  * smoothly from one stone to the next instead of stepping at each edge or dipping
- * into the gaps. Past the edge of the path there is no ground.
+ * into the gaps. Loose stones have individual landing surfaces out over the void.
  */
 export class Walkway {
   private readonly cells = new Map<string, number[]>();
@@ -484,26 +481,37 @@ export class Walkway {
 
   /** In a walkable crack, the nearest slab edge supplies the footstep. */
   stoneAtFeet(x: number, y: number, z: number, t: number): number {
-    const footing = this.footingAt(x, z, t);
+    const footing = this.footingAt(x, z, t, y);
     return Math.abs(y - footing.height) < 0.015 ? footing.index : -1;
   }
 
-  /** Height at (x, z) and time `t`: each nearby stone's top, weighted by how close its edge is. */
-  heightAt(x: number, z: number, t: number): number {
-    return this.footingAt(x, z, t).height;
+  /** Highest available surface, with blended footing through gaps on the path. */
+  heightAt(x: number, z: number, t: number, fromY = Infinity): number {
+    return this.footingAt(x, z, t, fromY).height;
   }
 
-  private footingAt(x: number, z: number, t: number): { height: number; index: number } {
+  private footingAt(x: number, z: number, t: number, fromY: number): { height: number; index: number } {
     const i = Math.floor(x / Walkway.CELL);
     const j = Math.floor(z / Walkway.CELL);
     let total = 0;
     let weighted = 0;
     let nearest = Infinity;
     let nearestIndex = -1;
+    let looseHeight = NO_GROUND;
+    let looseIndex = -1;
     for (let di = -2; di <= 2; di++) {
       for (let dj = -2; dj <= 2; dj++) {
         for (const index of this.cells.get(Walkway.key(i + di, j + dj)) ?? []) {
           const stone = this.stones[index];
+          if (stone.pathRow === undefined) {
+            const height = looseStoneSurface(stone, x, z, t);
+            // Allow a small step up as the slab tilts or the player walks uphill.
+            if (height > looseHeight && height <= fromY + 0.35) {
+              looseHeight = height;
+              looseIndex = index;
+            }
+            continue;
+          }
           const d = distanceToPolygon(stone.polygon, x, z);
           if (d > FOOTING + 3 * BLEND) continue;
           if (d < nearest || (d === nearest && index < nearestIndex)) {
@@ -516,6 +524,23 @@ export class Walkway {
         }
       }
     }
-    return nearest > FOOTING ? { height: NO_GROUND, index: -1 } : { height: weighted / total, index: nearestIndex };
+    const pathHeight = nearest > FOOTING ? NO_GROUND : weighted / total;
+    return pathHeight > looseHeight ? { height: pathHeight, index: nearestIndex } : { height: looseHeight, index: looseIndex };
   }
+}
+
+/** The loose slab's drifting top plane and its beveled rim, clipped to its polygon. */
+function looseStoneSurface(stone: Stone, x: number, z: number, t: number): number {
+  let inset = stone.chamfer;
+  const poly = stone.polygon;
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, az] = poly[i];
+    const [bx, bz] = poly[(i + 1) % poly.length];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const cross = dx * (z - az) - dz * (x - ax);
+    if (cross < 0) return NO_GROUND;
+    inset = Math.min(inset, cross / Math.hypot(dx, dz));
+  }
+  return stoneTopAt(stone, x, z, t) - (stone.chamfer - inset);
 }

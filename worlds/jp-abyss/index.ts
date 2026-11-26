@@ -140,7 +140,7 @@ async function buildLayout(): Promise<AbyssLayout> {
   const halos: Mote[] = [];
   for (const stone of stones) {
     const slabBottom = stone.topY - stone.thickness;
-    for (let i = 0, count = stone.walkable ? 5 : 8; i < count; i++) {
+    for (let i = 0, count = stone.pathRow !== undefined ? 5 : 8; i < count; i++) {
       const a = moteRand() * Math.PI * 2;
       const r = Math.sqrt(moteRand()) * stone.radius * 0.9;
       sparkles.push({
@@ -168,7 +168,7 @@ async function buildLayout(): Promise<AbyssLayout> {
   const wispRand = seededRandom(12);
   const wisps: Wisp[] = [];
   for (const stone of stones) {
-    if (stone.walkable && wispRand() > 0.55) continue;
+    if (stone.pathRow !== undefined && wispRand() > 0.55) continue;
     wisps.push({
       stone,
       origin: stoneUnderside(stone),
@@ -213,7 +213,7 @@ async function buildLayout(): Promise<AbyssLayout> {
   await breathe();
 
   return {
-    walkway: new Walkway(pathStones),
+    walkway: new Walkway(stones),
     stones: stoneGeometry,
     wisps: wispGeometry,
     // One set of instance buffers for every mount, so remounting doesn't add GPU buffers.
@@ -269,7 +269,7 @@ export default defineRoom('jp-abyss', {
     const stepTimes = new THREE.BufferAttribute(
       new Float32Array(stoneTemplate.getAttribute('position').count).fill(-1e6), 1,
     );
-    ctx.setTerrainHeight((x, z) => walkway.heightAt(x, z, now));
+    ctx.setTerrainHeight((x, z, fromY) => walkway.heightAt(x, z, now, fromY));
     // Step off the path and you fall; reach the top of the fog and you're offered a respawn.
     ctx.allowFalling({ respawnBelow: FOG_LAYERS[FOG_LAYERS.length - 1].y });
 

@@ -2,6 +2,16 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Landable floating stones in Abyss — Unreleased
+
+### Added
+
+- Players can land on all 46 stones floating around the path. Each landing surface follows its stone's tilt, drift and beveled rim. Touching down lights that stone's cracks.
+
+### Design & engineering decisions
+
+- Loose stones use their individual outlines so players can walk off the edges. Terrain queries receive the player's feet height before vertical movement, allowing players to fly beneath a high slab or land on a lower one even where two slabs overlap.
+
 ## Abyss glow, smoke and footstep tuning — Unreleased
 
 ### Changed
