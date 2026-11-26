@@ -2,6 +2,83 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
+## Opt-in falling and a looser path rule — Unreleased
+
+### Added
+
+- **Rooms can let players fall (`ctx.allowFalling`, `engine/falling.ts`)**
+  - A room that opts in returns `NO_GROUND` (exported from `rooms/kit`) from its terrain height wherever there's nothing to stand on, and players drop there.
+  - With `respawnBelow`, falling past that height dims the screen to "You fell" with a Respawn button (or press Enter). Respawning puts you back where you entered the room, facing the same way.
+  - A room can instead leave the limit out and give players ground further down, such as a floor at the bottom of a chasm, to land on and walk around. Anyone who falls past everything is still caught at -400 m.
+  - Rooms that don't opt in are unchanged: there is a floor everywhere, and nobody sinks below -10 m.
+- `__tests__/falling.test.ts` checks the following:
+  - Rooms don't allow falling unless they opt in.
+  - A room's respawn height is used.
+  - The -400 m catch applies to rooms with their own ground further down.
+
+### Changed
+
+- **The room contract asks for a walkable path from portal to portal (AGENTS.md, COLLAB.md)**
+  - It used to require a straight 8 m corridor down the middle. Now the path only has to be level at y = 0 where it passes through each portal, and between them it may wind, rise and fall.
+  - *Why*: The abyss path swings 8.5 m to the side. With falling, walking straight from gate to gate there drops you, which is intended.
+- **Classic walking follows the ground down (`AvatarController.ts`)**
+  - Walking now sticks to ground that drops away by up to 0.3 m, as Platformer mode already did. Before, you hopped off slopes, stairs and sinking surfaces for a frame or two at a time. Jumps and real drops still fall normally.
+- **Fallen players are frozen until they respawn**
+  - Their input is locked and the cursor is freed for the button. Space doesn't respawn you, because players mash it while falling.
+  - Arriving in any room also clears a fall.
+- Player-placed portals over a drop with no ground now use the player's own height.
+
+## Abyss Stepping Stones room — Unreleased
+
+### Added
+
+- **Twelfth room, `worlds/jp-abyss/`**, between `jp-loft` and `laser-lab` in the loop: a crooked path of ancient floating stones high above a chasm, at night.
+  - The stones are Voronoi cells cut along the path, with gaps between them, chipped corners, chamfered edges, and a jagged rock hanging beneath each one.
+  - Each stone drifts up and down and tilts slightly, like drei's `Float`.
+  - The stones are weathered grey, with lichen on top, dark cracks and worn edges.
+  - Underneath, bioluminescent lichen glows, sparkles drift, and a soft halo of light leaks up through the gaps. Some stones' cracks glow faintly.
+  - Smoke falls from the stones' undersides, twisting and blowing like JP's coffee-smoke exercise but falling instead of rising.
+  - About 45 loose stones float off the path at many depths.
+  - Five fog layers lie 76–150 m below.
+  - Skinny spires rise out of the fog, from about 6 m to 410 m away. The tallest reach halfway from the top of the fog to the walkway, 38 m below it.
+- `worlds/jp-abyss/abyss.test.ts` covers the following:
+  - The path runs straight and level through both gates.
+  - Stones are convex and never overlap.
+  - There's ground all along the middle of the path, gaps included.
+  - There's none past the path's edges or beyond its ends.
+  - The stones at the gates hold still.
+  - Deep inside a stone you stand exactly on its top.
+  - Height changes by under 4 cm per 5 cm walked, even as the stones drift.
+  - Loose stones stay clear of the path and the views through the gates.
+
+### Design & engineering decisions
+
+- **The surface you walk on moves with the stones**
+  - *Why*: Floating stones you sink into or hover over would break the effect.
+  - *Decision*: `path.ts` defines each stone's drift as a few sine waves out of step, and the stone shader repeats the same formula on a shared clock, so you ride each stone up and down.
+- **The walking surface blends smoothly between stones**
+  - *Why*: Standing on whichever stone was nearest made you step up or drop at every edge as neighbouring stones drifted out of step, which JP saw as jitter.
+  - *Decision*: Each nearby stone's top is weighted by how close its edge is, falling off over about 0.35 m. Well inside a stone you stand exactly on it; crossing a gap, you glide from one stone's height to the next.
+  - *Tradeoff*: Right at an edge your feet can sit a few centimetres off the stone.
+- **Step off the edge and you fall**
+  - *Decision*: Your footing holds up to 0.45 m past a stone's edge, which bridges every gap between stones. Beyond that there is no ground. A few edge stones are missing, so there are holes near the sides too. Reaching the top fog layer, 76 m down, dims the screen and offers a respawn.
+  - *Decision*: The room skips `addPlatform`, because a flat platform at y = 0 would hold you above stones as they dip.
+- **The path bends hard but meets the gates cleanly**
+  - *Decision*: The bends are pairs of waves matched so they reach zero, and level, at z = ±32. The path then runs straight and flat through each gate, and the stones there are fixed at y = 0. The tightest bend has a radius of about 4 m, and the path rises and dips by up to 1.1 m.
+- **The fog is ordinary geometry**
+  - *Decision*: Five large planes drift at their own heights, speeds and directions, so they slide past each other as you walk, which sells the depth. The bottom one is opaque and sets the colour; the upper ones are translucent, swell into low mounds where they're thickest, and have slightly brighter crests. There is no raymarching, so the fog shows the same through portals.
+  - *Decision*: Everything far below fades into the horizon colour by its true distance from the eye, from 150 m to 420 m. The fade finishes inside the camera's 450 m draw distance, and the sky below the horizon is that same colour.
+  - *Why*: At first the fog sheets ended about 450 m out. The draw distance cut them along a line that swung as you turned your head, and the scene fog, which works by depth along the view, did nothing to hide it. The sheets now reach 550 m, past where the fade completes, so the fog looks endless.
+  - *Decision*: The spires fade into the fog colour toward their roots, which hides where they cut through each fog plane. Far-off spires fade into the haze the same way the fog does.
+- **No bats**
+  - *Why*: The first version had bats flapping 20–60 m below the path. JP didn't like them darting about, so they were removed.
+- **The noise is a small baked texture**
+  - *Why*: The fog, smoke and stone shaders sample texture instead of computing noise per pixel.
+  - *Decision*: `noise.ts` builds one seamless 256² texture once and every mount shares it. The channels are two soft noises, cell edges for cracks, and fine speckle.
+- **The whole room is procedural**
+  - *Decision*: There are no asset files, and the layout is seeded, so the room looks the same on every visit.
+  - *Decision*: The stones are one mesh, the smoke one mesh, and the sparkles and halos one instanced sprite mesh each, to keep the draw-call count low while the room renders as a preview through portals.
+
 ## Honey in da Hood Ya Heard room — [PR #3](https://github.com/ericrius1/portalverse/pull/3), `7c9050d` (2026-11-25)
 
 ### Added

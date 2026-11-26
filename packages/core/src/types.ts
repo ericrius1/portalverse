@@ -219,6 +219,16 @@ export interface PlatformCollider {
   topY: number;
 }
 
+/** How falling works in a room that lets players fall (see `WorldContext.allowFalling`). */
+export interface FallSettings {
+  /**
+   * Fall below this height and you're out: the screen dims and offers a respawn
+   * back in this room. Leave it out if the room has its own ground further down
+   * to land on; the engine still catches anyone who falls past everything.
+   */
+  respawnBelow?: number;
+}
+
 /** What a room can read about the local player while it is the active room. */
 export interface PlayerView {
   /** The player's feet, in this room's coordinates. Live and read-only: never modify it. */
@@ -251,8 +261,17 @@ export interface WorldContext {
   onDispose: (fn: () => void) => void;
   /** Register walkable floor height / platform collision bounds. */
   addPlatform: (bounds: PlatformCollider) => void;
-  /** Optional procedural terrain height function for rolling hills/meadows. */
+  /**
+   * Optional procedural terrain height function for rolling hills/meadows. In a room
+   * that allows falling, return `NO_GROUND` (from `rooms/kit`) where there is nothing
+   * to stand on.
+   */
   setTerrainHeight: (fn: (x: number, z: number) => number) => void;
+  /**
+   * Let players fall wherever there's no ground: no platform underneath and the
+   * terrain height is `NO_GROUND`. Rooms that don't call this keep a floor everywhere.
+   */
+  allowFalling: (settings?: FallSettings) => void;
   /** Override the default player spawn/flight mode on mount. */
   configureSpawn: (spawn: SpawnPoint) => void;
   /** Trigger entering a portal programmatically. */

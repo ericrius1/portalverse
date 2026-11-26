@@ -1,7 +1,7 @@
 import catalog from '../../../../registry.json';
 import { routeGates, threshold, SIDE_PORTALS } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
-import type { RegistryFile, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, WorldModule } from '../types';
+import type { FallSettings, RegistryFile, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, WorldModule } from '../types';
 import { createArchwayPortal } from './PortalMesh';
 
 const noEntry = (): void => {};
@@ -16,6 +16,8 @@ export class RoomInstance {
   readonly portals: PortalVisualHandle[] = [];
   readonly platforms: PlatformCollider[] = [];
   terrainHeight: ((x: number, z: number) => number) | null = null;
+  /** Set when the room lets players fall; null keeps a floor everywhere. */
+  falling: FallSettings | null = null;
   private active = false;
   private player: PlayerView | null = null;
   private enter: (portal: PortalDefinition) => void = noEntry;
@@ -62,6 +64,7 @@ export class RoomInstance {
         registerCustomPortal: registerCustom,
         addPlatform: bounds => room.platforms.push(bounds),
         setTerrainHeight: fn => { room.terrainHeight = fn; },
+        allowFalling: (settings = {}) => { room.falling = { ...settings }; },
         configureSpawn: spawn => { room.spawnOverride = spawn; },
         onUpdate: fn => room.updates.push(fn),
         onDispose: fn => room.cleanups.push(fn),

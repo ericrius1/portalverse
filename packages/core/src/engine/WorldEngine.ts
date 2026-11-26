@@ -25,6 +25,7 @@ import {
 } from './AvatarController';
 import { createArchwayPortal } from './PortalMesh';
 import { portalWarp, smoothSpeed, warpSpeedFactor } from './portalWarp';
+import { respawnHeight } from './falling';
 import {
   canOfferPortalPrompt,
   carryThroughPortal,
@@ -46,6 +47,8 @@ export interface WorldEngineCallbacks {
   onCameraViewChange?: (firstPerson: boolean) => void;
   onPointerLockChange?: (locked: boolean) => void;
   onMovementModeChange?: (mode: MovementMode) => void;
+  /** The player fell out of the room (true) or came back from a fall (false). */
+  onFallChange?: (fallen: boolean) => void;
 }
 
 interface ActiveTransit {
@@ -118,6 +121,11 @@ export class WorldEngine {
   /** Player's horizontal speed, smoothed so stop-start steps count less than a steady run. */
   private smoothedSpeed = 0;
   private skipNextSpeedSample = true;
+  /** Below this the player has fallen out of the room; null when the room doesn't allow falling. */
+  private fallLimit: number | null = null;
+  private fallen = false;
+  /** Where the player came into the current room, for a respawn after a fall. */
+  private respawnPoint: SpawnPoint = { position: [0, 0, 0], yaw: 0 };
   private nearestPortal: PortalVisualHandle | null = null;
   private inputLocked = false;
   private portalCooldownUntil = 0;
@@ -195,7 +203,22 @@ export class WorldEngine {
 
   setInputLocked(locked: boolean): void {
     this.inputLocked = locked;
-    this.avatar.setInputLocked(locked);
+    this.avatar.setInputLocked(locked || this.fallen);
+  }
+
+  /** True while the player has fallen out of the room and is waiting to respawn. */
+  get hasFallen(): boolean {
+    return this.fallen;
+  }
+
+  /** After a fall, put the player back where they came into the room. */
+  respawn(): void {
+    if (!this.fallen) return;
+    this.fallen = false;
+    this.avatar.setInputLocked(this.inputLocked);
+    this.avatar.applySpawn(this.respawnPoint);
+    this.skipNextSpeedSample = true;
+    this.callbacks.onFallChange?.(false);
   }
 
   requestPointerLock(): void {
@@ -303,7 +326,15 @@ export class WorldEngine {
     this.previews?.applySnapshotsToRoom(room);
     room.scene.add(this.avatarScene);
     this.currentManifest = room.module.manifest;
-    this.avatar.setWorldCollision(room.platforms, room.terrainHeight);
+    this.fallLimit = respawnHeight(room.falling);
+    // Rooms that allow falling let you drop a little past the limit, into whatever is down there.
+    this.avatar.setWorldCollision(room.platforms, room.terrainHeight, this.fallLimit === null ? undefined : this.fallLimit - 40);
+    this.respawnPoint = { ...arrival, position: [...arrival.position], flying: false };
+    if (this.fallen) {
+      this.fallen = false;
+      this.avatar.setInputLocked(this.inputLocked);
+      this.callbacks.onFallChange?.(false);
+    }
 
     if (sourceOrigin) {
       const landing = new THREE.Vector3().fromArray(arrival.position);
@@ -523,7 +554,7 @@ export class WorldEngine {
         this.avatar.position.z += (toZ / dist) * step;
       }
       const floorY = this.avatar.sampleSurfaceHeight(this.avatar.position.x, this.avatar.position.z);
-      if (!this.avatar.isFlying) {
+      if (!this.avatar.isFlying && Number.isFinite(floorY)) {
         this.avatar.position.y += (floorY - this.avatar.position.y) * Math.min(1, dt * 10);
       }
       const desiredYaw = approaching ? Math.atan2(-toX, -toZ) : wt.targetYaw;
@@ -539,7 +570,15 @@ export class WorldEngine {
         this.walkThrough = undefined;
       }
     } else {
-      this.avatar.update(dt, this.elapsed, this.inputLocked);
+      // A fallen player hangs where they stopped until they respawn.
+      this.avatar.update(dt, this.elapsed, this.inputLocked || this.fallen);
+      if (this.fallLimit !== null && !this.fallen && this.avatar.position.y < this.fallLimit) {
+        this.fallen = true;
+        this.avatar.velocityY = 0;
+        // Also frees the cursor for the respawn button.
+        this.avatar.setInputLocked(true);
+        this.callbacks.onFallChange?.(true);
+      }
     }
 
     // Keep transit avatar proxy animation synced with the live character

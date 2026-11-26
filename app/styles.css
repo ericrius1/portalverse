@@ -629,6 +629,58 @@ kbd {
   }
 }
 
+/* Fell out of a room: the view dims and offers a respawn */
+.fall-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 3, 10, 0.72);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.9s ease;
+}
+
+.fall-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.fall-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  transform: translateY(8px);
+  transition: transform 0.9s ease;
+}
+
+.fall-overlay.active .fall-panel {
+  transform: translateY(0);
+}
+
+.fall-title {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.fall-respawn {
+  min-width: 140px;
+  padding: 10px 22px;
+  font-size: 15px;
+}
+
+.fall-hint {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.6);
+  font-size: 12.5px;
+}
+
 /* Warp Overlay */
 #warp-overlay {
   position: fixed;

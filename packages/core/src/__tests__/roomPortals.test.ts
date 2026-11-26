@@ -112,6 +112,7 @@ it('links the rooms in catalog order and back to the start', () => {
     'fishpond',
     'jp-reef',
     'jp-loft',
+    'jp-abyss',
     'laser-lab',
     'alpine-sled',
     'eric-biolum-grove',

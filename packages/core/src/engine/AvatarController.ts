@@ -11,6 +11,7 @@ import {
   type MovementMode,
 } from './movement';
 import { createFloatingLabel } from './signage';
+import { FLOOR_LIMIT } from './falling';
 
 interface RemoteAvatarVisual {
   group: THREE.Group;
@@ -82,6 +83,8 @@ const FLY_AUTO_LAND_HEIGHT = 1.8;
 
 const JUMP_VELOCITY = 7.8;
 const JUMP_GRAVITY = 20.0;
+/** Walking stays on ground that drops away by less than this (downhill, stairs, sinking stones). */
+const GROUND_SNAP = 0.3;
 const JUMP_HOLD_FROM = 0.06;
 const JUMP_HOLD_UNTIL = 0.34;
 
@@ -131,6 +134,7 @@ export class AvatarController {
   private readonly remoteRoot = new THREE.Group();
   private platforms: PlatformCollider[] = [];
   private terrainHeightFn: ((x: number, z: number) => number) | null = null;
+  private lowestY = FLOOR_LIMIT;
   private onFlightChange?: (flying: boolean) => void;
   private onColorChange?: (hexColor: string) => void;
   private onCameraViewChange?: (firstPerson: boolean) => void;
@@ -231,9 +235,15 @@ export class AvatarController {
     this.onColorChange?.(hexColor);
   }
 
-  setWorldCollision(platforms: PlatformCollider[], terrainHeightFn: ((x: number, z: number) => number) | null): void {
+  /** `lowestY` is as far down as the player can go; rooms that allow falling pass something deep. */
+  setWorldCollision(
+    platforms: PlatformCollider[],
+    terrainHeightFn: ((x: number, z: number) => number) | null,
+    lowestY = FLOOR_LIMIT,
+  ): void {
     this.platforms = platforms;
     this.terrainHeightFn = terrainHeightFn;
+    this.lowestY = lowestY;
   }
 
   applySpawn(spawn: SpawnPoint): void {
@@ -394,7 +404,9 @@ export class AvatarController {
     const fz = -Math.cos(this.yaw);
     const x = this.position.x + fx * distance;
     const z = this.position.z + fz * distance;
-    const groundY = this.isFlying ? Math.max(0, this.position.y - 1.5) : this.sampleSurfaceHeight(x, z);
+    const floorY = this.sampleSurfaceHeight(x, z);
+    // Over a drop with no ground, put the portal at the player's height instead.
+    const groundY = this.isFlying ? Math.max(0, this.position.y - 1.5) : Number.isFinite(floorY) ? floorY : this.position.y;
     return [Number(x.toFixed(2)), Number(groundY.toFixed(2)), Number(z.toFixed(2))];
   }
 
@@ -619,7 +631,9 @@ export class AvatarController {
         this.position.y += this.velocityY * clampedDt;
 
         const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
-        if (this.position.y <= floorY) {
+        // Walking (not jumping) follows ground that falls away a little, instead of hopping off it each frame.
+        const follows = this.onGround && this.velocityY <= 0 && this.position.y - floorY <= GROUND_SNAP;
+        if (this.position.y <= floorY || follows) {
           this.position.y = floorY;
           this.velocityY = 0;
           this.onGround = true;
@@ -638,7 +652,7 @@ export class AvatarController {
       }
       this.position.x = boundedX;
       this.position.z = boundedZ;
-      this.position.y = THREE.MathUtils.clamp(this.position.y, -10, 75);
+      this.position.y = THREE.MathUtils.clamp(this.position.y, this.lowestY, 75);
     }
 
     // Update local avatar rig
