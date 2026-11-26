@@ -2,7 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
-## `breathe()` and the 10-second loading budget — Unreleased
+## Collaborator-friendly Railway auto-deploy via GitHub Actions — Unreleased (2026-11-25)
+
+### Changed
+
+- **GitHub Actions deploys `main` to Railway (`.github/workflows/rooms.yml`, `AGENTS.md`)** — after `validate` (`pnpm run build` + `pnpm test`) passes on a push or PR merge to `main`, a `deploy` job deploys `portalverse-server` using a scoped Railway project token (`RAILWAY_TOKEN`), replacing Railway's built-in GitHub trigger.
+
+### Design & engineering decisions
+
+- **Deploy from GitHub Actions instead of Railway's native GitHub trigger**
+  - *Why*: Railway's native GitHub trigger held every commit authored or merged by GitHub users outside the Railway Hobby workspace (e.g. `jpwhitaker`, `simplesessions`) in `NEEDS_APPROVAL`, silently preventing collaborators' rooms from going live without manual owner approval or paid Railway Pro seats.
+  - *Decision*: Trigger Railway deploys from GitHub Actions on `push` to `main` (never on untrusted PRs) after `validate` passes, authenticated via a production-scoped Railway project token. Every maintainer push and every merged contributor PR now deploys automatically.
+
+## `breathe()` and the 10-second loading budget — `963ff44`, `328c349` (2026-11-25)
 
 ### Added
 
