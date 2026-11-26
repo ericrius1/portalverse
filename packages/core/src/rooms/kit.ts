@@ -7,6 +7,8 @@ import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
  * budget counts them.
  */
 
+export { NO_GROUND } from '../engine/falling';
+
 const gltfLoader = new GLTFLoader();
 
 /** Load a GLB or glTF file. Uncompressed models only (no Draco, meshopt or KTX2). */

@@ -84,6 +84,15 @@
       <div id="warp-label" class="warp-label">Entering World...</div>
     </div>
 
+    <!-- Fell out of a room -->
+    <div id="fall-overlay" class="fall-overlay" role="dialog" aria-modal="true" aria-labelledby="fall-title" aria-hidden="true">
+      <div class="fall-panel">
+        <h2 id="fall-title" class="fall-title">You fell</h2>
+        <button type="button" class="btn btn-primary fall-respawn" id="btn-respawn" tabindex="-1">Respawn</button>
+        <p class="fall-hint">or press <kbd>Enter</kbd></p>
+      </div>
+    </div>
+
     <!-- HUD -->
     <div id="hud">
       <header class="hud-top">

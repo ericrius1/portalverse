@@ -207,6 +207,7 @@ describe('WorldRegistry', () => {
       'fishpond',
       'jp-reef',
       'jp-loft',
+      'jp-abyss',
       'laser-lab',
       'alpine-sled',
       'eric-biolum-grove',

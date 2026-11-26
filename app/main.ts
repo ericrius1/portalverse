@@ -104,6 +104,8 @@ async function boot(): Promise<void> {
   const mouseLockLabel = document.getElementById('mouse-lock-label')!;
   const cameraViewLabel = document.getElementById('camera-view-label')!;
   const warpOverlay = document.getElementById('warp-overlay')!;
+  const fallOverlay = document.getElementById('fall-overlay')!;
+  const respawnButton = document.getElementById('btn-respawn') as HTMLButtonElement;
   const warpLabel = document.getElementById('warp-label')!;
   const hudWorldName = document.getElementById('hud-world-name')!;
   const hudWorldAuthor = document.getElementById('hud-world-author')!;
@@ -250,7 +252,7 @@ async function boot(): Promise<void> {
   const syncPointerUi = (locked: boolean) => {
     fpsReticle.classList.toggle('hidden', !locked);
     mouseLockLabel.textContent = locked ? 'FPS Locked (Esc)' : 'Click to Lock';
-    pointerLockBanner.classList.toggle('hidden', !gateExited || locked || isAnyModalOpen());
+    pointerLockBanner.classList.toggle('hidden', !gateExited || locked || isAnyModalOpen() || fallOverlay.classList.contains('active'));
   };
 
   const engine = new WorldEngine(viewport, identity.color, {
@@ -292,6 +294,15 @@ async function boot(): Promise<void> {
     },
     onPointerLockChange: (locked) => {
       syncPointerUi(locked);
+    },
+    onFallChange: (fallen) => {
+      fallOverlay.classList.toggle('active', fallen);
+      fallOverlay.setAttribute('aria-hidden', String(!fallen));
+      respawnButton.tabIndex = fallen ? 0 : -1;
+      // The button isn't focused for you, so a Space press meant as a jump can't click it.
+      if (fallen) closeAllModals();
+      else respawnButton.blur();
+      syncPointerUi(engine.avatar.pointerLocked);
     },
     onMovementModeChange: (mode) => {
       physicsModeLabel.textContent = mode === 'platformer' ? 'Physics: Platformer' : 'Physics: Classic';
@@ -625,8 +636,24 @@ async function boot(): Promise<void> {
     showToast(`Updated explorer identity to ${name}`);
   });
 
+  // Respawn after a fall, then take the cursor back for mouse-look.
+  const respawn = () => {
+    if (!engine.hasFallen) return;
+    engine.respawn();
+    engine.requestPointerLock();
+  };
+  respawnButton.addEventListener('click', respawn);
+
   // Global keyboard shortcuts (P = Link Portal, M = Rooms, H/? = Controls, Escape = Close modals)
   window.addEventListener('keydown', (e) => {
+    if (engine.hasFallen) {
+      // Not Space: players falling often mash it, and it would respawn them before they see the screen.
+      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) {
+        e.preventDefault();
+        respawn();
+      }
+      return;
+    }
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') shiftHeld = true;
     if (e.code === 'Escape') {
       closeAllModals();

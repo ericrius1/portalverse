@@ -107,6 +107,22 @@
       }
     },
     {
+      "id": "jp-abyss",
+      "name": "Abyss Stepping Stones",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "A crooked path of ancient floating stones high above a chasm of drifting fog, glowing from beneath and trailing smoke, with needle spires rising out of the murk.",
+      "accentColor": "#3ff2c8",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 0],
+          "yaw": 0
+        }
+      }
+    },
+    {
       "id": "laser-lab",
       "name": "Laser Forcefield Arena",
       "owner": "jpwhitaker",
