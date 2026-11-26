@@ -2,6 +2,24 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Abyss glow, smoke and footstep tuning — Unreleased
+
+### Changed
+
+- The default preset uses the original seeded brightness, colors and pulse, path smoke lengths of 4–10 m, stray smoke lengths of 8–17 m, and smoke opacity of 0.32.
+- Each smoke ribbon samples length, opacity and tail falloff independently. The development panel exposes both ends of each range and offers a **Varied wisps** smoke preset so a short, faint ribbon can sit beside a long one with a lingering tail. The range endpoints are included in the version 2 JSON export.
+
+### Added
+
+- In development, press **H** in Abyss to open or hide its Leva panel. Tune rock and glow brightness, breathing strength, speed and randomness, smoke length, width, opacity and falloff, and the footstep trail. **Export JSON** downloads the active settings. **Reset to defaults** restores the room preset.
+- Footsteps light the full path width by default. The nearest stone starts immediately, and the glow travels outward with a 0.08-second delay per neighboring stone. Each stone rises to 0.50 over 0.62 seconds, then fades over 4.3 seconds with a curve of 1.5. The **Neighbor delay (s)** slider adjusts the spacing, and **Full path width** switches between the row and the individual stone.
+
+### Design & engineering decisions
+
+- The stagger makes the point of contact visible even when the full row lights. Overlapping footsteps arrive in time order, and a glowing stone continues its fade until the new pulse reaches it.
+- Footsteps now use the same ground calculation as walking. In a supported crack, the closest stone edge starts the glow so the trail continues between slabs.
+- Artists can try more variation against the original room and share an exact preset. Leva loads on first open in development and is excluded from production. The **?** shortcut opens Help in every room.
+
 ## `breathe()` and the 10-second loading budget — Unreleased
 
 ### Added

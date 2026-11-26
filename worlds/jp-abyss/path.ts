@@ -228,6 +228,8 @@ export function pointInPolygon(poly: Point[], x: number, z: number): boolean {
 // --- Stones ---
 
 export interface Stone {
+  /** Crosswise generation row on the winding path. Loose stones have no row. */
+  pathRow?: number;
   /** The Voronoi site the stone was cut around. Nearest site decides which stone you stand on. */
   site: Point;
   cx: number;
@@ -281,7 +283,8 @@ export function stoneTopAt(stone: Stone, x: number, z: number, t: number): numbe
 /** Cut the stepping stones: a jittered grid of sites along the path, each grown into its Voronoi cell, gapped and chipped. */
 export function buildPathStones(rand: () => number, line = centreline()): Stone[] {
   const length = line[line.length - 1].s;
-  const sites: Array<{ p: Point; real: boolean; outer: boolean }> = [];
+  let row = 0;
+  const sites: Array<{ p: Point; real: boolean; outer: boolean; row: number }> = [];
   const keep = (p: Point, real: boolean, outer: boolean) => {
     const distance = distanceToPath(line, p[0], p[1]);
     if (real) {
@@ -295,9 +298,8 @@ export function buildPathStones(rand: () => number, line = centreline()): Stone[
     } else if (distance < PATH_HALF_WIDTH + 0.5) {
       return;
     }
-    sites.push({ p, real, outer });
+    sites.push({ p, real, outer, row });
   };
-  let row = 0;
   for (let s = -3 * ROW; s <= length + 3 * ROW; s += ROW * (0.85 + rand() * 0.3), row++) {
     const inside = s > 0.4 && s < length - 0.4;
     const shift = row % 2 ? 0.55 : -0.55;
@@ -351,6 +353,7 @@ export function buildPathStones(rand: () => number, line = centreline()): Stone[
     const [cx, cz] = polygonCentroid(poly);
     const radius = Math.max(...poly.map(([x, z]) => Math.hypot(x - cx, z - cz)));
     stones.push({
+      pathRow: site.row,
       site: site.p,
       cx,
       cz,
@@ -451,15 +454,15 @@ export function distanceToPolygon(poly: Point[], x: number, z: number): number {
  * into the gaps. Past the edge of the path there is no ground.
  */
 export class Walkway {
-  private readonly cells = new Map<string, Stone[]>();
+  private readonly cells = new Map<string, number[]>();
   private static readonly CELL = 3.5;
 
   constructor(readonly stones: Stone[]) {
-    for (const stone of stones) {
+    for (const [index, stone] of stones.entries()) {
       const key = Walkway.key(Math.floor(stone.cx / Walkway.CELL), Math.floor(stone.cz / Walkway.CELL));
       const list = this.cells.get(key);
-      if (list) list.push(stone);
-      else this.cells.set(key, [stone]);
+      if (list) list.push(index);
+      else this.cells.set(key, [index]);
     }
   }
 
@@ -467,25 +470,52 @@ export class Walkway {
     return `${i},${j}`;
   }
 
+  /** Inclusive stone indices across the path at this step, in their original construction order. */
+  stepSpan(index: number, fullWidth: boolean): [number, number] {
+    let first = index;
+    let last = index;
+    const row = this.stones[index].pathRow;
+    if (fullWidth && row !== undefined) {
+      while (first > 0 && this.stones[first - 1].pathRow === row) first--;
+      while (last + 1 < this.stones.length && this.stones[last + 1].pathRow === row) last++;
+    }
+    return [first, last];
+  }
+
+  /** In a walkable crack, the nearest slab edge supplies the footstep. */
+  stoneAtFeet(x: number, y: number, z: number, t: number): number {
+    const footing = this.footingAt(x, z, t);
+    return Math.abs(y - footing.height) < 0.015 ? footing.index : -1;
+  }
+
   /** Height at (x, z) and time `t`: each nearby stone's top, weighted by how close its edge is. */
   heightAt(x: number, z: number, t: number): number {
+    return this.footingAt(x, z, t).height;
+  }
+
+  private footingAt(x: number, z: number, t: number): { height: number; index: number } {
     const i = Math.floor(x / Walkway.CELL);
     const j = Math.floor(z / Walkway.CELL);
     let total = 0;
     let weighted = 0;
     let nearest = Infinity;
+    let nearestIndex = -1;
     for (let di = -2; di <= 2; di++) {
       for (let dj = -2; dj <= 2; dj++) {
-        for (const stone of this.cells.get(Walkway.key(i + di, j + dj)) ?? []) {
+        for (const index of this.cells.get(Walkway.key(i + di, j + dj)) ?? []) {
+          const stone = this.stones[index];
           const d = distanceToPolygon(stone.polygon, x, z);
           if (d > FOOTING + 3 * BLEND) continue;
-          nearest = Math.min(nearest, d);
+          if (d < nearest || (d === nearest && index < nearestIndex)) {
+            nearest = d;
+            nearestIndex = index;
+          }
           const w = Math.exp(-((d / BLEND) ** 2));
           total += w;
           weighted += w * stoneTopAt(stone, x, z, t);
         }
       }
     }
-    return nearest > FOOTING ? NO_GROUND : weighted / total;
+    return nearest > FOOTING ? { height: NO_GROUND, index: -1 } : { height: weighted / total, index: nearestIndex };
   }
 }

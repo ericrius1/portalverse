@@ -53,6 +53,7 @@ import { breathe, seededRandom } from '@portalverse/core/rooms/kit';
 import { buildPathStones, buildStrayStones, centreline, distanceToPath, TILT, Walkway } from './path';
 import { buildSpikeGeometry, buildStoneGeometry, buildWispGeometry, moteAttributes, stoneUnderside, type Mote, type Wisp } from './geometry';
 import { abyssNoisePixels, NOISE_SIZE } from './noise';
+import { retriggerStep, tuningUniforms } from './tuning';
 
 type Vec4Node = THREE.Node<'vec4'>;
 type Vec3Node = THREE.Node<'vec3'>;
@@ -101,7 +102,7 @@ function driftNode(clock: FloatNode, at: Vec3Node, motion: Vec4Node, phase: Vec4
 
 interface AbyssLayout {
   walkway: Walkway;
-  stones: THREE.BufferGeometry;
+  stones: Awaited<ReturnType<typeof buildStoneGeometry>>;
   wisps: THREE.BufferGeometry;
   sparkles: ReturnType<typeof moteAttributes>;
   halos: ReturnType<typeof moteAttributes>;
@@ -172,7 +173,7 @@ async function buildLayout(): Promise<AbyssLayout> {
       stone,
       origin: stoneUnderside(stone),
       width: (0.6 + wispRand() * 0.5) * stone.radius,
-      length: stone.walkable ? 4 + wispRand() * 6 : 8 + wispRand() * 9,
+      lengthFraction: wispRand(),
       seed: wispRand(),
     });
   }
@@ -253,8 +254,21 @@ export default defineRoom('jp-abyss', {
 
     // The stones, and the surface you walk on, follow one shared clock.
     const { walkway } = layout;
+    const tune = tuningUniforms();
+    if (import.meta.env.DEV && typeof window !== 'undefined') {
+      const { enableTuningShortcut } = await import('./tuningShortcut');
+      ctx.onActivate(() => enableTuningShortcut(tune));
+    }
     const clock = uniform(0);
     let now = 0;
+    let lastStone = -1;
+    const pendingSteps: Array<{ stone: number; at: number }> = [];
+    const glowStart = performance.now();
+    const glowClock = uniform(0);
+    const { geometry: stoneTemplate, vertexOffsets } = layout.stones;
+    const stepTimes = new THREE.BufferAttribute(
+      new Float32Array(stoneTemplate.getAttribute('position').count).fill(-1e6), 1,
+    );
     ctx.setTerrainHeight((x, z) => walkway.heightAt(x, z, now));
     // Step off the path and you fall; reach the top of the fog and you're offered a respawn.
     ctx.allowFalling({ respawnBelow: FOG_LAYERS[FOG_LAYERS.length - 1].y });
@@ -319,18 +333,29 @@ export default defineRoom('jp-abyss', {
       const mossy = mix(bare, color('#4c5843'), smoothstep(0.56, 0.7, broad.g).mul(topFace).mul(0.85));
       const spotted = mix(mossy, color('#9c9e88'), smoothstep(0.8, 0.88, fine.a).mul(topFace).mul(0.55));
       const shaded = mix(spotted, color('#1c1a1f'), underFace.mul(0.65));
-      material.colorNode = shaded.mul(float(1).sub(cracks.mul(0.65)));
+      material.colorNode = shaded.mul(float(1).sub(cracks.mul(0.65))).mul(tune.stoneBrightness);
       material.normalNode = bumpMap(tone.sub(cracks.mul(0.6)), float(0.04));
 
       const hue = mix(color(GLOW), color(GLOW_VIOLET), smoothstep(0.78, 0.82, look.y));
-      const pulse = sin(time.mul(0.9).add(look.y.mul(40))).mul(0.3).add(0.7);
+      const breathTime = time.mul(tune.breathSpeed);
+      const originalBeat = sin(breathTime.mul(0.9).add(look.y.mul(40)));
+      const wave = sin(breathTime.mul(0.73).add(motion.x.mul(0.19)).add(motion.y.mul(0.24)));
+      const breath = sin(breathTime.mul(motion.z.mul(0.9)).add(phase.x));
+      const variedBeat = mix(wave, breath, 0.65).mul(phase.y.cos().mul(0.25).add(1));
+      const pulse = varying(max(0, mix(originalBeat, variedBeat, tune.breathRandomness).mul(tune.breathStrength).add(0.7)));
+      const stepAge = glowClock.sub(attribute<'float'>('aStepTime', 'float'));
+      const rise = tune.stepFadeIn.equal(0).select(float(1), clamp(stepAge.div(max(0.00001, tune.stepFadeIn)), 0, 1));
+      const decay = float(1).sub(smoothstep(0, tune.stepSeconds, stepAge.sub(tune.stepFadeIn)));
+      const footstep = varying(rise.mul(pow(decay, tune.stepFalloff)));
       const belowSlab = look.z.sub(look.w).sub(rest.y);
       const underGlow = underFace.mul(smoothstep(0, 1.6, belowSlab).mul(0.2).add(0.05));
       const lichenGlow = underFace.mul(smoothstep(0.6, 0.72, fine.g)).mul(0.9).mul(pulse);
-      const crackGlow = cracks.mul(look.x).mul(pulse).mul(topFace.add(underFace)).mul(0.7);
-      material.emissiveNode = hue.mul(underGlow.add(lichenGlow).add(crackGlow));
+      const crackGlow = cracks.mul(look.x.mul(pulse).mul(0.7).add(footstep.mul(tune.stepBrightness))).mul(topFace.add(underFace));
+      material.emissiveNode = hue.mul(underGlow.add(lichenGlow).add(crackGlow)).mul(tune.glowBrightness);
 
-      root.add(new THREE.Mesh(own(copyOf(layout.stones)), material));
+      const stones = own(copyOf(stoneTemplate));
+      stones.setAttribute('aStepTime', stepTimes);
+      root.add(new THREE.Mesh(stones, material));
     }
 
     await ctx.breathe();
@@ -377,6 +402,15 @@ export default defineRoom('jp-abyss', {
       const motion = attribute<'vec4'>('aMotion', 'vec4');
       const phase = attribute<'vec4'>('aPhase', 'vec4');
       const seed = origin.w;
+      const length = attribute<'vec2'>('aLength', 'vec2');
+      const lengthMin = mix(tune.strayWispMin, tune.pathWispMin, length.y);
+      const lengthMax = mix(tune.strayWispMax, tune.pathWispMax, length.y);
+      const wispLength = mix(lengthMax, mix(lengthMin, lengthMax, length.x), tune.lengthRandomness);
+      // Three independent, fixed samples per ribbon. Its shape can drift without rerolling its appearance.
+      const opacity = varying(mix(tune.opacityMin, tune.opacityMax, seed));
+      const tailFalloff = varying(mix(tune.tailFalloffMin, tune.tailFalloffMax, phase.w.div(6.283)));
+      const thin = smoothstep(0.45, 0.95, seed);
+      const thinness = thin.mul(tune.wispThinness);
       const along = uv().y;
       const across = uv().x;
       const material = own(new THREE.MeshBasicNodeMaterial({
@@ -384,6 +418,8 @@ export default defineRoom('jp-abyss', {
       }));
       material.positionNode = Fn(() => {
         const shape = positionGeometry.toVar();
+        shape.y.mulAssign(wispLength);
+        shape.x.mulAssign(tune.wispWidth.mul(float(1).sub(thinness.mul(0.6))));
         shape.xz.assign(rotate(shape.xz, seed.mul(6.283)));
         const twist = sin(shape.y.mul(0.35).add(time.mul(0.25)).add(seed.mul(9))).mul(1.6);
         shape.xz.assign(rotate(shape.xz, twist));
@@ -392,10 +428,11 @@ export default defineRoom('jp-abyss', {
         shape.addAssign(mx_noise_vec3(wind).mul(along.mul(1.8)));
         return origin.xyz.add(shape).add(vec3(0, driftNode(clock, origin.xyz, motion, phase), 0));
       })();
-      const puff = smoothstep(0.4, 0.78, texture(noise, uv().mul(vec2(0.55, 0.3)).add(vec2(seed.mul(3.7), time.mul(-0.05)))).r);
-      const edges = clamp(min(min(along.mul(6), float(1).sub(along).mul(1.4)), min(across.mul(4), float(1).sub(across).mul(4))), 0, 1);
+      const puff = smoothstep(thinness.mul(0.18).add(0.4), 0.78, texture(noise, uv().mul(vec2(0.55, 0.3)).add(vec2(seed.mul(3.7), time.mul(-0.05)))).r);
+      const tail = pow(clamp(float(1).sub(along).mul(1.4), 0, 1), tailFalloff);
+      const edges = clamp(min(along.mul(6), min(across.mul(4), float(1).sub(across).mul(4))), 0, 1);
       material.colorNode = mix(color(GLOW), color('#8c86c9'), along);
-      material.opacityNode = puff.mul(edges).mul(0.32);
+      material.opacityNode = puff.mul(min(edges, tail)).mul(opacity);
       const mesh = new THREE.Mesh(own(copyOf(layout.wisps)), material);
       mesh.frustumCulled = false;
       root.add(mesh);
@@ -455,7 +492,32 @@ export default defineRoom('jp-abyss', {
       });
     }
 
+    ctx.onActivate(() => { lastStone = -1; });
     ctx.onUpdate((_dt, elapsed) => {
+      glowClock.value = (performance.now() - glowStart) / 1000;
+      const feet = ctx.player?.position;
+      // The controller sampled the walkway using the previous frame's clock.
+      const index = feet && tune.stepBrightness.value > 0 ? walkway.stoneAtFeet(feet.x, feet.y, feet.z, now) : -1;
+      if (index >= 0 && index !== lastStone) {
+        const [first, last] = walkway.stepSpan(index, tune.fullPathWidth.value);
+        // A row is built from one edge to the other. Spread in both directions from contact.
+        for (let i = first; i <= last; i++) {
+          const delay = Math.abs(i - index) * tune.stepNeighborDelay.value;
+          pendingSteps.push({ stone: i, at: glowClock.value + delay });
+        }
+        pendingSteps.sort((a, b) => a.at - b.at);
+      }
+      // Leave a stone's previous glow running until the new step actually reaches it.
+      while (pendingSteps.length && pendingSteps[0].at <= glowClock.value) {
+        const { stone, at } = pendingSteps.shift()!;
+        const start = vertexOffsets[stone];
+        const end = vertexOffsets[stone + 1];
+        const stamp = retriggerStep(at, stepTimes.array[start], tune.stepFadeIn.value, tune.stepSeconds.value, tune.stepFalloff.value);
+        stepTimes.array.fill(stamp, start, end);
+        stepTimes.addUpdateRange(start, end - start);
+        stepTimes.needsUpdate = true;
+      }
+      lastStone = index;
       now = elapsed;
       clock.value = elapsed;
     });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NO_GROUND, seededRandom } from '@portalverse/core/rooms/kit';
+import { retriggerStep } from './tuning';
 import {
   GATE_Z,
   PATH_END,
@@ -73,6 +74,50 @@ describe('abyss path', () => {
         for (const x of [-1.5, 0, 1.5]) expect(walkway.heightAt(x, z, t)).toBeCloseTo(0, 9);
       }
     }
+  });
+
+  it('finds the slab touched by the feet, including as its height drifts', () => {
+    for (const [index, stone] of stones.entries()) {
+      for (const t of [0, 7.7]) {
+        const y = walkway.heightAt(stone.cx, stone.cz, t);
+        expect(walkway.stoneAtFeet(stone.cx, y, stone.cz, t)).toBe(index);
+        expect(walkway.stoneAtFeet(stone.cx, y + 0.35, stone.cz, t)).toBe(-1);
+      }
+    }
+  });
+
+  it('hands steps to the nearest edge through walkable cracks along the path', () => {
+    const lit = new Set<number>();
+    for (const { x, z } of line) {
+      const y = walkway.heightAt(x, z, 7.7);
+      const distances = stones.map(s => distanceToPolygon(s.polygon, x, z));
+      const nearest = Math.min(...distances);
+      if (nearest === 0 || y === NO_GROUND) continue;
+      const index = walkway.stoneAtFeet(x, y, z, 7.7);
+      expect(distances[index]).toBe(nearest);
+      expect(walkway.stoneAtFeet(x, y + 0.35, z, 7.7)).toBe(-1);
+      lit.add(index);
+    }
+    expect(lit.size).toBeGreaterThan(2);
+    expect(walkway.stoneAtFeet(0, 0, PATH_END + 3, 7.7)).toBe(-1);
+  });
+
+  it('lights the whole crosswise row on bends and straight runs, or one slab with the toggle off', () => {
+    for (const [i, stone] of stones.entries()) {
+      expect(stone.pathRow).toBeDefined();
+      expect(walkway.stepSpan(i, false)).toEqual([i, i]);
+      const [first, last] = walkway.stepSpan(i, true);
+      expect(stones.slice(first, last + 1)).toEqual(stones.filter(other => other.pathRow === stone.pathRow));
+    }
+    expect(buildStrayStones(seededRandom(8), line).every(s => s.pathRow === undefined)).toBe(true);
+  });
+
+  it('retriggers from the current glow during rise and decay and starts fresh after expiry', () => {
+    expect(retriggerStep(10.05, 10, 0.12, 4.3, 1.5)).toBe(10);
+    const halfway = 10 + 0.12 + 4.3 / 2;
+    expect(retriggerStep(halfway, 10, 0.12, 4.3, 1.5)).toBeCloseTo(halfway - 0.12 * 0.5 ** 1.5);
+    expect(retriggerStep(15, 10, 0.12, 4.3, 1.5)).toBe(15);
+    expect(retriggerStep(11, 10, 0, 4.3, 1.5)).toBe(11);
   });
 
   it('drifts the middle stones a little, and puts you on top of the stone under you', () => {

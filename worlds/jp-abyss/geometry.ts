@@ -16,12 +16,13 @@ export async function buildStoneGeometry(
   stones: Stone[],
   rand: () => number,
   pause: () => Promise<void> = async () => {},
-): Promise<THREE.BufferGeometry> {
+) {
   const position: number[] = [];
   const normal: number[] = [];
   const motion: number[] = [];
   const phase: number[] = [];
   const look: number[] = [];
+  const vertexOffsets: number[] = [];
   const ab = new THREE.Vector3();
   const ac = new THREE.Vector3();
   const n = new THREE.Vector3();
@@ -30,6 +31,7 @@ export async function buildStoneGeometry(
 
   for (const [index, stone] of stones.entries()) {
     if (index % 40 === 39) await pause();
+    vertexOffsets.push(position.length / 3);
     const [m0, m1, m2, m3] = stoneAttributes(stone).motion;
     const [p0, p1, p2, p3] = stone.phases;
     const [l0, l1, l2, l3] = [stone.glow, stone.seed, stone.topY, stone.thickness];
@@ -101,7 +103,8 @@ export async function buildStoneGeometry(
   geometry.setAttribute('aPhase', new THREE.Float32BufferAttribute(phase, 4));
   geometry.setAttribute('aLook', new THREE.Float32BufferAttribute(look, 4));
   geometry.computeBoundingSphere();
-  return geometry;
+  vertexOffsets.push(position.length / 3);
+  return { geometry, vertexOffsets };
 }
 
 /** Where a stone's lowest point hangs at rest, for hanging smoke and sparkles under it. */
@@ -113,7 +116,7 @@ export interface Wisp {
   stone: Stone;
   origin: THREE.Vector3;
   width: number;
-  length: number;
+  lengthFraction: number;
   seed: number;
 }
 
@@ -127,6 +130,7 @@ export function buildWispGeometry(wisps: Wisp[]): THREE.BufferGeometry {
   const position: number[] = [];
   const uv: number[] = [];
   const origin: number[] = [];
+  const lengths: number[] = [];
   const motion: number[] = [];
   const phase: number[] = [];
   const index: number[] = [];
@@ -137,7 +141,8 @@ export function buildWispGeometry(wisps: Wisp[]): THREE.BufferGeometry {
       for (let c = 0; c <= COLS; c++) {
         const u = c / COLS;
         const v = r / ROWS;
-        position.push((u - 0.5) * wisp.width, -v * wisp.length, 0);
+        position.push((u - 0.5) * wisp.width, -v, 0);
+        lengths.push(wisp.lengthFraction, Number(wisp.stone.walkable));
         uv.push(u, v);
         origin.push(wisp.origin.x, wisp.origin.y, wisp.origin.z, wisp.seed);
         motion.push(...attrs.motion);
@@ -156,6 +161,7 @@ export function buildWispGeometry(wisps: Wisp[]): THREE.BufferGeometry {
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geometry.setAttribute('aOrigin', new THREE.Float32BufferAttribute(origin, 4));
+  geometry.setAttribute('aLength', new THREE.Float32BufferAttribute(lengths, 2));
   geometry.setAttribute('aMotion', new THREE.Float32BufferAttribute(motion, 4));
   geometry.setAttribute('aPhase', new THREE.Float32BufferAttribute(phase, 4));
   geometry.setIndex(index);
