@@ -453,12 +453,12 @@ async function boot(): Promise<void> {
     isTransitioning = true;
 
     try {
-      const worldModule = await registry.loadWorld(worldId);
-      await engine.mountWorld(worldModule, {
+      const arrival = await engine.mountWorld(worldId, {
         spawnId: opts?.spawnId,
         fromPortal: opts?.fromPortal,
         crossed: opts?.crossed,
       });
+      if (!arrival) return;
       net.switchWorld(
         worldId,
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
@@ -762,8 +762,7 @@ async function boot(): Promise<void> {
     await engine.init();
 
     setLoadPhase(35, `LOADING ${activeManifest.name.toUpperCase()}`);
-    const startModule = await registry.loadWorld(initialWorldId);
-    const spawn = await engine.mountWorld(startModule, {
+    const spawn = await engine.mountWorld(initialWorldId, {
       spawnId: route.spawnId ?? route.handoff?.targetSpawnId,
       extraPortals: combinedDynamicPortals(),
     });
@@ -784,11 +783,8 @@ async function boot(): Promise<void> {
     setLoadPhase(60, 'PRELOADING ADJACENT ROOMS');
     await engine.preloadAdjacentRooms();
 
-    const localIds = registry.listWorlds().filter(w => w.kind === 'local').map(w => w.id);
     setLoadPhase(68, 'RENDERING PORTAL PREVIEWS');
-    await engine.prewarmPortalSnapshots(localIds, (frac) => {
-      setLoadPhase(68 + frac * 30, 'RENDERING PORTAL PREVIEWS');
-    });
+    await engine.warmUpPortals();
 
     preloadComplete = true;
     setLoadPhase(100, activeManifest.name.toUpperCase());

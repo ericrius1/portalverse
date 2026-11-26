@@ -2,6 +2,39 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
+## Five-room window loader — `feat/room-window-loader` (2026-11-25)
+
+### Changed
+
+- **Only five rooms stay mounted (`engine/roomWindow.ts`, `PortalPreviews.ts`)** — the player's room and two each way. The loading gate waits for the middle three; the outer two then load one at a time. A menu jump holds that queue until the destination is ready. A room left outside the window is disposed after 4 s unseen. This replaces `MAX_HOT_ROOMS` and the startup pass that mounted every room to photograph it.
+- **A room is ready only after its shaders are compiled and both snapshots taken.**
+
+### Fixed
+
+- **Black screen while rooms precompile** (found during this branch, never shipped) — three.js leaves the renderer on the precompile target each time it resumes, so the final composite is now drawn to the screen explicitly.
+
+- Menu jumps now give the selected room priority from the start of its download. The current room and its neighbours can finish preparing during startup without waiting for browser idle time. A slow load from the previous window no longer holds up the new window.
+- Retried rooms keep their place in the five-room window. A queued room can appear through a portal as soon as its load finishes. Returning rooms use existing neighbour pictures when capturing their own portal snapshots. On shutdown, an in-flight shader compile finishes before its render target and renderer are released.
+
+### Design & engineering decisions
+
+- **Why**: efficiency, as the loop grows. Five matches what portals draw live; farther portals show snapshots.
+- **Measured** (headless Chrome, Apple Metal, 11 rooms, before → after, shader cache warm; two to three runs):
+
+  | | before | after |
+  |---|---|---|
+  | Loading gate ready | 3.0–3.1 s | 2.9 s |
+  | GPU process memory at the gate | 721–769 MB | 600–607 MB |
+  | GPU process memory after one lap | 942–948 MB | 694–758 MB |
+  | JS heap after one lap | 30 MB | 31 MB |
+  | Frames over 33 ms per lap | 4–7 (worst 100 ms) | 0–1 (worst 33 ms) |
+  | Rooms-menu jump | 125–230 ms | 220–420 ms |
+
+- **Snapshot on arrival**, not pre-made images: no upkeep.
+  - *Tradeoff*: Until a room has been visited or neared, portals to it show the placeholder, and a snapshot taken later may contain one.
+- **Dropped rooms start fresh** when you return.
+- **Tradeoff**: Jumping to an unloaded room waits for its shaders and snapshots, so it is slower than before.
+
 ## Honey in da Hood Ya Heard room — [PR #3](https://github.com/ericrius1/portalverse/pull/3), `7c9050d` (2026-11-25)
 
 ### Added

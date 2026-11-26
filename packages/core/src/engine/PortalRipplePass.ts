@@ -54,7 +54,7 @@ export class PortalRipplePass {
       this.uStrength.value = 0;
       this.renderer.setRenderTarget(rt);
       this.renderer.clear();
-      this.renderer.setRenderTarget(prevTarget);
+      this.renderer.setRenderTarget(null);
       this.renderer.render(this.scene, this.camera);
     } finally {
       this.renderer.setRenderTarget(prevTarget);
@@ -155,12 +155,12 @@ export class PortalRipplePass {
   /** Render the active frame into the persistent buffer and composite to screen. */
   render(renderScene: () => void): void {
     const rt = this.ensureResources();
-    const prevTarget = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(rt);
     try {
-      this.renderer.setRenderTarget(rt);
       renderScene();
     } finally {
-      this.renderer.setRenderTarget(prevTarget);
+      // Name the screen outright: a background precompile can leave another target set.
+      this.renderer.setRenderTarget(null);
     }
     this.renderer.render(this.scene, this.camera);
   }

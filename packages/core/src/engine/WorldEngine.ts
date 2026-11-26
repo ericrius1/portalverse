@@ -18,6 +18,7 @@ import {
 import { RoomInstance } from './RoomInstance';
 import { PortalPreviews } from './PortalPreviews';
 import { PortalRipplePass } from './PortalRipplePass';
+import type { Heading } from './roomWindow';
 import {
   AvatarController,
   createStylizedAvatarRig,
@@ -66,6 +67,9 @@ interface WalkThroughState {
   startedAt: number;
 }
 
+/** Which way along the room loop a portal takes you. */
+const headingThrough = (portal?: PortalDefinition): Heading => (portal?.id === 'entrance' ? -1 : 1);
+
 export class WorldEngine {
   private readonly avatarScene = new THREE.Scene();
   get scene(): THREE.Scene { return this.room?.scene ?? this.avatarScene; }
@@ -76,6 +80,7 @@ export class WorldEngine {
   private readonly container: HTMLElement;
   private readonly callbacks: WorldEngineCallbacks;
   private room?: RoomInstance;
+  private adjacentReady: Promise<void> = Promise.resolve();
   private readonly previews?: PortalPreviews;
   private readonly ripplePass: PortalRipplePass;
   private readonly transitRig: StylizedAvatarRig;
@@ -220,17 +225,20 @@ export class WorldEngine {
   }
 
   /**
-   * Make `module` the active room. Resolves with the spawn the player arrived at,
+   * Make a local room ID or supplied module active. Resolves with the spawn the player arrived at,
    * or undefined when a later mount superseded this one.
    */
   async mountWorld(
-    module: WorldModule,
+    world: WorldModule | string,
     options?: { spawnId?: string; extraPortals?: PortalDefinition[]; fromPortal?: PortalDefinition; crossed?: boolean },
   ): Promise<SpawnPoint | undefined> {
     const sequence = ++this.mountSequence;
     const source = this.getAllPortals().find(p => p.portal === options?.fromPortal);
-    const cached = this.previews?.prepare(module.manifest.id);
-    const room = await (cached ?? RoomInstance.mount(module, this.renderer));
+    const id = typeof world === 'string' ? world : world.manifest.id;
+    const cached = this.previews?.travelTo(id);
+    const mounting = cached ?? (typeof world === 'string' ? undefined : RoomInstance.mount(world, this.renderer));
+    if (!mounting) throw new Error(`No local loader for room "${id}"`);
+    const room = await mounting;
     if (sequence !== this.mountSequence) {
       if (!cached) this.disposeRoom(room);
       return undefined;
@@ -245,32 +253,28 @@ export class WorldEngine {
       yawDelta = crossingYawDelta(source.portal.yaw ?? 0, side, arrival.yaw);
     }
 
-    this.previews?.take(module.manifest.id);
-    this.installRoom(room, arrival, sourceOrigin, yawDelta, options?.extraPortals);
+    this.previews?.take(id);
+    this.installRoom(room, arrival, headingThrough(options?.fromPortal), sourceOrigin, yawDelta, options?.extraPortals);
     return arrival;
   }
 
-  /** Preload and pin both next (exit) and previous (entrance) neighbor rooms of the active room. */
-  async preloadAdjacentRooms(): Promise<void> {
-    if (!this.room || !this.previews) return;
-    await this.previews.syncPinnedForRoom(this.room);
+  /** Wait for the next (exit) and previous (entrance) rooms; the rest of the window loads behind them. */
+  preloadAdjacentRooms(): Promise<void> {
+    return this.adjacentReady;
   }
 
   /**
-   * Capture POV-matched portal snapshots for every local room in the loop, used for
-   * portals too far away to draw live and for rooms still loading.
+   * Refresh the nearby rooms' portal snapshots and warm up the post-processing
+   * pass, during the loading gate.
    */
-  async prewarmPortalSnapshots(
-    worldIds: string[],
-    onProgress?: (fraction: number) => void,
-  ): Promise<void> {
+  async warmUpPortals(): Promise<void> {
     if (!this.room || !this.previews) return;
     // Hide the local & remote avatar scene while capturing snapshots so no character
     // appears baked into the initial room's portal preview (e.g. Eric's Room).
     const prevAvatarVisible = this.avatarScene.visible;
     this.avatarScene.visible = false;
     try {
-      await this.previews.prewarmSnapshots(worldIds, this.room, onProgress);
+      await this.previews.refreshSnapshots(this.room);
     } finally {
       this.avatarScene.visible = prevAvatarVisible;
     }
@@ -285,17 +289,20 @@ export class WorldEngine {
   private installRoom(
     room: RoomInstance,
     arrival: SpawnPoint,
+    heading: Heading,
     sourceOrigin?: THREE.Vector3,
     yawDelta = 0,
     extraPortals?: PortalDefinition[],
   ): void {
     const prevRoom = this.room;
-    // Keep the room we just left mounted as a preview when the new room links back to
-    // it, so turning around shows it live and crossing back costs no remount.
+    // Keep the room we just left mounted as a preview when it's still in the window or
+    // the new room links back to it, so turning around costs no remount.
+    const prevId = prevRoom?.module.manifest.id;
     const shouldRetainPrev =
-      !!prevRoom &&
+      !!prevId &&
       prevRoom !== room &&
-      room.portals.some(p => !p.portal.remoteUrl && p.portal.targetWorldId === prevRoom.module.manifest.id);
+      (!!this.previews?.keeps(room.module.manifest.id, prevId) ||
+        room.portals.some(p => !p.portal.remoteUrl && p.portal.targetWorldId === prevId));
 
     this.swapOutCurrentRoom(shouldRetainPrev);
 
@@ -321,8 +328,8 @@ export class WorldEngine {
 
     room.activate(portal => this.requestPortalEntry(portal), this.playerView);
 
-    // Preload next & previous neighbors immediately so transitions never stall
-    void this.previews?.syncPinnedForRoom(room);
+    // Move the room window: neighbours load immediately so transitions never stall
+    this.adjacentReady = this.previews?.syncPinnedForRoom(room, heading, !prevRoom) ?? Promise.resolve();
 
     // Brief portal reentry grace period so players don't immediately re-trigger a portal at spawn
     this.portalCooldownUntil = performance.now() + 900;
@@ -348,7 +355,7 @@ export class WorldEngine {
     const yawDelta = crossingYawDelta(portal.yaw ?? 0, sideSign, arrival.yaw);
 
     this.mountSequence++;
-    this.installRoom(room, arrival, sourceOrigin, yawDelta);
+    this.installRoom(room, arrival, headingThrough(portal), sourceOrigin, yawDelta);
     this.callbacks.onPortalPromoted?.(room.module.manifest);
     return true;
   }
@@ -480,9 +487,9 @@ export class WorldEngine {
     else room.dispose();
   }
 
-  private unmountCurrentWorld(): void {
+  private unmountCurrentWorld(): Promise<void> {
     this.swapOutCurrentRoom(false);
-    this.previews?.clear();
+    return this.previews?.clear() ?? Promise.resolve();
   }
 
   private readonly renderMainPass = (): void => {
@@ -702,7 +709,7 @@ export class WorldEngine {
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDown);
-    this.unmountCurrentWorld();
+    const previewsCleared = this.unmountCurrentWorld();
     this.ripplePass.dispose();
     this.warpSphereGeometry.dispose();
     this.warpSphereMaterial.dispose();
@@ -710,6 +717,6 @@ export class WorldEngine {
     this.warpCircleMaterial.dispose();
     this.transitRig.dispose();
     this.avatar.dispose();
-    this.renderer.dispose();
+    void previewsCleared.then(() => this.renderer.dispose());
   }
 }

@@ -28,6 +28,7 @@ async function renderPreviews() {
     getDrawingBufferSize: (out: THREE.Vector2) => out.set(1600, 900),
     getRenderTarget: () => target,
     setRenderTarget: (next: THREE.RenderTarget | null) => { target = next; },
+    compileAsync: async () => {},
     render: (scene: THREE.Scene, camera: THREE.Camera) => {
       seen.push({ scene, camera, ...visibleIn(scene, camera) });
     },
@@ -64,7 +65,8 @@ describe('room lighting stays the same between preview and active', () => {
 
   it('in the snapshots taken while loading', async () => {
     const { previews, home, seen } = await renderPreviews();
-    await previews.prewarmSnapshots(['jp-world'], home);
+    await previews.prepare('jp-world');
+    await previews.refreshSnapshots(home);
     expectPreviewVisibility(seen);
   });
 });

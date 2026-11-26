@@ -55,6 +55,7 @@ function fakeRenderer(width = 2560, height = 1440) {
     getDrawingBufferSize: (out: THREE.Vector2) => out.copy(size),
     getRenderTarget: () => current,
     setRenderTarget: (target: THREE.RenderTarget | null) => { current = target; },
+    compileAsync: async () => {},
     render: (scene: THREE.Object3D, camera: THREE.Camera) => {
       renders.push({
         scene,
@@ -276,7 +277,8 @@ describe('room lifecycle across crossings', () => {
     const { renderer } = fakeRenderer();
     const previews = new PortalPreviews(renderer, loadEmptyRoom);
     const active = await RoomInstance.mount(emptyRoom('eric-world'), renderer);
-    await previews.prewarmSnapshots(['eric-world', 'jp-world'], active);
+    await previews.prepare('jp-world');
+    await previews.refreshSnapshots(active);
 
     const exit = active.portals.find(p => p.portal.id === 'exit')!;
     const snapshotMaterial = exit.aperture.material;
@@ -462,7 +464,10 @@ describe('the portal two rooms ahead', () => {
     const eric = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
     eric.activate(() => {});
     // With snapshots captured, any fallback to them at the crossing would show as a crossfade.
-    await previews.prewarmSnapshots(rooms.map(room => room.id), eric);
+    for (const { id } of rooms) {
+      if (id !== 'eric-world') await previews.prepare(id);
+    }
+    await previews.refreshSnapshots(eric);
     const prevId = eric.portals.find(p => p.portal.id === 'entrance')!.portal.targetWorldId;
     const nearRoom = (await previews.prepare(prevId))!;
     const nearFar = nearRoom.portals.find(p => p.portal.id === 'entrance')!;
@@ -543,7 +548,8 @@ describe('the portal two rooms ahead', () => {
     const fake = fakeRenderer();
     const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(emptyRoom('jp-world')));
     const room = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
-    await previews.prewarmSnapshots(['eric-world', 'jp-world'], room);
+    await previews.prepare('jp-world');
+    await previews.refreshSnapshots(room);
     const exit = room.portals.find(p => p.portal.id === 'exit')!;
     expect((exit.aperture.material as THREE.MeshBasicNodeMaterial).fog).toBe(false);
     previews.disposeRoom(room);
