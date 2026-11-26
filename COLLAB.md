@@ -76,6 +76,10 @@ That's plenty of time, but it's all on one thread: the JavaScript thread that al
 
 To check a room, time its `mount`. Also record a trace in the browser's Performance panel while walking toward the room and look for long tasks.
 
+### Your room's music
+
+The soundtrack is a live mix of shared stems (Suno Studio loops, all 88 BPM in D minor, so any of them play together). Pick your room's blend in `ROOM_VIBES` in `packages/core/src/audio/musicMix.ts`: stem ids with levels from 0 to 1. Rooms that aren't listed get `DEFAULT_VIBE`. Walking toward a gate fades the next room's blend in, half and half at the portal, so neighbouring rooms mix into each other.
+
 ### Room budgets
 
 Keep room assets under `worlds/<id>/` and import them through Vite (for example, `import mural from './mural.png?url'`, or `import.meta.glob('./assets/*.glb', { query: '?url', import: 'default', eager: true })` for a folder). `@portalverse/core/rooms/kit` has `loadGLB`, `groundModel`, `disposeObject` and `seededRandom` for rooms that load models, plus `breathe` for spreading slow setup and `NO_GROUND` for rooms that allow falling; models must be uncompressed (no Draco, meshopt or KTX2). Note where third-party assets came from in a `CREDITS.md` in the room folder. Run `npm run check:rooms` while authoring and `npm run build` before submitting.

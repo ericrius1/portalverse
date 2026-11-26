@@ -22,6 +22,9 @@ import {
   readRouteFromLocation,
 } from '@portalverse/core/portal/handoff';
 import { InteractiveTutorial, hasCompletedTutorial } from './tutorial';
+import { Soundtrack } from '@portalverse/core/audio/Soundtrack';
+import { vibeFor, type StemId } from '@portalverse/core/audio/musicMix';
+import { ROUTE_LENGTH } from '@portalverse/core/portal/roomLayout';
 
 const STORAGE_PROFILE_KEY = 'portalverse.profile.v1';
 const STORAGE_MOVEMENT_MODE_KEY = 'portalverse.movement.mode';
@@ -255,6 +258,22 @@ async function boot(): Promise<void> {
     pointerLockBanner.classList.toggle('hidden', !gateExited || locked || isAnyModalOpen() || fallOverlay.classList.contains('active'));
   };
 
+  // Adaptive soundtrack: Suno Studio stems blended by room and by distance to each gate.
+  // ?mute=1 runs it at zero volume (automated tests) without touching the saved preference.
+  const soundtrack = new Soundtrack({ silent: new URLSearchParams(window.location.search).get('mute') === '1' });
+  if (import.meta.env.DEV) (window as unknown as { soundtrack: Soundtrack }).soundtrack = soundtrack;
+  const localRoomOrder = registry.listWorlds().filter(w => w.kind === 'local').map(w => w.id);
+  const loopNeighbour = (id: string, step: 1 | -1): string | null => {
+    const i = localRoomOrder.indexOf(id);
+    return i < 0 || localRoomOrder.length < 2
+      ? null
+      : localRoomOrder[(i + step + localRoomOrder.length) % localRoomOrder.length];
+  };
+  const initialVibe = vibeFor(initialWorldId);
+  void soundtrack.load(
+    (Object.keys(initialVibe) as StemId[]).sort((a, b) => (initialVibe[b] ?? 0) - (initialVibe[a] ?? 0)),
+  );
+
   const engine = new WorldEngine(viewport, identity.color, {
     loadLocalWorld: id => registry.getManifest(id)?.kind === 'local' ? registry.loadWorld(id) : undefined,
     onWorldLoaded: (manifest) => {
@@ -266,6 +285,7 @@ async function boot(): Promise<void> {
       syncUrlBar();
     },
     onPortalPromoted: (manifest) => {
+      soundtrack.playPortalWhoosh();
       net.switchWorld(
         manifest.id,
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
@@ -282,6 +302,7 @@ async function boot(): Promise<void> {
       portalPromptText.textContent = `Enter ${portal.label}`;
     },
     onPortalEnter: (portal, crossed) => {
+      soundtrack.playPortalWhoosh();
       void handlePortalTransition(portal, crossed);
     },
     onFlightChange: (flying) => {
@@ -462,6 +483,7 @@ async function boot(): Promise<void> {
   ): Promise<void> {
     if (isTransitioning) return;
     isTransitioning = true;
+    if (!opts?.fromPortal) soundtrack.playPortalWhoosh();
 
     try {
       const arrival = await engine.mountWorld(worldId, {
@@ -683,6 +705,47 @@ async function boot(): Promise<void> {
     shiftHeld = false;
   });
 
+  // Soundtrack: feed it the player's state each frame, and the music toggle (button or N).
+  const musicButton = document.getElementById('btn-music') as HTMLButtonElement;
+  const musicLabel = document.getElementById('music-label')!;
+  const syncMusicUi = () => {
+    musicButton.setAttribute('aria-pressed', String(!soundtrack.isMuted));
+    musicButton.classList.toggle('muted', soundtrack.isMuted);
+    musicLabel.textContent = soundtrack.isMuted ? 'Muted' : 'Music';
+  };
+  syncMusicUi();
+  const toggleMusic = () => {
+    soundtrack.toggleMuted();
+    syncMusicUi();
+  };
+  musicButton.addEventListener('click', () => {
+    toggleMusic();
+    musicButton.blur();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyN' || e.repeat || !gateExited || engine.hasFallen) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+    toggleMusic();
+  });
+  const gateZ = ROUTE_LENGTH / 2;
+  const feedSoundtrack = () => {
+    requestAnimationFrame(feedSoundtrack);
+    if (!gateExited) return;
+    const feet = engine.avatar.position;
+    soundtrack.update({
+      roomId: activeWorldId,
+      previousRoomId: loopNeighbour(activeWorldId, -1),
+      nextRoomId: loopNeighbour(activeWorldId, 1),
+      x: feet.x,
+      z: feet.z,
+      gateZ,
+      warp: engine.portalWarp,
+      moveNorm: engine.motionLevel,
+      fallen: engine.hasFallen,
+    });
+  };
+  requestAnimationFrame(feedSoundtrack);
+
   // Yuna-style smooth circular loading gate controller
   const RING_CIRCUMFERENCE = 2 * Math.PI * 102;
   const REVEAL_START_Y = 168;
@@ -764,6 +827,7 @@ async function boot(): Promise<void> {
     }
     if (!gateReady || gateExited) return;
     gateExited = true;
+    soundtrack.start();
     loadingMedallion.disabled = true;
     btnGateTutorial.disabled = true;
     btnGateEnter.disabled = true;

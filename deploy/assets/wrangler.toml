@@ -1,0 +1,10 @@
+# Portalverse's asset Worker (worker.js): the portalverse-assets R2 bucket behind the edge cache, at
+# https://portalverse-assets.ericrius1.workers.dev/objects/<sha256>/<name>  (scripts/publish-music.mjs fills the bucket)
+name = "portalverse-assets"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "portalverse-assets"

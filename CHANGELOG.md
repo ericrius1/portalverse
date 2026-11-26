@@ -2,6 +2,23 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Adaptive soundtrack and portal sounds — Unreleased (2026-11-26)
+
+### Added
+
+- **Live-mixed soundtrack (`packages/core/src/audio/`)** — eight stems made in Suno Studio (abyss bed and motif, holo, golden, lagoon and lofi beds, a soft beat, shimmer bells) loop together on one bar grid. Each room picks a blend in `ROOM_VIBES`. Walking toward a gate fades in the next room's blend, muffled at first as if heard through the portal and opening up as you arrive. It reaches half and half at the portal, so crossing is a blend, not a cut.
+- **Variation** — every 4-bar phrase reshuffles which melodic layers and drums are up (beds stay). The beat follows your speed: quiet when standing, full when running or flying.
+- **Portal sounds** — a soft synthesized drone and a reverb wash swell with the portal screen warp. Each crossing or teleport plays a Suno cosmic whoosh at a random pitch, with a DJ-style filter sweep on the music.
+- **Music toggle** — a **Music** button in the HUD and the **N** key, remembered between visits. `?mute=1` runs the soundtrack at zero volume for automated tests. Falling into the void ducks and darkens the music.
+- **Asset hosting** — the audio lives on Cloudflare R2 (`portalverse-assets` bucket behind `deploy/assets`, content-addressed), mapped in `musicAssets.json` by `scripts/publish-music.mjs`. Opus/WebM with an AAC fallback for Safari, about 2.4 MB in total.
+
+### Design & engineering decisions
+
+- **One key and tempo for everything** — every stem is generated at 88 BPM in D minor, so any blend of rooms is in tune and on the beat, the way a DJ beat-matches before mixing. Stems start offset to the shared grid, so a layer that fades in late still lands in phase.
+- **Seamless loops from generated takes** — Studio takes fade in from silence. Each loop is bars 2–9 of a 12-bar take, with bar 10 crossfaded into the head. Bar 10 sits at the same point in the 4-bar phrase as bar 2, so the seam has no audible join.
+- **Families of vibes, not one track per room** — ten Suno generations in total (nine stems plus the whoosh) cover twelve rooms by mixing shared stems in different proportions. Rooms that share a stem flow into each other more smoothly.
+- **Mixing logic is pure** — `musicMix.ts` has no Web Audio, and `musicMix.test.ts` checks that the mix is identical on both sides of a crossing.
+
 ## Abyss secret path smoke and footsteps — `6e1c179`
 
 ### Changed

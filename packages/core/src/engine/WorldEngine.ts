@@ -125,6 +125,8 @@ export class WorldEngine {
   private currentFrameDt = 0;
   /** Player's horizontal speed, smoothed so stop-start steps count less than a steady run. */
   private smoothedSpeed = 0;
+  private frameWarp = 0;
+  private frameMoveNorm = 0;
   private skipNextSpeedSample = true;
   /** Below this the player has fallen out of the room; null when the room doesn't allow falling. */
   private fallLimit: number | null = null;
@@ -212,6 +214,11 @@ export class WorldEngine {
   }
 
   /** True while the player has fallen out of the room and is waiting to respawn. */
+  /** This frame's portal screen warp: 0 away from portals, about 1 at a portal's centre. */
+  get portalWarp(): number { return this.frameWarp; }
+  /** This frame's smoothed horizontal speed as a fraction of a sprint, 0..1. */
+  get motionLevel(): number { return this.frameMoveNorm; }
+
   get hasFallen(): boolean {
     return this.fallen;
   }
@@ -711,6 +718,8 @@ export class WorldEngine {
     // Warp: strongest at a portal's centre, fading to nothing at its warp circle, plus up to 20% when moving.
     const warp = portalWarp(portals, this.avatar.position) * warpSpeedFactor(this.smoothedSpeed);
     const moveNorm = THREE.MathUtils.clamp(this.smoothedSpeed / RUN_SPEED, 0, 1);
+    this.frameWarp = warp;
+    this.frameMoveNorm = moveNorm;
     this.ripplePass.update(dt, this.elapsed, warp, moveNorm);
     if (this.warpZones.visible) this.syncWarpZones(portals);
 

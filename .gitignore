@@ -7,3 +7,7 @@ dist/
 .env
 .env.local
 coverage/
+
+# Source audio for the soundtrack (published to R2 by scripts/publish-music.mjs)
+assets-src/
+.suno-raw/
