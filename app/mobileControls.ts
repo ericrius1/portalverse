@@ -144,6 +144,7 @@ export class MobileControls {
     };
     this.stickZone.addEventListener('pointerup', releaseStick);
     this.stickZone.addEventListener('pointercancel', releaseStick);
+    this.stickZone.addEventListener('lostpointercapture', releaseStick);
 
     // --- Right Multi-Touch Camera Look Pad ---
     this.lookZone.addEventListener('pointerdown', (e) => {
@@ -173,6 +174,7 @@ export class MobileControls {
     };
     this.lookZone.addEventListener('pointerup', releaseLook);
     this.lookZone.addEventListener('pointercancel', releaseLook);
+    this.lookZone.addEventListener('lostpointercapture', releaseLook);
 
     // --- Jump / Mid-Air Fly / Rise Button ---
     this.btnJump.addEventListener('pointerdown', (e) => {
@@ -195,6 +197,7 @@ export class MobileControls {
     };
     this.btnJump.addEventListener('pointerup', releaseJump);
     this.btnJump.addEventListener('pointercancel', releaseJump);
+    this.btnJump.addEventListener('lostpointercapture', releaseJump);
 
     // --- Fly Takeoff (on ground) / Hold to Descend & Land (in flight) ---
     this.btnFly.addEventListener('pointerdown', (e) => {
@@ -219,6 +222,7 @@ export class MobileControls {
     };
     this.btnFly.addEventListener('pointerup', releaseFly);
     this.btnFly.addEventListener('pointercancel', releaseFly);
+    this.btnFly.addEventListener('lostpointercapture', releaseFly);
 
     // --- Boost / Sprint Hold Button ---
     this.btnBoost.addEventListener('pointerdown', (e) => {
@@ -238,6 +242,7 @@ export class MobileControls {
     };
     this.btnBoost.addEventListener('pointerup', releaseBoost);
     this.btnBoost.addEventListener('pointercancel', releaseBoost);
+    this.btnBoost.addEventListener('lostpointercapture', releaseBoost);
 
     // --- Quick View & Character Select Buttons ---
     this.btnView.addEventListener('click', (e) => {
@@ -294,7 +299,23 @@ export class MobileControls {
     this.avatar.setVirtualMove(0, 0, false);
   }
 
+  private releaseCaptureSafe(el: HTMLElement, pointerId: number | null): void {
+    if (pointerId === null) return;
+    try {
+      if (el.hasPointerCapture?.(pointerId)) {
+        el.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Ignore if pointer already ended or capture is unsupported
+    }
+  }
+
   private releaseAllPointers(): void {
+    this.releaseCaptureSafe(this.stickZone, this.stickPointerId);
+    this.releaseCaptureSafe(this.lookZone, this.lookPointerId);
+    this.releaseCaptureSafe(this.btnJump, this.jumpPointerId);
+    this.releaseCaptureSafe(this.btnFly, this.descendPointerId);
+    this.releaseCaptureSafe(this.btnBoost, this.boostPointerId);
     this.resetStick();
     this.lookPointerId = null;
     this.jumpPointerId = null;

@@ -1012,6 +1012,7 @@ export class AvatarController {
       if (this.position.y < floorY) {
         this.position.y = floorY;
       }
+      this.onGround = Number.isFinite(floorY) && this.position.y <= floorY + 0.05;
     }
   }
 

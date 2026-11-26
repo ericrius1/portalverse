@@ -256,6 +256,7 @@ export class WorldEngine {
   respawn(): void {
     if (!this.fallen) return;
     this.fallen = false;
+    this.walkThrough = undefined;
     this.avatar.setInputLocked(this.inputLocked);
     this.avatar.applySpawn(this.respawnPoint);
     this.skipNextSpeedSample = true;
@@ -302,7 +303,7 @@ export class WorldEngine {
 
   /** Enter the currently highlighted nearby portal (used by mobile tap prompt & E key). */
   triggerNearestPortal(): boolean {
-    if (this.inputLocked || this.avatar.isFlying || !this.nearestPortal) return false;
+    if (this.inputLocked || this.fallen || this.avatar.isFlying || !this.nearestPortal) return false;
     this.requestPortalEntry(this.nearestPortal.portal);
     return true;
   }

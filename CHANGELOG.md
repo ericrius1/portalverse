@@ -2,7 +2,21 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
-## Palace Lagoon boardwalk over water, arching celestial ascent, Arabic mosaic dome-roof portal & colonnade Z-fighting fix — Unreleased (2026-11-26)
+## Fix frozen controls after falling & respawn + Palace dome mosaic polish — Unreleased (2026-11-26)
+
+### Fixed
+
+- **Controls permanently locked after falling and respawning (`app/main.ts`, `app/mobileControls.ts`, `packages/core/src/engine/WorldEngine.ts`, `packages/core/src/engine/AvatarController.ts`)** — fixed a state-aliasing bug where falling below `fallLimit` triggered `onFallChange(true)` → `closeAllModals()`, which passed `engine.hasFallen` into `engine.setInputLocked(true)` and left `WorldEngine.inputLocked` stuck `true` after `engine.respawn()` cleared `this.fallen`. Players on both mobile touch controls and desktop were completely unable to move, look, or re-lock the cursor after clicking Respawn.
+  - Separated UI modal/gate lock (`!gateExited || isAnyModalOpen()`) from `engine.hasFallen` via a single `syncInputLocks()` helper in `app/main.ts`, and blocked opening modals while fallen.
+  - Added `lostpointercapture` listeners and safe `releasePointerCapture` cleanup in `app/mobileControls.ts` so interrupted touch gestures during a fall/overlay transition can never strand a touch pointer ID.
+  - Restored grounded state immediately in `AvatarController.snapToGroundIfWalking()`, cleared any active portal walk-through on `WorldEngine.respawn()`, and guarded `triggerNearestPortal()` while fallen.
+- **Palace Lagoon dome mosaic & attic ceiling cutout (`worlds/eric-palace-lagoon/domePortal.ts`, `worlds/eric-palace-lagoon/shaders/palace.wgsl`, `packages/core/src/engine/PortalPreviews.ts`)** — cut the interior circular aperture out of the solid rotunda attic slab (`mat == PODIUM` above `y = 30 m`) so the overhead mosaic portal is unobstructed to the zenith, upgraded the Moroccan zellige/girih dome to a 24-fold / 10-tier Rub el Hizb star lattice with Shamsa sunburst rays and continuous star-SDF petal dissolve, and softly clamped `framePortal` vertical/lateral parallax for `useFullOrientation` domes so the virtual eye never dips under the destination room floor.
+
+### Design & engineering decisions
+
+- **Keep external UI lock orthogonal to internal engine fall state.** `WorldEngine` already computes effective avatar lock as `this.inputLocked || this.fallen`; feeding `engine.hasFallen` back into `engine.setInputLocked(...)` copied transient fall state into persistent UI lock state. Routing all gate/modal/fall lock transitions through `syncInputLocks()` eliminates the feedback loop for both desktop and mobile controls.
+
+## Palace Lagoon boardwalk over water, arching celestial ascent, Arabic mosaic dome-roof portal & colonnade Z-fighting fix — `3bde4ec` (2026-11-26)
 
 ### Added
 

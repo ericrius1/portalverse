@@ -96,9 +96,10 @@ struct Surf { albedo: vec3f, n: vec3f, rough: f32, ao: f32 }
 @fragment fn fs(i: VOut) -> @location(0) vec4f {
   let p = i.world;
   if (clipBelowWater(p) || hash12(floor(i.pos.xy)) > G.reveal) { discard; }
-  // Open the inner dome vault above the cornice so the full-dome Arabic mosaic portal lives inside the rotunda roof
-  // (the outer golden dome shell, mat == DOME, stays completely intact from outside).
-  if (i.mat == COFFER && p.y > 25.6) { discard; }
+  // Open the inner dome vault above the cornice and cut the interior circle out of the solid attic roof slab
+  // (y ~ 35.6 m, mat == PODIUM) so the full-dome Arabic mosaic portal is unobstructed up to its crown,
+  // while keeping the outer attic terrace and exterior golden dome (mat == DOME) completely intact from outside.
+  if ((i.mat == COFFER && p.y > 25.6) || (i.mat == PODIUM && p.y > 30.0 && length(p.xz - G.palace.xy) < 17.6)) { discard; }
   let v = normalize(frame.camPos - p);
   let dist = length(frame.camPos - p);
   let duv = fwidth(i.uv);

@@ -106,20 +106,19 @@ function createArabicMosaicMaterial(colorA: string, colorB: string) {
     const rho = acos(elev); // 0 at crown, pi/2 at base
     const rhoNorm = clamp(rho.div(float(1.5707963)), float(0.0), float(1.0));
 
-    // ---- 16-fold radial girih tessellation + staggered dual muqarnas lattice
-    const radialRepeats = float(16.0);
-    const tierRepeats = float(7.0);
+    // ---- 24-fold radial girih tessellation + staggered dual muqarnas lattice
+    const radialRepeats = float(24.0);
+    const tierRepeats = float(10.0);
     const uCoord = theta.div(float(6.2831853)).add(0.5).mul(radialRepeats);
     const vCoord = rhoNorm.mul(tierRepeats);
 
-    // Primary star lattice
+    // Primary 8-point Rub el Hizb Islamic star lattice
     const cellA = fract(vec2(uCoord, vCoord)).sub(0.5);
     const idA = floor(vec2(uCoord, vCoord));
     const aA = abs(cellA);
     const pA = vec2(max(aA.x, aA.y), min(aA.x, aA.y));
-    // 8-point Rub el Hizb Islamic star SDF (union of square and 45°-rotated square)
-    const sqA = max(pA.x, pA.y).sub(0.30);
-    const rotA = pA.x.add(pA.y).mul(0.7071068).sub(0.30);
+    const sqA = max(pA.x, pA.y).sub(0.31);
+    const rotA = pA.x.add(pA.y).mul(0.7071068).sub(0.31);
     const starA = min(sqA, rotA);
     const octA = max(sqA, rotA);
 
@@ -127,26 +126,30 @@ function createArabicMosaicMaterial(colorA: string, colorB: string) {
     const cellB = fract(vec2(uCoord.add(0.5), vCoord.add(0.5))).sub(0.5);
     const aB = abs(cellB);
     const pB = vec2(max(aB.x, aB.y), min(aB.x, aB.y));
-    const sqB = max(pB.x, pB.y).sub(0.24);
-    const rotB = pB.x.add(pB.y).mul(0.7071068).sub(0.24);
+    const sqB = max(pB.x, pB.y).sub(0.25);
+    const rotB = pB.x.add(pB.y).mul(0.7071068).sub(0.25);
     const starB = min(sqB, rotB);
 
     // 16-fold Royal Shamsa sunburst rosette at the zenith crown
-    const crownMask = smoothstep(float(0.26), float(0.08), rhoNorm);
-    const petalWave = abs(cos(theta.mul(8.0).add(time.mul(0.04)))).mul(0.065)
-      .add(abs(cos(theta.mul(16.0).sub(time.mul(0.03)))).mul(0.025));
-    const shamsaRing = abs(rhoNorm.sub(float(0.14).add(petalWave)));
-    const shamsaCore = abs(rhoNorm.sub(float(0.06).add(petalWave.mul(0.45))));
+    const crownMask = smoothstep(float(0.26), float(0.06), rhoNorm);
+    const petalWave = abs(cos(theta.mul(8.0).add(time.mul(0.04)))).mul(0.06)
+      .add(abs(cos(theta.mul(16.0).sub(time.mul(0.03)))).mul(0.024));
+    const shamsaRing = abs(rhoNorm.sub(float(0.15).add(petalWave)));
+    const shamsaCore = abs(rhoNorm.sub(float(0.065).add(petalWave.mul(0.45))));
+    const shamsaRays = pow(abs(cos(theta.mul(8.0))), float(18.0)).mul(crownMask);
     const shamsaLine = max(
-      exp(shamsaRing.div(0.008).pow(2.0).negate()),
-      exp(shamsaCore.div(0.007).pow(2.0).negate()),
-    ).mul(smoothstep(float(0.34), float(0.16), rhoNorm));
+      max(
+        exp(shamsaRing.div(0.007).pow(2.0).negate()),
+        exp(shamsaCore.div(0.006).pow(2.0).negate()),
+      ),
+      shamsaRays.mul(0.85),
+    ).mul(smoothstep(float(0.34), float(0.14), rhoNorm));
 
-    // Intricate interlacing strapwork & gold filigree grout lines
-    const lineA = exp(abs(starA).div(0.024).pow(2.0).negate());
-    const innerLineA = exp(abs(octA.add(0.085)).div(0.020).pow(2.0).negate()).mul(0.8);
-    const lineB = exp(abs(starB).div(0.022).pow(2.0).negate()).mul(0.85);
-    const ribLine = exp(abs(cellA.x).div(0.016).pow(2.0).negate()).mul(0.32);
+    // Intricate interlacing strapwork & 24k gold filigree grout lines
+    const lineA = exp(abs(starA).div(0.025).pow(2.0).negate());
+    const innerLineA = exp(abs(octA.add(0.09)).div(0.020).pow(2.0).negate()).mul(0.85);
+    const lineB = exp(abs(starB).div(0.023).pow(2.0).negate()).mul(0.9);
+    const ribLine = exp(abs(cellA.x).div(0.015).pow(2.0).negate()).mul(0.28);
     const corniceFrieze = smoothstep(float(0.88), float(0.95), rhoNorm);
     const friezeArch = exp(abs(fract(uCoord.mul(2.0)).sub(0.5)).div(0.04).pow(2.0).negate()).mul(corniceFrieze);
     const goldGrouts = clamp(
@@ -155,70 +158,70 @@ function createArabicMosaicMaterial(colorA: string, colorB: string) {
       float(1.0),
     );
 
-    // Per-tile deterministic hash for rich handcrafted zellige color variation & staggered tile dissolve
+    // Per-tile deterministic hash for handcrafted Moroccan zellige color variation
     const hashDot = dot(idA, vec2(127.1, 311.7));
     const tileRand = fract(sin(hashDot).mul(43758.5453));
     const inStarA = step(starA, float(0.0));
     const inStarB = step(starB, float(0.0));
 
-    // ---- Handcrafted Moroccan Zellige palette: lapis, turquoise, emerald, ivory-pearl, 24k gold
-    const lapis = vec3(0.055, 0.14, 0.44);
-    const turquoise = vec3(0.06, 0.54, 0.58);
-    const emerald = vec3(0.04, 0.36, 0.28);
-    const amethyst = vec3(0.24, 0.10, 0.42);
-    const ivory = vec3(0.88, 0.80, 0.64);
-    const gold = vec3(1.0, 0.78, 0.30);
+    // ---- Deep jewel-toned Moroccan Zellige palette tuned for ACES Filmic (Alhambra / Shah Mosque lusterware)
+    const lapis = vec3(0.018, 0.055, 0.24);
+    const turquoise = vec3(0.015, 0.26, 0.30);
+    const emerald = vec3(0.012, 0.16, 0.12);
+    const amethyst = vec3(0.11, 0.032, 0.22);
+    const pearl = vec3(0.36, 0.31, 0.24);
+    const gold = vec3(0.92, 0.62, 0.16);
 
     const fieldCol = mix(lapis, mix(emerald, amethyst, smoothstep(float(0.3), float(0.8), tileRand)), inStarB);
-    const starCol = mix(turquoise, ivory, smoothstep(float(0.55), float(0.92), tileRand).mul(0.45));
+    const starCol = mix(turquoise, pearl, smoothstep(float(0.6), float(0.95), tileRand).mul(0.35));
     const baseTile = mix(fieldCol, starCol, inStarA);
-    // Warm sunlit-gold enrichment near the crown shamsa and cornice frieze
-    const enriched = mix(baseTile, mix(turquoise, gold, float(0.48)), crownMask.mul(0.55));
+    const enriched = mix(baseTile, mix(turquoise, gold, float(0.52)), crownMask.mul(0.55));
 
-    // ---- True thin-film ceramic iridescence (shifts across turquoise -> violet -> gold with view angle)
+    // ---- True thin-film ceramic iridescence (rich metallic turquoise -> violet -> gold shimmer with view angle)
     const viewDir = normalize(cameraPosition.sub(positionWorld));
     const ndotv = clamp(abs(dot(normalWorld, viewDir)), float(0.0), float(1.0));
-    const fresnel = pow(float(1.0).sub(ndotv), 2.4);
+    const fresnel = pow(float(1.0).sub(ndotv), 2.2);
     const iridPhase = tileRand.mul(0.45)
-      .add(fresnel.mul(0.95))
-      .add(rhoNorm.mul(0.55))
-      .sub(time.mul(0.045));
+      .add(fresnel.mul(0.85))
+      .add(rhoNorm.mul(0.6))
+      .sub(time.mul(0.05));
     const spectrum = vec3(
       cos(iridPhase.mul(6.28318)).mul(0.5).add(0.5),
       cos(iridPhase.mul(6.28318).add(2.094)).mul(0.5).add(0.5),
       cos(iridPhase.mul(6.28318).add(4.188)).mul(0.5).add(0.5),
     );
-    const luster = mix(enriched, enriched.mul(0.52).add(spectrum.mul(0.68)), float(0.28).add(fresnel.mul(0.58)));
+    const luster = mix(enriched, enriched.mul(0.55).add(spectrum.mul(0.34)), float(0.22).add(fresnel.mul(0.55)));
 
-    // Subtle alive portal shimmer pulsing softly through the star filigree even from far below
+    // Subtle alive portal shimmer pulsing through the gilded strapwork
     const breath = sin(time.mul(1.4).sub(rhoNorm.mul(6.0))).mul(0.5).add(0.5);
-    const goldShimmer = gold.mul(float(1.15).add(breath.mul(0.45)).add(fresnel.mul(0.6)));
+    const goldShimmer = gold.mul(float(1.05).add(breath.mul(0.38)).add(fresnel.mul(0.55)));
     let col = mix(luster, goldShimmer, goldGrouts);
-    col = col.add(uAccentA.mul(inStarA.mul(0.14).mul(breath)));
+    col = col.add(uAccentA.mul(inStarA.mul(0.08).mul(breath)));
 
-    // ---- Sacred-geometry tile-by-tile dissolve as the player climbs closer (uReveal: 0 -> 1)
-    // Crown shamsa dissolves first, rippling outward down the tiers; individual tiles staggered by tileRand;
-    // star centers open a beat before their surrounding gold strapwork.
-    const tileOrder = rhoNorm.mul(0.76)
-      .add(tileRand.mul(0.20))
-      .add(goldGrouts.mul(0.08))
-      .sub(inStarA.mul(0.04));
-    const wave = uReveal.mul(1.24);
-    const dissolve = smoothstep(tileOrder.sub(0.075), tileOrder.add(0.075), wave);
+    // ---- Sacred-geometry star-by-star dissolve as the player climbs closer (uReveal: 0 -> 1)
+    // Uses continuous star SDF + scalloped radial petal wave (no boxy grid squares!):
+    // the royal Shamsa crown blooms open first, then each interlocking Islamic star melts away in molten gold.
+    const petalRipple = cos(theta.mul(12.0)).mul(0.035).add(sin(theta.mul(24.0).add(rhoNorm.mul(8.0))).mul(0.015));
+    const starShape = clamp(starA.mul(0.35).add(starB.mul(0.20)), float(-0.14), float(0.14));
+    const tileOrder = rhoNorm.mul(0.82)
+      .add(petalRipple)
+      .add(starShape)
+      .add(tileRand.mul(0.06))
+      .add(goldGrouts.mul(0.07));
+    const wave = uReveal.mul(1.22);
+    const dissolve = smoothstep(tileOrder.sub(0.065), tileOrder.add(0.065), wave);
 
     // Keep the lower golden arabesque cornice frieze glowing as a royal frame around the giant open portal
-    const keepBorder = smoothstep(float(0.89), float(0.96), rhoNorm);
+    const keepBorder = smoothstep(float(0.90), float(0.965), rhoNorm);
     const effectiveDissolve = dissolve.mul(float(1.0).sub(keepBorder.mul(0.88)));
 
-    // Molten iridescent gold + portal-accent flare right along the dissolving tile rim
+    // Molten iridescent gold + portal-accent flare right along the dissolving geometric star rim
     const edgeGlow = smoothstep(float(0.0), float(0.45), effectiveDissolve)
       .mul(smoothstep(float(1.0), float(0.45), effectiveDissolve));
-    const edgeColor = mix(gold, mix(uAccentA, uAccentB, float(0.35)), float(0.42)).mul(2.8);
+    const edgeColor = mix(gold, mix(uAccentA, uAccentB, float(0.35)), float(0.42)).mul(2.4);
     col = col.add(edgeColor.mul(edgeGlow));
 
-    // When fully closed (uReveal = 0), tiny jewel star-pinholes still breathe softly;
-    // as uReveal -> 1, the entire dome tiles fade away cleanly to alpha = 0 to reveal the live next room!
-    const closedAlpha = float(0.97).sub(inStarA.mul(0.05).mul(breath));
+    const closedAlpha = float(0.985).sub(inStarA.mul(0.03).mul(breath));
     const alpha = clamp(closedAlpha.mul(float(1.0).sub(effectiveDissolve)), float(0.0), float(1.0));
 
     return vec4(col, alpha);
@@ -311,14 +314,14 @@ export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
       return;
     }
     // Distance from the dome crossing center (0, 26.2, -14):
-    // From the boardwalk / podium floor (dist >= 27 m): mosaic is 100% intact (reveal = 0).
-    // As you climb the trippy spiral arch (dist 26 m -> 9.5 m) or fly up toward the dome:
-    // the Arabic geometric tiles fade away tile-by-tile to reveal the live next room across the whole dome!
+    // From the boardwalk, podium floor, and lower spiral (dist >= 20 m): full Arabic mosaic is intact (reveal = 0).
+    // As you climb the upper half of the spiral (dist 20 m -> 8.5 m) or fly up toward the dome:
+    // the Arabic geometric stars melt away in molten gold to reveal the live next room spanning the whole dome!
     const dx = pos.x - portal.position[0];
     const dy = (pos.y + 1.4) - portal.position[1];
     const dz = pos.z - portal.position[2];
     const dist = Math.hypot(dx, dy, dz);
-    const t = THREE.MathUtils.clamp((26.5 - dist) / (26.5 - 9.5), 0, 1);
+    const t = THREE.MathUtils.clamp((20.0 - dist) / (20.0 - 8.5), 0, 1);
     targetReveal = t * t * (3 - 2 * t);
   };
 

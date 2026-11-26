@@ -324,12 +324,13 @@ export function framePortal(camera: THREE.PerspectiveCamera, viewer: THREE.Persp
     const absDist = Math.abs(fullLocalRel.z);
     const effDist = effectivePortalDistance(absDist);
     const destCenterY = spawn.position[1] + PORTAL_CENTER_Y;
-    const minEyeY = spawn.position[1] + 1.5;
-    const rawEyeY = destCenterY + fullLocalRel.y;
-    const liftY = rawEyeY < minEyeY ? minEyeY - rawEyeY : 0;
+    // Compress lateral/vertical parallax softly so the virtual eye stays inside the destination room's
+    // action height (never dipping under its floor or floating above its ceiling/walls).
+    const clampedY = THREE.MathUtils.clamp(fullLocalRel.y * 0.22, -1.2, 1.8);
+    const clampedX = THREE.MathUtils.clamp(fullLocalRel.x * 0.35, -3.5, 3.5);
 
     lensRel
-      .set(fullLocalRel.x * 0.45, fullLocalRel.y + liftY, Math.sign(fullLocalRel.z || 1) * effDist)
+      .set(clampedX, clampedY, Math.sign(fullLocalRel.z || 1) * Math.min(effDist, 8.5))
       .applyQuaternion(fullDestQuat);
     camera.position.copy(lensRel).add(lensSpawnPos.set(spawn.position[0], destCenterY, spawn.position[2]));
     camera.quaternion.copy(fullDeltaQuat).multiply(viewer.quaternion);

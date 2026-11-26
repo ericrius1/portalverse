@@ -382,7 +382,7 @@ async function boot(): Promise<void> {
       // The button isn't focused for you, so a Space press meant as a jump can't click it.
       if (fallen) closeAllModals();
       else respawnButton.blur();
-      mobileControls?.setInputLocked(fallen || !gateExited || isAnyModalOpen());
+      syncInputLocks();
       syncPointerUi(engine.avatar.pointerLocked);
     },
     onMovementModeChange: (mode) => {
@@ -673,26 +673,31 @@ async function boot(): Promise<void> {
     engine.triggerNearestPortal();
   });
 
+  // Keep engine UI lock (gate/modals) separate from engine.hasFallen so closing modals
+  // on a fall never leaves engine.inputLocked stuck true after respawn().
+  function syncInputLocks(): void {
+    const uiLocked = !gateExited || isAnyModalOpen();
+    engine.setInputLocked(uiLocked);
+    mobileControls?.setInputLocked(uiLocked || engine.hasFallen);
+  }
+
   // Modal helpers
   function openModal(modal: HTMLElement): void {
-    if (!gateExited) return;
+    if (!gateExited || engine.hasFallen) return;
     closeAllModals();
     modal.classList.remove('hidden');
     if (modal === modalCharacters) {
       characterSelect.show();
     }
-    engine.setInputLocked(true);
-    mobileControls?.setInputLocked(true);
+    syncInputLocks();
     syncPointerUi(false);
   }
 
   function closeAllModals(relockPointer = false): void {
     characterSelect.hide();
     for (const modal of allModals) modal.classList.add('hidden');
-    const locked = !gateExited || engine.hasFallen;
-    engine.setInputLocked(locked);
-    mobileControls?.setInputLocked(locked);
-    if (relockPointer && gateExited && !mobileControls?.isEnabled()) {
+    syncInputLocks();
+    if (relockPointer && gateExited && !engine.hasFallen && !mobileControls?.isEnabled()) {
       engine.requestPointerLock();
     }
     syncPointerUi(engine.avatar.pointerLocked);
@@ -807,7 +812,7 @@ async function boot(): Promise<void> {
   const respawn = () => {
     if (!engine.hasFallen) return;
     engine.respawn();
-    mobileControls?.setInputLocked(false);
+    syncInputLocks();
     if (!mobileControls?.isEnabled()) engine.requestPointerLock();
   };
   respawnButton.addEventListener('click', respawn);
@@ -978,8 +983,7 @@ async function boot(): Promise<void> {
     btnGateTutorial.disabled = true;
     btnGateEnter.disabled = true;
     loadingGate.classList.add('exiting');
-    engine.setInputLocked(false);
-    mobileControls?.setInputLocked(false);
+    syncInputLocks();
     if (!mobileControls?.isEnabled()) {
       engine.requestPointerLock();
     }
