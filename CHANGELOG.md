@@ -2,6 +2,16 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## YOU DIED fall screen — Unreleased
+
+### Changed
+
+- Falling into the void fades the room to grayscale and reveals a crimson **YOU DIED** across a dark band. **Respawn** and **or press Enter** use the same locally hosted Cormorant Garamond serif in warm ivory.
+
+### Design & engineering decisions
+
+- The scene stays visible behind the title to echo the Souls reference. Respawn is available throughout the reveal, and reduced-motion preferences skip the animation.
+
 ## Landable floating stones in Abyss — Unreleased
 
 ### Added

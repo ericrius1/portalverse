@@ -629,7 +629,14 @@ kbd {
   }
 }
 
-/* Fell out of a room: the view dims and offers a respawn */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url('/fonts/cormorant-garamond-latin-500.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
 .fall-overlay {
   position: fixed;
   inset: 0;
@@ -637,48 +644,100 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(3, 3, 10, 0.72);
+  font: 500 1rem 'Cormorant Garamond', Georgia, serif;
+  background: radial-gradient(ellipse at center, #08060438 12%, #070503a6 100%);
+  backdrop-filter: grayscale(1) brightness(0.64);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.64);
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.9s ease;
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
 }
 
 .fall-overlay.active {
+  visibility: visible;
+  transition: opacity 0.85s ease-out;
   opacity: 1;
   pointer-events: auto;
 }
 
 .fall-panel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  transform: translateY(8px);
-  transition: transform 0.9s ease;
-}
-
-.fall-overlay.active .fall-panel {
-  transform: translateY(0);
+  width: 100%;
+  position: relative;
+  text-align: center;
 }
 
 .fall-title {
-  margin: 0;
-  color: #e2e8f0;
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  padding: 0.25em 0;
+  background: linear-gradient(transparent, #080605d9 16%, #070504ed 48%, #080605df 80%, transparent);
+  color: #ad3933;
+  font: inherit;
+  font-size: clamp(3.45rem, min(11vw, 18vh), 10rem);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  text-shadow: 0 2px 3px #000;
+}
+
+.fall-overlay.active .fall-title {
+  animation: death-title-in 1.35s ease-out both;
+}
+
+@keyframes death-title-in {
+  from { opacity: 0; letter-spacing: -0.055em; }
+  to { opacity: 1; letter-spacing: -0.035em; }
+}
+
+.fall-actions {
+  position: absolute;
+  top: calc(100% + clamp(4px, 2vh, 20px));
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
 }
 
 .fall-respawn {
-  min-width: 140px;
-  padding: 10px 22px;
-  font-size: 15px;
+  cursor: pointer;
+  min-width: 11rem;
+  min-height: 44px;
+  border: solid transparent;
+  border-width: 1px 0;
+  border-image: linear-gradient(90deg, transparent, #b29b72 50%, transparent) 1;
+  background: linear-gradient(90deg, transparent, #16110bdb 25% 75%, transparent);
+  color: #e8d8b8;
+  font: inherit;
+  font-size: 1.32rem;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 3px #000;
+}
+
+.fall-respawn:is(:hover, :focus-visible) {
+  color: #fff3d8;
+  background: linear-gradient(90deg, transparent, #49351ce6 28% 72%, transparent);
+}
+
+.fall-respawn:focus-visible {
+  outline: 1px solid #e8d8b8;
+  outline-offset: 3px;
 }
 
 .fall-hint {
-  margin: 0;
-  color: rgba(226, 232, 240, 0.6);
-  font-size: 12.5px;
+  color: #c6baa4;
+  font-size: 1rem;
+  letter-spacing: 0.035em;
+  text-shadow: 0 1px 4px #000, 0 0 8px #000;
+}
+
+.fall-hint kbd {
+  all: unset;
+  color: #ebdcc3;
+  font-variant: small-caps;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fall-overlay, .fall-overlay.active { transition: none; }
+  .fall-overlay.active .fall-title { animation: none; }
 }
 
 /* Warp Overlay */
