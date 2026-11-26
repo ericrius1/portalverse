@@ -583,6 +583,7 @@ async function boot(): Promise<void> {
 
   btnWorlds.addEventListener('click', () => {
     renderWorldDirectory();
+    worldDirectoryList.scrollTop = 0;
     openModal(modalWorlds);
   });
 
@@ -691,6 +692,7 @@ async function boot(): Promise<void> {
       openModal(modalPortal);
     } else if (e.code === 'KeyM') {
       renderWorldDirectory();
+      worldDirectoryList.scrollTop = 0;
       openModal(modalWorlds);
     } else if (e.code === 'KeyH' || e.key === '?') {
       if (!modalControls.classList.contains('hidden')) {

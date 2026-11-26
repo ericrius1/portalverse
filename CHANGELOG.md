@@ -2,7 +2,25 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
-## Tighter soundtrack transitions — Unreleased (2026-11-26)
+## Scrollable Rooms modal, GitHub links & open contributor README — Unreleased (2026-11-26)
+
+### Fixed
+
+- **Scrollable Rooms directory & viewport-clamped modals (`app/styles.css`, `app/main.ts`)** — constrained `.modal` to `calc(100dvh - 32px)` in a flex column and made `.world-cards` an independent vertical scroll container (`flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain`) with `flex-shrink: 0` on `.world-card`, fixing the bug where the 12-room list overflowed off the top and bottom of the screen and couldn't be scrolled.
+
+### Added
+
+- **GitHub link in the HUD & Rooms modal (`index.html`, `app/styles.css`)** — added a direct GitHub button in the top-right HUD action bar and a footer CTA in the Rooms modal linking to `https://github.com/ericrius1/portalverse`.
+
+### Changed
+
+- **Community-first README & GitHub repo metadata (`README.md`)** — rewrote `README.md` with a step-by-step "Clone & Run Locally" + "Add Your Own Room" guide right up front, updated the project layout for all 12 rooms, and updated the GitHub repository About description & live Railway homepage URL so anyone visiting knows they can clone and contribute their own room.
+
+### Design & engineering decisions
+
+- **Inner list scrolling with pinned header/footer** — keeping the modal header, close button, and GitHub CTA pinned while scrolling only `.world-cards` ensures the close button stays reachable at any viewport height while all other modals also fall back to `overflow-y: auto` on short screens.
+
+## Tighter soundtrack transitions — `d21dc06` (2026-11-26)
 
 ### Changed
 
@@ -15,7 +33,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 - Playtesting showed the long spatial blend kept two rooms' beds clashing for most of the walk, and left the old room hanging after arrival. The transition belongs to the moment of crossing, so `enterRoom()` schedules the crossfade from the crossing callback itself, not from a frame that may arrive late while the new room mounts.
 - The crossing sweep has its own filter, so the warp filter and the sweep never override each other.
 
-## Adaptive soundtrack and portal sounds — Unreleased (2026-11-26)
+## Adaptive soundtrack and portal sounds — `6d841b0` (2026-11-26)
 
 ### Added
 
