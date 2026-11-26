@@ -10,8 +10,13 @@ function stoneAttributes(stone: Stone): { motion: number[]; phase: number[] } {
  * Every stone in one mesh: a chamfered slab with a jagged rock hanging beneath it,
  * flat-shaded. Positions are world space at rest; `aMotion`/`aPhase` let the shader
  * drift each stone, and `aLook` holds (glow, seed, rest top height, thickness).
+ * Calls `pause` every few dozen stones so a caller can let the browser draw.
  */
-export function buildStoneGeometry(stones: Stone[], rand: () => number): THREE.BufferGeometry {
+export async function buildStoneGeometry(
+  stones: Stone[],
+  rand: () => number,
+  pause: () => Promise<void> = async () => {},
+): Promise<THREE.BufferGeometry> {
   const position: number[] = [];
   const normal: number[] = [];
   const motion: number[] = [];
@@ -23,7 +28,8 @@ export function buildStoneGeometry(stones: Stone[], rand: () => number): THREE.B
   const middle = new THREE.Vector3();
   const inside = new THREE.Vector3();
 
-  for (const stone of stones) {
+  for (const [index, stone] of stones.entries()) {
+    if (index % 40 === 39) await pause();
     const [m0, m1, m2, m3] = stoneAttributes(stone).motion;
     const [p0, p1, p2, p3] = stone.phases;
     const [l0, l1, l2, l3] = [stone.glow, stone.seed, stone.topY, stone.thickness];

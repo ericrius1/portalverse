@@ -3,6 +3,7 @@ import { routeGates, threshold, SIDE_PORTALS } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
 import type { FallSettings, RegistryFile, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, WorldModule } from '../types';
 import { createArchwayPortal } from './PortalMesh';
+import { breathe } from './breathe';
 
 const noEntry = (): void => {};
 
@@ -65,6 +66,7 @@ export class RoomInstance {
         addPlatform: bounds => room.platforms.push(bounds),
         setTerrainHeight: fn => { room.terrainHeight = fn; },
         allowFalling: (settings = {}) => { room.falling = { ...settings }; },
+        breathe,
         configureSpawn: spawn => { room.spawnOverride = spawn; },
         onUpdate: fn => room.updates.push(fn),
         onDispose: fn => room.cleanups.push(fn),

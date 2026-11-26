@@ -2,7 +2,9 @@
 
 A co-op **Three.js WebGPU + TSL** portal metaverse built for **Eric (`ericrius1`)** and **JP (`jpwhitaker`)** to co-develop in parallel — with isolated personal rooms linked in a seamless circular portal loop, live perspective-correct portal previews, real-time multiplayer presence, live portal linking, and federated cross-URL portal handoffs.
 
-Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through the circular portals to explore the connected loop. The [room authoring guide](./COLLAB.md#building-your-room) covers the shared `defineRoom` contract, spawns, and budgets. See [CHANGELOG.md](./CHANGELOG.md) for recent changes and architectural decisions.
+Edit [your room module](./worlds/jp-world/index.ts) and walk or sprint through the circular portals to explore the connected loop. The [room authoring guide](./COLLAB.md#building-your-room) covers the shared `defineRoom` contract, spawns, and budgets.
+
+Rooms load while players walk through others, so each room gets about 10 seconds to get ready, and only about 5 if someone is boosting in flight. That loading runs on the same thread that draws every frame. Break slow setup into small pieces with `await ctx.breathe()`, build unchanging data once and share it across mounts, and move heavy pure maths to Web Workers. [Loading: about 10 seconds, in small pieces](./COLLAB.md#loading-about-10-seconds-in-small-pieces) explains how. See [CHANGELOG.md](./CHANGELOG.md) for recent changes and architectural decisions.
 
 ## Features
 

@@ -46,9 +46,39 @@ The engine gives every local room a framed entrance and exit on the Z axis. Keep
 - For custom portal art, reserve slots with `customPortalSlots` in the manifest, then use `ctx.addPortal` or `ctx.registerCustomPortal` during mount. Unreserved slots are available to player-placed portals, including offline play.
 - Every local preview uses the destination scene and a common up direction, rendered at screen resolution. Crossing a main frame preserves the player’s position relative to the threshold and viewing direction. Up to four visible windows render live, along with the route gate at the far end of each room they show; portals beyond those show snapshots. Remote links use URL handoffs.
 
+### Loading: about 10 seconds, in small pieces
+
+Only five rooms are loaded at a time: the player's room and two each way (`packages/core/src/engine/roomWindow.ts`). A room starts loading when the player is two rooms away from it, so it has two rooms of travel (72.5 m each) to get ready:
+
+| Player | Speed | Time to get ready |
+|---|---|---|
+| Walking | 8.2 m/s | about 18 s |
+| Sprinting | 14.5 m/s | about 10 s |
+| Boosting in flight | 31 m/s | about 5 s |
+
+After `mount` returns, the engine still compiles the room's shaders and takes its portal snapshots, so aim to finish setup well inside 5 seconds. Rooms near the starting room load behind the loading screen, and a jump from the Rooms menu shows the warp screen until its room is ready.
+
+That's plenty of time, but it's all on one thread: the JavaScript thread that also draws every frame of the room the player is in. A single 50 ms stretch of setup drops three frames there, however early it starts. So spend the time in small pieces:
+
+- **`await ctx.breathe()`** between steps of `mount` and inside long loops.
+  - Once the current stretch of work has run for 6 ms, it pauses so the browser can draw, then carries on. Otherwise it returns straight away, so it's cheap to call often.
+  - Code outside `mount`, such as module-level builders, can import the same `breathe` from `@portalverse/core/rooms/kit`.
+  - Aim for no stretch over about 8 ms, half a frame. A helper that loops over many items can take a `pause` callback and call it every few dozen items, as `buildStoneGeometry` in `worlds/jp-abyss/geometry.ts` does.
+- **Build once, share across mounts.**
+  - A room that leaves the window is disposed and mounted fresh when it comes back, often several times a session. Anything that's always the same can be built once at module level and reused: a seeded layout, a generated texture, vertex arrays.
+  - Give each mount its own `BufferGeometry` around the shared arrays, so it uploads and disposes its own GPU copy.
+  - `abyssLayout()` in `worlds/jp-abyss/index.ts` does this. The first load is spread over about 100 ms with no stretch over 14 ms, and every later mount takes about 2 ms.
+- **Web Workers for heavy pure maths.**
+  - Noise, procedural terrain, path layouts and geometry arrays can be built entirely off the main thread. Create the worker with `new Worker(new URL('./generate.worker.ts', import.meta.url), { type: 'module' })`.
+  - Send the typed arrays back with `postMessage(result, [result.buffer])` so they move between threads without being copied.
+  - A worker can't touch the scene, three.js objects or the GPU, so make meshes and materials on the main thread from what it sends back.
+- **Already off the main thread**: shader compilation (the loader uses three.js's `compileAsync`, which builds WebGPU pipelines asynchronously) and image decoding.
+
+To check a room, time its `mount`. Also record a trace in the browser's Performance panel while walking toward the room and look for long tasks.
+
 ### Room budgets
 
-Keep room assets under `worlds/<id>/` and import them through Vite (for example, `import mural from './mural.png?url'`, or `import.meta.glob('./assets/*.glb', { query: '?url', import: 'default', eager: true })` for a folder). `@portalverse/core/rooms/kit` has `loadGLB`, `groundModel`, `disposeObject` and `seededRandom` for rooms that load models; models must be uncompressed (no Draco, meshopt or KTX2). Note where third-party assets came from in a `CREDITS.md` in the room folder. Run `npm run check:rooms` while authoring and `npm run build` before submitting.
+Keep room assets under `worlds/<id>/` and import them through Vite (for example, `import mural from './mural.png?url'`, or `import.meta.glob('./assets/*.glb', { query: '?url', import: 'default', eager: true })` for a folder). `@portalverse/core/rooms/kit` has `loadGLB`, `groundModel`, `disposeObject` and `seededRandom` for rooms that load models, plus `breathe` for spreading slow setup and `NO_GROUND` for rooms that allow falling; models must be uncompressed (no Draco, meshopt or KTX2). Note where third-party assets came from in a `CREDITS.md` in the room folder. Run `npm run check:rooms` while authoring and `npm run build` before submitting.
 
 | Check | Starting limit |
 | --- | --- |

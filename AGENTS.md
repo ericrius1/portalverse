@@ -61,7 +61,14 @@ Everything—both the Vite WebGPU frontend (`dist/`) and the authoritative multi
      - Max **4 MiB** per single file
      - Max **2048 px** per edge for standalone PNG/KTX2 textures
      - GLB models must be uncompressed (no Draco, meshopt, or KTX2); credit third-party assets in `worlds/<room-id>/CREDITS.md`.
-5. Only a window of rooms stays mounted: the player's room plus `ROOM_WINDOW_RADIUS` (currently `2`) each way in the loop (`packages/core/src/engine/roomWindow.ts`). A room left outside it is disposed after a few seconds unseen and mounted fresh on return, so keep nothing that must survive a visit, and keep `mount(ctx)` quick: its synchronous work runs on the render thread while the player walks.
+5. Only a window of rooms stays mounted: the player's room plus `ROOM_WINDOW_RADIUS` (currently `2`) each way in the loop (`packages/core/src/engine/roomWindow.ts`). A room left outside it is disposed after a few seconds unseen and mounted fresh on return, so keep nothing that must survive a visit.
+6. **Loading budget: about 10 seconds, in small pieces.** A room starts loading when the player is two rooms away, so it has two rooms of travel to get ready: about 10 s at a sprint, but only about 5 s for someone boosting in flight. Shader compiling and portal snapshots come after `mount`, so finish setup well inside that.
+   - *The catch*: `mount` runs on the same thread that draws the room the player is in. Any single stretch of work longer than about 8 ms stutters their frame, however early it starts.
+   - *The fix*:
+     - `await ctx.breathe()` between steps and inside long loops. It pauses only after 6 ms of work, so calling it often is cheap. Code outside `mount` can use `breathe` from `@portalverse/core/rooms/kit`.
+     - Build fixed data (seeded layouts, generated textures, vertex arrays) once at module level and share it across mounts.
+     - Move heavy pure maths to a Web Worker.
+   - See [Loading: about 10 seconds, in small pieces](./COLLAB.md#loading-about-10-seconds-in-small-pieces) for the details. `worlds/jp-abyss` is the worked example.
 
 ## 4. Local Development & Tooling
 

@@ -1,4 +1,4 @@
-import { seededRandom } from '@portalverse/core/rooms/kit';
+import { breathe, seededRandom } from '@portalverse/core/rooms/kit';
 
 /**
  * A small seamless noise image, made once and shared by every mount, so the fog,
@@ -7,7 +7,7 @@ import { seededRandom } from '@portalverse/core/rooms/kit';
  */
 export const NOISE_SIZE = 256;
 
-let pixels: Uint8Array | undefined;
+let pixels: Promise<Uint8Array> | undefined;
 
 function lattice(period: number, rand: () => number): Float32Array {
   const values = new Float32Array(period * period);
@@ -98,20 +98,30 @@ function normalise(values: Float32Array): void {
   for (let i = 0; i < values.length; i++) values[i] = (values[i] - lo) / (hi - lo);
 }
 
-export function abyssNoisePixels(): Uint8Array {
-  if (pixels) return pixels;
-  const rand = seededRandom(1307);
-  // Built in this order so each channel draws the same random numbers as before.
-  const planes = [
-    fractalPlane(rand, [4, 8, 16, 32, 64]),
-    fractalPlane(rand, [6, 12, 24, 48]),
-    cellEdgePlane(rand, 9),
-    fractalPlane(rand, [64, 128]),
-  ];
-  planes.forEach(normalise);
-  pixels = new Uint8Array(NOISE_SIZE * NOISE_SIZE * 4);
-  for (let i = 0; i < NOISE_SIZE * NOISE_SIZE; i++) {
-    for (let c = 0; c < 4; c++) pixels[i * 4 + c] = Math.round(planes[c][i] * 255);
-  }
+/** The texture's pixels, built on first use a channel at a time so no frame stalls. */
+export function abyssNoisePixels(): Promise<Uint8Array> {
+  pixels ??= buildPixels();
   return pixels;
+}
+
+async function buildPixels(): Promise<Uint8Array> {
+  const rand = seededRandom(1307);
+  // Built in this order so each channel draws the same random numbers every time.
+  const makers = [
+    () => fractalPlane(rand, [4, 8, 16, 32, 64]),
+    () => fractalPlane(rand, [6, 12, 24, 48]),
+    () => cellEdgePlane(rand, 9),
+    () => fractalPlane(rand, [64, 128]),
+  ];
+  const planes: Float32Array[] = [];
+  for (const make of makers) {
+    planes.push(make());
+    await breathe();
+  }
+  planes.forEach(normalise);
+  const out = new Uint8Array(NOISE_SIZE * NOISE_SIZE * 4);
+  for (let i = 0; i < NOISE_SIZE * NOISE_SIZE; i++) {
+    for (let c = 0; c < 4; c++) out[i * 4 + c] = Math.round(planes[c][i] * 255);
+  }
+  return out;
 }

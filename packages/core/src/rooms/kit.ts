@@ -2,12 +2,15 @@ import * as THREE from 'three/webgpu';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 
 /**
- * Small helpers for rooms that load models. Import assets with Vite's `?url`
- * suffix (`import couch from './assets/couch.glb?url'`) so the room's build
- * budget counts them.
+ * Small helpers for rooms. Import assets with Vite's `?url` suffix
+ * (`import couch from './assets/couch.glb?url'`) so the room's build budget
+ * counts them. `breathe` spreads slow setup over several frames (see
+ * "Loading: about 10 seconds, in small pieces" in COLLAB.md), and `NO_GROUND`
+ * marks drops in rooms that allow falling.
  */
 
 export { NO_GROUND } from '../engine/falling';
+export { breathe } from '../engine/breathe';
 
 const gltfLoader = new GLTFLoader();
 

@@ -49,7 +49,7 @@ import {
   vec3,
 } from 'three/tsl';
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
-import { seededRandom } from '@portalverse/core/rooms/kit';
+import { breathe, seededRandom } from '@portalverse/core/rooms/kit';
 import { buildPathStones, buildStrayStones, centreline, distanceToPath, TILT, Walkway } from './path';
 import { buildSpikeGeometry, buildStoneGeometry, buildWispGeometry, moteAttributes, stoneUnderside, type Mote, type Wisp } from './geometry';
 import { abyssNoisePixels, NOISE_SIZE } from './noise';
@@ -113,14 +113,11 @@ interface AbyssLayout {
 
 let shared: Promise<AbyssLayout> | undefined;
 
-/** Hand control back to the browser so it can draw a frame between the heavy steps. */
-const breathe = () => new Promise<void>(resolve => setTimeout(resolve, 0));
-
 /**
  * Everything about the room that never changes: the stones and the walkway, and
  * the vertex data for the stones, smoke, motes, fog sheets and spires. Built once,
- * in steps of a frame or two each, and shared by every mount, so mounting stays
- * quick (the engine mounts rooms while the player walks).
+ * pausing with `breathe()` between steps, and shared by every mount, so mounting
+ * stays quick (the engine mounts rooms while the player walks).
  */
 function abyssLayout(): Promise<AbyssLayout> {
   shared ??= buildLayout();
@@ -128,10 +125,11 @@ function abyssLayout(): Promise<AbyssLayout> {
 }
 
 async function buildLayout(): Promise<AbyssLayout> {
-  abyssNoisePixels();
+  await abyssNoisePixels();
   await breathe();
   const line = centreline();
   const pathStones = buildPathStones(seededRandom(7), line);
+  await breathe();
   const stones = [...pathStones, ...buildStrayStones(seededRandom(8), line)];
   await breathe();
 
@@ -163,6 +161,8 @@ async function buildLayout(): Promise<AbyssLayout> {
     });
   }
 
+  await breathe();
+
   // Smoke hangs from about half the path stones and every loose one.
   const wispRand = seededRandom(12);
   const wisps: Wisp[] = [];
@@ -176,6 +176,8 @@ async function buildLayout(): Promise<AbyssLayout> {
       seed: wispRand(),
     });
   }
+
+  await breathe();
 
   // Spires: a few close in, more in the middle distance, and most far out toward the haze.
   const rand = seededRandom(13);
@@ -202,18 +204,22 @@ async function buildLayout(): Promise<AbyssLayout> {
     placed++;
   }
   await breathe();
-  const stoneGeometry = buildStoneGeometry(stones, seededRandom(9));
+  const stoneGeometry = await buildStoneGeometry(stones, seededRandom(9), breathe);
+  await breathe();
+  const wispGeometry = buildWispGeometry(wisps);
+  await breathe();
+  const swellSheet = new THREE.PlaneGeometry(1100, 1100, 120, 120).rotateX(-Math.PI / 2);
   await breathe();
 
   return {
     walkway: new Walkway(pathStones),
     stones: stoneGeometry,
-    wisps: buildWispGeometry(wisps),
+    wisps: wispGeometry,
     // One set of instance buffers for every mount, so remounting doesn't add GPU buffers.
     sparkles: moteAttributes(sparkles),
     halos: moteAttributes(halos),
     flatSheet: new THREE.PlaneGeometry(1100, 1100).rotateX(-Math.PI / 2),
-    swellSheet: new THREE.PlaneGeometry(1100, 1100, 120, 120).rotateX(-Math.PI / 2),
+    swellSheet,
     spireShapes,
     spires,
   };
@@ -253,7 +259,7 @@ export default defineRoom('jp-abyss', {
     // Step off the path and you fall; reach the top of the fog and you're offered a respawn.
     ctx.allowFalling({ respawnBelow: FOG_LAYERS[FOG_LAYERS.length - 1].y });
 
-    const noise = new THREE.DataTexture(abyssNoisePixels(), NOISE_SIZE, NOISE_SIZE, THREE.RGBAFormat, THREE.UnsignedByteType);
+    const noise = new THREE.DataTexture(await abyssNoisePixels(), NOISE_SIZE, NOISE_SIZE, THREE.RGBAFormat, THREE.UnsignedByteType);
     noise.wrapS = THREE.RepeatWrapping;
     noise.wrapT = THREE.RepeatWrapping;
     noise.magFilter = THREE.LinearFilter;
@@ -284,6 +290,7 @@ export default defineRoom('jp-abyss', {
     underglow.position.set(15, -100, 10);
     root.add(underglow);
 
+    await ctx.breathe();
     // Stones: weathered grey with lichen on top, cracked, worn at the edges, glowing underneath.
     {
       const motion = attribute<'vec4'>('aMotion', 'vec4');
@@ -326,6 +333,7 @@ export default defineRoom('jp-abyss', {
       root.add(new THREE.Mesh(own(copyOf(layout.stones)), material));
     }
 
+    await ctx.breathe();
     // Glowing motes: sparkles drifting under each stone, and a soft halo of light beneath it.
     const addMotes = (buffers: AbyssLayout['sparkles'], shade: (seed: FloatNode, soft: FloatNode) => { tint: Vec3Node; alpha: FloatNode; scale: FloatNode; wander: Vec3Node }) => {
       const rest = instancedBufferAttribute(buffers.rest) as unknown as Vec4Node;
@@ -362,6 +370,7 @@ export default defineRoom('jp-abyss', {
       wander: vec3(0, 0, 0),
     }));
 
+    await ctx.breathe();
     // Smoke falling from beneath the stones, twisting and blown about as it goes (after JP's coffee smoke).
     {
       const origin = attribute<'vec4'>('aOrigin', 'vec4');
@@ -392,6 +401,7 @@ export default defineRoom('jp-abyss', {
       root.add(mesh);
     }
 
+    await ctx.breathe();
     // Far things melt into the horizon colour by their true distance from the eye, finishing before the
     // camera's 450 m draw distance can clip them, so the fog has no edge whichever way you look.
     const haze = smoothstep(HAZE_NEAR, HAZE_FAR, positionWorld.sub(cameraPosition).length());
@@ -427,6 +437,7 @@ export default defineRoom('jp-abyss', {
       });
     }
 
+    await ctx.breathe();
     // Needle spires rising out of the fog, fading into it toward their roots and into the haze far off.
     {
       const material = own(new THREE.MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0.3, fog: false }));

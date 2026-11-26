@@ -255,6 +255,14 @@ export interface WorldContext {
   addPortal: (portal: PortalDefinition) => PortalVisualHandle;
   /** Register a custom-rendered portal (reserve it with `customPortalSlots` first). */
   registerCustomPortal: (handle: PortalVisualHandle) => void;
+  /**
+   * Pause, if this stretch of setup has run for a few milliseconds, so the browser
+   * can draw a frame; otherwise return at once. Rooms load while the player walks
+   * through others, on the same thread that draws them: `await ctx.breathe()`
+   * between steps and inside long loops of a slow `mount` so no frame stalls.
+   * Also exported as `breathe` from `rooms/kit` for code outside `mount`.
+   */
+  breathe: () => Promise<void>;
   /** Register an animated object/callback updated every frame. */
   onUpdate: (fn: (dt: number, elapsed: number) => void) => void;
   /** Register a cleanup callback when leaving the world. */

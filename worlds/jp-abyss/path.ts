@@ -118,10 +118,20 @@ export function sampleAt(line: PathSample[], s: number): PathSample {
 
 /** Horizontal distance from (x, z) to the nearest centreline sample. */
 export function distanceToPath(line: PathSample[], x: number, z: number): number {
+  // Find roughly where the path is nearest from every tenth sample, then check every sample around there.
+  const COARSE = 10;
+  const squared = (p: PathSample) => (p.x - x) ** 2 + (p.z - z) ** 2;
+  let near = 0;
   let best = Infinity;
-  for (const p of line) {
-    const d = (p.x - x) ** 2 + (p.z - z) ** 2;
-    if (d < best) best = d;
+  for (let i = 0; i < line.length; i += COARSE) {
+    const d = squared(line[i]);
+    if (d < best) {
+      best = d;
+      near = i;
+    }
+  }
+  for (let i = Math.max(0, near - 2 * COARSE); i <= Math.min(line.length - 1, near + 2 * COARSE); i++) {
+    best = Math.min(best, squared(line[i]));
   }
   return Math.sqrt(best);
 }
@@ -277,7 +287,11 @@ export function buildPathStones(rand: () => number, line = centreline()): Stone[
     if (real) {
       // Inside a bend, rows crowd together: skip sites that would make slivers.
       if (distance > PATH_HALF_WIDTH - 0.15) return;
-      if (sites.some(o => o.real && Math.hypot(o.p[0] - p[0], o.p[1] - p[1]) < 1.05)) return;
+      // Sites come row by row along the path, so only the last few rows can be this close.
+      for (let i = Math.max(0, sites.length - 60); i < sites.length; i++) {
+        const o = sites[i];
+        if (o.real && Math.hypot(o.p[0] - p[0], o.p[1] - p[1]) < 1.05) return;
+      }
     } else if (distance < PATH_HALF_WIDTH + 0.5) {
       return;
     }

@@ -2,6 +2,33 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so Eric, JP, and their agents stay synced across sessions.
 
+## `breathe()` and the 10-second loading budget — Unreleased
+
+### Added
+
+- **`ctx.breathe()`, also exported from `rooms/kit` (`engine/breathe.ts`)**
+  - Once the current stretch of setup has run for 6 ms, it pauses so the browser can draw a frame (`scheduler.yield()` where available, otherwise `setTimeout(0)`). Otherwise it returns at once, so rooms can call it often.
+  - `__tests__/breathe.test.ts` checks that it lets other work run after a full slice, doesn't before, and is the same helper on the context and in the kit.
+- **Docs on the loading budget and how to use it**
+  - COLLAB.md has a new section, "Loading: about 10 seconds, in small pieces". AGENTS.md gains rule 6, and the README gains a short summary near the top.
+  - They give how long a room has to get ready at each travel speed. The section covers why that time is all on the drawing thread, and the techniques: `breathe`, building once and sharing across mounts, Web Workers for heavy pure maths, and what's already off the main thread.
+
+### Changed
+
+- **The abyss room uses `breathe` throughout.**
+  - Its noise texture builds one channel at a time and its stone geometry pauses every 40 stones. Its `mount` breathes between sections, so the first-time creation of its materials is split up too.
+  - On the very first load (Node, cold), its longest stretch of work fell from 32 ms to 14 ms, inside one frame. Later mounts still take about 2 ms and never pause.
+  - Its layout is unchanged, checked against a hash of the stones and of the noise pixels.
+
+### Design & engineering decisions
+
+- **Time-slicing over workers as the default**
+  - *Why*: It works for every room, including ones that load models, with a one-line change. Workers can't touch three.js or the GPU, so they only help with pure maths.
+  - *Decision*: Rooms with heavy procedural generation can still move that maths to a worker, and the docs show how.
+- **A 6 ms slice**
+  - *Why*: It leaves most of a 16 ms frame for the engine to draw the room the player is in.
+  - *Tradeoff*: Setup takes a little longer overall, which is fine with 5–10 seconds to spare.
+
 ## Opt-in falling and a looser path rule — `jp/abyss-room`, merged in `61512a6` (2026-11-25)
 
 ### Added
@@ -81,7 +108,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 - **Mounting is quick, for the five-room window loader**
   - *Why*: The loader mounts rooms while you walk, so a slow `mount` stalls the frame. At first this room took 33–50 ms per mount, and about 100 ms the first time.
   - *Decision*: The layout and all vertex data are built once per page and shared by every mount. Each mount only wraps the shared arrays in its own geometries and makes its materials, which takes about 2 ms.
-  - *Decision*: The first build runs in steps with a pause between each so the browser can draw. Its longest step is the 29 ms noise texture, down from 45 ms after a loop rewrite that gives identical pixels.
+  - *Decision*: The first build runs in steps with a pause between each so the browser can draw. The noise texture also takes 29 ms instead of 45 after a loop rewrite that gives identical pixels. The `breathe()` entry above splits the first build up further.
   - *Decision*: The sparkle and halo instance buffers are shared too, so remounting the room doesn't add GPU buffers.
 
 ## Five-room window loader — `feat/room-window-loader` (2026-11-25)
