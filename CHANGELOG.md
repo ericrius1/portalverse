@@ -2,6 +2,16 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Open creator infrastructure brainstorm — Unreleased (2026-11-26)
+
+### Added
+
+- `InfrastructureBrainstorm.md` consolidates independent Claude, Codex, and Antigravity assessments and cross-reviews into a proposal for creator-hosted rooms, public registration, execution isolation, package integrity, performance budgets, and branching discovery. The repository evidence is refreshed against the shared-device WebGPU layer API and Palace Lagoon.
+
+### Design & engineering decisions
+
+- Preserve the goal of PR-free publishing and broad creative freedom without presenting signatures, worker isolation, or graphics budgets as stronger guarantees than they provide. The document keeps unresolved tradeoffs explicit and proposes profiling plus isolated-renderer and constrained-runtime prototypes before choosing a public room contract. This is a brainstorm, not an approved runtime implementation.
+
 ## Fix frozen controls after falling & respawn + Palace dome mosaic polish — Unreleased (2026-11-26)
 
 ### Fixed
