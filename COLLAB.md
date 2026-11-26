@@ -78,7 +78,7 @@ To check a room, time its `mount`. Also record a trace in the browser's Performa
 
 ### Your room's music
 
-The soundtrack is a live mix of shared stems (Suno Studio loops, all 88 BPM in D minor, so any of them play together). Pick your room's blend in `ROOM_VIBES` in `packages/core/src/audio/musicMix.ts`: stem ids with levels from 0 to 1. Rooms that aren't listed get `DEFAULT_VIBE`. Near a gate you hear a faint hint of the next room; stepping through crossfades to its blend.
+The soundtrack plays one song per room, mixed from shared stems (Suno Studio loops, all 88 BPM in G-sharp minor / B major, so any of them play together). Pick your room's blend in `ROOM_VIBES` in `packages/core/src/audio/musicMix.ts`: stem ids with levels from 0 to 1. Rooms that aren't listed get `DEFAULT_VIBE`. Crossing a portal sweeps the current song out and drops the next room's song in on the beat. Keep `abyss-bed` and `abyss-motif` to dark rooms on their own: their eerie notes clash with the brighter beds.
 
 ### Room budgets
 

@@ -2,6 +2,23 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## One key, one song per room, DJ drops at portals — Unreleased (2026-11-26)
+
+### Fixed
+
+- **Stems were in different keys** — Suno ignored the requested D minor. The takes came out in about six keys (E minor, G minor, E-flat major, C major, B-flat major, D major), so layers clashed even inside one room. Every pitched stem is now transposed from its original take into **G-sharp minor / B major** with Rubber Band. That key needed the smallest shifts (at most 4 semitones). Each stem is also fine-tuned to concert pitch within a few cents, then re-cut into seamless loops. The portal hum is retuned to G-sharp, and the whoosh plays only on chord tones.
+
+### Changed
+
+- **One room's music at a time** — there is no bleed from neighbouring rooms. Each room's blend is a "song" on its own deck, and its stems start together from the top.
+- **DJ transition on crossing** — the current song's filter sweeps down under the whoosh. On the next beat, at least 0.3 s later, the next room's song drops in from its top and its filter opens over 1.6 s.
+- **Consonant room blends** — the abyss bed and motif carry A- and G-naturals for their eerie colour, so they only play in the Abyss. Other rooms layer only the B-major family. Measured key fit of each room's mix is 0.79–0.93.
+
+### Design & engineering decisions
+
+- Keys were measured with chroma analysis (Krumhansl profiles) and tuning with pitch tracking. The shifted takes stay sample-aligned to the bar grid (within 3 ms), and every loop still wraps without a click.
+- Decks replace the spatial blend entirely. `enterRoom()` schedules the sweep and drop from the crossing callback on the audio clock, so the change lands on the beat even if the new room's mount stalls the frame loop.
+
 ## Scrollable Rooms modal, GitHub links & open contributor README — Unreleased (2026-11-26)
 
 ### Fixed
@@ -37,7 +54,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 
 ### Added
 
-- **Live-mixed soundtrack (`packages/core/src/audio/`)** — eight stems made in Suno Studio (abyss bed and motif, holo, golden, lagoon and lofi beds, a soft beat, shimmer bells) loop together on one bar grid. Each room picks a blend in `ROOM_VIBES`. Walking toward a gate fades in the next room's blend, muffled at first as if heard through the portal and opening up as you arrive. It reaches half and half at the portal, so crossing is a blend, not a cut.
+- **Live-mixed soundtrack (`packages/core/src/audio/`)** — eight stems made in Suno Studio (abyss bed and motif, holo, golden, lagoon and lofi beds, a soft beat, shimmer bells) loop together on one bar grid (later retuned into one key; see above). Each room picks a blend in `ROOM_VIBES`. Walking toward a gate fades in the next room's blend, muffled at first as if heard through the portal and opening up as you arrive. It reaches half and half at the portal, so crossing is a blend, not a cut.
 - **Variation** — every 4-bar phrase reshuffles which melodic layers and drums are up (beds stay). The beat follows your speed: quiet when standing, full when running or flying.
 - **Portal sounds** — a soft synthesized drone and a reverb wash swell with the portal screen warp. Each crossing or teleport plays a Suno cosmic whoosh at a random pitch, with a DJ-style filter sweep on the music.
 - **Music toggle** — a **Music** button in the HUD and the **N** key, remembered between visits. `?mute=1` runs the soundtrack at zero volume for automated tests. Falling into the void ducks and darkens the music.

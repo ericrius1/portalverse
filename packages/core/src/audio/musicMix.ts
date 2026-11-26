@@ -1,14 +1,15 @@
 /**
  * The soundtrack's mixing decisions, kept free of Web Audio so they can be tested.
  *
- * Every stem is an 8-bar loop at 88 BPM in D minor, so any of them can play against any
- * other, phase-locked to one shared bar grid. Each room asks for a blend of stems (its
- * vibe) and plays it on its own. Within a few metres of a gate you hear a faint, muffled
- * hint of the room beyond; the switch itself happens as you step through, with a quick
- * crossfade timed to the crossing.
+ * Every stem is an 8-bar loop at 88 BPM in G-sharp minor / B major (Suno's takes were
+ * retuned into one key and to concert pitch), so any stems play together in tune and on
+ * the beat. Each room plays its own blend (its vibe) as one "song", and only that song:
+ * crossing a portal sweeps the current song out and drops the next room's song in from
+ * its top on the next beat, the way a DJ mixes between records in the same key.
  */
 
 export const MUSIC_BPM = 88;
+export const BEAT_SECONDS = 60 / MUSIC_BPM;
 export const BEATS_PER_BAR = 4;
 export const BAR_SECONDS = (60 / MUSIC_BPM) * BEATS_PER_BAR;
 /** Every stem loops after this many bars. */
@@ -53,12 +54,13 @@ export const ROOM_VIBES: Record<string, Vibe> = {
   'jp-world': { 'golden-bed': 1, 'shimmer-bells': 0.35, 'soft-beat': 0.45 },
   'jp-garden': { 'golden-bed': 0.8, 'shimmer-bells': 0.6, 'lagoon-bed': 0.3, 'soft-beat': 0.4 },
   fishpond: { 'lagoon-bed': 1, 'golden-bed': 0.35, 'soft-beat': 0.35 },
-  'jp-reef': { 'lagoon-bed': 1, 'shimmer-bells': 0.45, 'abyss-bed': 0.25 },
+  'jp-reef': { 'lagoon-bed': 1, 'shimmer-bells': 0.45 },
   'jp-loft': { 'lofi-bed': 1, 'soft-beat': 0.6 },
+  // The abyss stems lean on A and G naturals for their eerie colour: they only play alone.
   'jp-abyss': { 'abyss-bed': 1, 'abyss-motif': 0.8 },
-  'laser-lab': { 'holo-bed': 0.9, 'soft-beat': 0.7, 'abyss-motif': 0.35 },
-  'alpine-sled': { 'shimmer-bells': 0.9, 'golden-bed': 0.5, 'abyss-bed': 0.25 },
-  'eric-biolum-grove': { 'abyss-bed': 0.55, 'shimmer-bells': 0.8, 'lagoon-bed': 0.35, 'holo-bed': 0.2 },
+  'laser-lab': { 'holo-bed': 0.9, 'soft-beat': 0.7 },
+  'alpine-sled': { 'shimmer-bells': 0.9, 'golden-bed': 0.5 },
+  'eric-biolum-grove': { 'shimmer-bells': 0.8, 'lagoon-bed': 0.5, 'holo-bed': 0.35 },
   'eric-sun-observatory': { 'golden-bed': 1, 'shimmer-bells': 0.5, 'holo-bed': 0.15 },
   'honey-hood': { 'lofi-bed': 0.9, 'soft-beat': 0.8, 'golden-bed': 0.3 },
 };
@@ -67,57 +69,7 @@ export const DEFAULT_VIBE: Vibe = { 'holo-bed': 0.6, 'shimmer-bells': 0.4, 'gold
 export const vibeFor = (roomId: string | null | undefined): Vibe =>
   (roomId && ROOM_VIBES[roomId]) || DEFAULT_VIBE;
 
-/** How close to a gate (metres) before the room beyond it can be heard at all. */
-export const PREVIEW_RADIUS = 10;
-/** The loudest the room beyond a gate gets before you cross: a hint, never a second song. */
-export const PREVIEW_MAX = 0.3;
-
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-const smoothstep = (t: number) => {
-  const c = clamp01(t);
-  return c * c * (3 - 2 * c);
-};
-
-/**
- * How close the player is to a gate, 0 (PREVIEW_RADIUS or further) .. 1 (at the portal).
- */
-export function gateCloseness(distanceToGate: number, radius = PREVIEW_RADIUS): number {
-  return smoothstep(1 - Math.max(0, distanceToGate) / radius);
-}
-
-export interface StemMix {
-  /** Loudness, 0..1, before phrase and motion variation. */
-  level: number;
-  /**
-   * How muffled the stem should sound, 0 (open) .. 1 (heard through a wall). The room
-   * beyond a gate is heard muffled, opening up only as the player reaches the portal.
-   */
-  muffle: number;
-}
-
-/**
- * The current room's mix, plus a faint, muffled hint of the room beyond the gate the
- * player is walking up to. `closeness` comes from gateCloseness. The real change happens
- * at the crossing: the room switches and the stems crossfade quickly to the new blend.
- * Stems both rooms share never double up, and they stay open.
- */
-export function mixVibes(current: Vibe, neighbour: Vibe | null, closeness: number): Record<StemId, StemMix> {
-  const c = neighbour ? clamp01(closeness) : 0;
-  const preview = PREVIEW_MAX * c;
-  const out = {} as Record<StemId, StemMix>;
-  for (const id of STEM_IDS) {
-    const own = current[id] ?? 0;
-    const hint = (neighbour?.[id] ?? 0) * preview;
-    const level = Math.max(own, hint);
-    out[id] = { level, muffle: hint > own ? 1 - c * c : 0 };
-  }
-  return out;
-}
-
-/** Low-pass cutoff (Hz) for a muffle amount, on an exponential scale. */
-export function muffleCutoff(muffle: number, open = 18000, closed = 650): number {
-  return open * Math.pow(closed / open, clamp01(muffle));
-}
 
 /**
  * Per-phrase variation so the mix never settles into one fixed loop: beds stay up,
@@ -153,4 +105,24 @@ export function loopOffset(when: number, transportStart: number, loopSeconds = L
 export function untilNextPhrase(now: number, transportStart: number, phraseSeconds = PHRASE_SECONDS): number {
   const into = loopOffset(now, transportStart, phraseSeconds);
   return into < 1e-6 ? 0 : phraseSeconds - into;
+}
+
+/**
+ * The first beat on a song's grid at least `lead` seconds from now: where the next song
+ * drops in, so the change lands on the beat.
+ */
+export function nextBeat(now: number, songStart: number, lead = 0.3, beat = BEAT_SECONDS): number {
+  const n = Math.ceil((now + lead - songStart) / beat - 1e-9);
+  return songStart + Math.max(0, n) * beat;
+}
+
+/** The start of the next phrase on a song's grid after `now`. */
+export function nextPhraseStart(now: number, songStart: number, phraseSeconds = PHRASE_SECONDS): number {
+  if (now < songStart) return songStart;
+  return songStart + (Math.floor((now - songStart) / phraseSeconds + 1e-9) + 1) * phraseSeconds;
+}
+
+/** The stems a room's song uses, loudest first. */
+export function stemsFor(vibe: Vibe): StemId[] {
+  return STEM_IDS.filter(id => (vibe[id] ?? 0) > 0).sort((a, b) => (vibe[b] ?? 0) - (vibe[a] ?? 0));
 }

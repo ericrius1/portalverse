@@ -1,19 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import catalog from '../../../../registry.json';
 import type { RegistryFile } from '../types';
-import { ROUTE_LENGTH } from '../portal/roomLayout';
 import {
-  PREVIEW_MAX,
-  PREVIEW_RADIUS,
+  BEAT_SECONDS,
   LOOP_SECONDS,
   PHRASE_SECONDS,
   ROOM_VIBES,
   STEM_IDS,
-  gateCloseness,
+  nextBeat,
+  nextPhraseStart,
+  stemsFor,
   loopOffset,
-  mixVibes,
   motionMultiplier,
-  muffleCutoff,
   phraseMultipliers,
   untilNextPhrase,
   vibeFor,
@@ -38,30 +36,28 @@ describe('soundtrack mixing', () => {
     }
   });
 
-  it('keeps each room to itself until a few metres from a gate', () => {
-    expect(gateCloseness(PREVIEW_RADIUS)).toBe(0);
-    expect(gateCloseness(ROUTE_LENGTH / 2)).toBe(0);
-    expect(gateCloseness(0)).toBe(1);
-    expect(gateCloseness(3)).toBeGreaterThan(gateCloseness(7));
-    const mix = mixVibes(vibeFor('jp-abyss'), vibeFor('laser-lab'), gateCloseness(ROUTE_LENGTH / 4));
-    expect(mix['holo-bed'].level).toBe(0);
+  it('gives each room a song of its own stems, loudest first', () => {
+    expect(stemsFor(vibeFor('jp-abyss'))).toEqual(['abyss-bed', 'abyss-motif']);
+    expect(stemsFor(vibeFor('jp-loft'))[0]).toBe('lofi-bed');
+    expect(stemsFor(vibeFor('unknown-room')).length).toBeGreaterThan(0);
   });
 
-  it('only hints at the next room, muffled, even at the portal', () => {
-    const far = mixVibes(vibeFor('jp-abyss'), vibeFor('eric-sun-observatory'), 0.3);
-    expect(far['golden-bed'].level).toBeGreaterThan(0);
-    expect(far['golden-bed'].level).toBeLessThan(PREVIEW_MAX);
-    expect(far['golden-bed'].muffle).toBeGreaterThan(0.8);
-    expect(far['abyss-bed']).toEqual({ level: 1, muffle: 0 });
-    const at = mixVibes(vibeFor('jp-abyss'), vibeFor('eric-sun-observatory'), 1);
-    expect(at['golden-bed'].level).toBeCloseTo(PREVIEW_MAX);
-    expect(at['golden-bed'].muffle).toBeCloseTo(0);
-    expect(muffleCutoff(1)).toBeLessThan(muffleCutoff(0));
+  it('drops the next song on a beat after a short sweep', () => {
+    const start = 10;
+    const now = start + 3 * BEAT_SECONDS + 0.1;
+    const drop = nextBeat(now, start, 0.3);
+    expect(drop - now).toBeGreaterThanOrEqual(0.3);
+    expect(drop - now).toBeLessThan(0.3 + BEAT_SECONDS + 1e-9);
+    const beats = (drop - start) / BEAT_SECONDS;
+    expect(Math.abs(beats - Math.round(beats))).toBeLessThan(1e-9);
+    // A song queued to start later still lands on its own first beat.
+    expect(nextBeat(5, 10, 0.3)).toBe(10);
   });
 
-  it('never doubles a stem both rooms share', () => {
-    const mix = mixVibes(vibeFor('jp-world'), vibeFor('jp-garden'), 1);
-    expect(mix['golden-bed']).toEqual({ level: 1, muffle: 0 });
+  it('finds the next phrase on a song\'s grid', () => {
+    expect(nextPhraseStart(10, 10)).toBeCloseTo(10 + PHRASE_SECONDS);
+    expect(nextPhraseStart(10 + PHRASE_SECONDS + 1, 10)).toBeCloseTo(10 + 2 * PHRASE_SECONDS);
+    expect(nextPhraseStart(5, 10)).toBe(10);
   });
 
   it('keeps beds up every phrase while layers can drop out', () => {

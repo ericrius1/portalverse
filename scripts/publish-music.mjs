@@ -34,7 +34,10 @@ async function check() {
   let bad = 0;
   for (const [id, entry] of Object.entries(readMap())) {
     for (const url of Object.values(entry)) {
-      const r = await fetch(url, { method: 'HEAD' }).catch(() => null);
+      let r = null;
+      for (let attempt = 0; attempt < 3 && !r?.ok; attempt++) {
+        r = await fetch(url, { method: 'HEAD' }).catch(() => null);
+      }
       if (!r?.ok) { bad++; console.log(`  ${id}: ${url} -> ${r ? r.status : 'unreachable'}`); }
     }
   }

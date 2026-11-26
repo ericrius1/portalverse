@@ -24,7 +24,6 @@ import {
 import { InteractiveTutorial, hasCompletedTutorial } from './tutorial';
 import { Soundtrack } from '@portalverse/core/audio/Soundtrack';
 import { vibeFor, type StemId } from '@portalverse/core/audio/musicMix';
-import { ROUTE_LENGTH } from '@portalverse/core/portal/roomLayout';
 
 const STORAGE_PROFILE_KEY = 'portalverse.profile.v1';
 const STORAGE_MOVEMENT_MODE_KEY = 'portalverse.movement.mode';
@@ -262,13 +261,6 @@ async function boot(): Promise<void> {
   // ?mute=1 runs it at zero volume (automated tests) without touching the saved preference.
   const soundtrack = new Soundtrack({ silent: new URLSearchParams(window.location.search).get('mute') === '1' });
   if (import.meta.env.DEV) (window as unknown as { soundtrack: Soundtrack }).soundtrack = soundtrack;
-  const localRoomOrder = registry.listWorlds().filter(w => w.kind === 'local').map(w => w.id);
-  const loopNeighbour = (id: string, step: 1 | -1): string | null => {
-    const i = localRoomOrder.indexOf(id);
-    return i < 0 || localRoomOrder.length < 2
-      ? null
-      : localRoomOrder[(i + step + localRoomOrder.length) % localRoomOrder.length];
-  };
   const initialVibe = vibeFor(initialWorldId);
   void soundtrack.load(
     (Object.keys(initialVibe) as StemId[]).sort((a, b) => (initialVibe[b] ?? 0) - (initialVibe[a] ?? 0)),
@@ -731,18 +723,11 @@ async function boot(): Promise<void> {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
     toggleMusic();
   });
-  const gateZ = ROUTE_LENGTH / 2;
   const feedSoundtrack = () => {
     requestAnimationFrame(feedSoundtrack);
     if (!gateExited) return;
-    const feet = engine.avatar.position;
     soundtrack.update({
       roomId: activeWorldId,
-      previousRoomId: loopNeighbour(activeWorldId, -1),
-      nextRoomId: loopNeighbour(activeWorldId, 1),
-      x: feet.x,
-      z: feet.z,
-      gateZ,
       warp: engine.portalWarp,
       moveNorm: engine.motionLevel,
       fallen: engine.hasFallen,
