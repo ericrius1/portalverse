@@ -119,6 +119,7 @@ it('links the rooms in catalog order and back to the start', () => {
     'eric-biolum-grove',
     'eric-sun-observatory',
     'honey-hood',
+    'frostfire-hollow',
   ];
   expect(rooms.filter(r => r.kind === 'local').map(r => r.id)).toEqual(order);
   for (let i = 0; i < order.length; i++) {
