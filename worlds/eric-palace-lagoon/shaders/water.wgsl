@@ -6,14 +6,16 @@
 
 @group(2) @binding(0) var refl: texture_2d<f32>;
 
-const X0 = -92.0; const X1 = -6.0; const Z0 = -112.0; const Z1 = 112.0;
 
 struct WOut { @builtin(position) pos: vec4f, @location(0) world: vec3f }
 
 @vertex fn vs(@builtin(vertex_index) vi: u32) -> WOut {
   let u = f32((26u >> vi) & 1u);
   let v = f32((52u >> vi) & 1u);
-  let p = vec3f(mix(X0, X1, u), G.waterY, mix(Z0, Z1, v));
+  // (one quad spanning both the main east lagoon and the north reflecting cove, edges hidden under the banks)
+  let lo = min(G.lagoon.xy - G.lagoon.zw - 8.0, vec2f(-26.0, 14.0));
+  let hi = max(G.lagoon.xy + G.lagoon.zw + 8.0, vec2f(52.0, 38.0));
+  let p = vec3f(mix(lo.x, hi.x, u), G.waterY, mix(lo.y, hi.y, v));
   var o: WOut;
   o.world = p;
   o.pos = clipAt(p);

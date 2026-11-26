@@ -1,13 +1,17 @@
 // The Palace of Fine Arts, from Earth (github.com/ericrius1/world: web/src/palace/palace.wgsl, pipeline/palace_model.py):
 // Maybeck's rotunda and peristyle on the lagoon, in the cream and ochre of its stone and the salmon of the rotunda's
 // columns, the plain hall behind. The materials are Earth's: the columns fluted from their uv, the inner dome coffered,
-// the paving jointed, the stone weathered. The light is this room's: one low sun with its shadow, the sky's light by
-// how much of the sky each place sees (baked into the mesh), and the lagoon's light thrown up on the stone.
+// the paving jointed, the stone weathered. The light is this room's, from sunset to night along the walk: the key light
+// (the low sun, then the moon) with its shadow, the sky's light by how much of the sky each place sees (baked into the
+// mesh), the lagoon's light thrown up on the stone; and as the dark comes, Earth's floodlights (warm, from the ground,
+// up the columns and into the rotunda: each place's share is baked into the mesh too) and the drones' projectors
+// (packages/core/src/rooms/projection: their light, mapped to the stone or thrown, with every column's shadow).
 //
 // The mesh comes from Earth's R2 and is packed smaller by ../palaceMesh.worker.ts: 7 words a vertex, already in the
 // room's frame (position xyz, uv, the normal octahedron-packed in two snorm16s, tag = material | flood << 8 |
 // occlusion << 16 | sky seen << 24).
 #include "./common"
+#include "../../../packages/core/src/rooms/projection/light"
 
 @group(2) @binding(0) var<storage, read> pv: array<u32>;
 
@@ -15,8 +19,6 @@ const STONE = 0u; const TRIM = 1u; const SALMON = 2u; const CAPITAL = 3u; const 
 const FIGURE = 6u; const COFFER = 7u; const PAVING = 8u; const SHAFT = 9u; const PLANT = 10u; const URN = 11u;
 const PODIUM = 12u; const SOIL = 13u; const SOFFIT = 14u; const HALL = 15u;
 
-/** the rotunda's middle in the room (for the inside's light) */
-const CENTRE = vec2f(-110.0, 0.0);
 
 struct VOut {
   @builtin(position) pos: vec4f,
@@ -94,12 +96,17 @@ struct Surf { albedo: vec3f, n: vec3f, rough: f32, ao: f32 }
 @fragment fn fs(i: VOut) -> @location(0) vec4f {
   let p = i.world;
   if (clipBelowWater(p) || hash12(floor(i.pos.xy)) > G.reveal) { discard; }
+  // Open the inner dome vault above the cornice so the full-dome Arabic mosaic portal lives inside the rotunda roof
+  // (the outer golden dome shell, mat == DOME, stays completely intact from outside).
+  if (i.mat == COFFER && p.y > 25.6) { discard; }
   let v = normalize(frame.camPos - p);
   let dist = length(frame.camPos - p);
   let duv = fwidth(i.uv);
   let pix = dist * 1.2 / max(frame.res.y, 1.0);
   var s: Surf;
-  s.n = normalize(i.n);
+  // (the mesh is drawn two-sided and some of its faces point away from where they're seen, the dome's underside
+  // through the inner dome's crown among them: light the side that's seen)
+  s.n = normalize(i.n) * select(1.0, -1.0, dot(i.n, v) < 0.0);
   s.rough = 0.85;
   s.ao = 1.0;
   let m = i.mat;
@@ -126,7 +133,7 @@ struct Surf { albedo: vec3f, n: vec3f, rough: f32, ao: f32 }
   } else if (m == COFFER) {
     // the coffers: 32 round, nine rows up, each a sunk square with a rosette
     let az = i.uv.x * 32.0;
-    let el = saturate((p.y - 26.0) / 18.0);
+    let el = saturate((p.y - 25.4) / 18.0);
     let row = el * 9.0;
     let cu = abs(fract(az) - 0.5);
     let cv = abs(fract(row) - 0.5);
@@ -168,10 +175,22 @@ struct Surf { albedo: vec3f, n: vec3f, rough: f32, ao: f32 }
   let amb = ambient(n) * occl * mix(0.25, 1.0, sky);
   var c = s.albedo * (G.sunColor * saturate(ndl) * vis + amb);
   c += G.sunColor * vis * ggx(n, v, l, s.rough, vec3f(0.035)) * occl;
-  // the lagoon's light on the stone, and a warm glow inside the rotunda where the sun can't reach
-  c += s.albedo * G.sunColor * lagoonLight(p, n) * 0.35 * occl;
-  let inside = 1.0 - smoothstep(16.0, 23.0, length(p.xz - CENTRE));
-  c += s.albedo * vec3f(1.0, 0.72, 0.45) * inside * 0.12 * select(0.5, 1.0, m == COFFER);
+  // the lagoon's light on the stone (the sun's by day, the lamps' and the drones' by night), and a warm glow inside
+  // the rotunda where the sun can't reach
+  let inside = 1.0 - smoothstep(16.0, 23.0, length(p.xz - G.palace.xy));
+  c += s.albedo * (G.sunColor + LAMP * G.night * 0.15) * lagoonLight(p, n) * 0.35 * occl;
+  c += s.albedo * vec3f(1.0, 0.72, 0.45) * inside * 0.12 * (1.0 - G.night) * select(0.5, 1.0, m == COFFER);
+  // the night: Earth's floodlights from the ground, warm, strongest low on the columns and under the dome
+  if (G.night > 0.0) {
+    let flood = i.ls.x;
+    // (low: a warm wash at the stone's foot that leaves the night dark above, for the drones' light to draw on)
+    let foot = 1.0 - smoothstep(2.0, 14.0, p.y);
+    let k = flood * (0.45 + 0.55 * saturate(n.y * -0.5 + 0.6)) * (0.35 + 0.65 * foot) + inside * 0.08 * select(0.3, 1.0, m == COFFER);
+    c += s.albedo * LAMP * (G.night * k * 0.16 * occl);
+  }
+  // the drones' projectors
+  // (the show comes up as the dark does: G.palace.w)
+  if (G.palace.w > 0.0) { c += projectionTake(s.albedo) * projectedLight(p, n) * (mix(0.55, 1.0, occl) * G.palace.w); }
   c = haze(c, p);
   return vec4f(c, 1.0);
 }

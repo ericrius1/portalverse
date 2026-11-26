@@ -30,6 +30,7 @@ export class RoomInstance {
   private readonly activation: Array<() => void | (() => void)> = [];
   private activeCleanups: Array<() => void> = [];
   private spawnOverride?: SpawnPoint;
+  private readonly routeGateSpawns = new Map<'entrance' | 'exit', SpawnPoint>();
   private readonly updates: Array<(dt: number, elapsed: number) => void> = [];
   private readonly layers: GpuLayerCompositor[] = [];
   /** The room's clock as its last update saw it, for GPU layers. */
@@ -61,6 +62,7 @@ export class RoomInstance {
       }
       return register(handle);
     };
+    const routeGateBuilders = new Map<'entrance' | 'exit', (gate: PortalDefinition) => PortalVisualHandle>();
     const device = rendererDevice(renderer);
     const gpu = device ? { device } : null;
     try {
@@ -81,6 +83,7 @@ export class RoomInstance {
         enterPortal: portal => room.enter(portal),
         addPortal: portal => registerCustom(createArchwayPortal(portal, { passage: true })),
         registerCustomPortal: registerCustom,
+        customizeRouteGate: (end, build) => { routeGateBuilders.set(end, build); },
         addPlatform: bounds => room.platforms.push(bounds),
         setTerrainHeight: fn => { room.terrainHeight = fn; },
         allowFalling: (settings = {}) => { room.falling = { ...settings }; },
@@ -93,7 +96,19 @@ export class RoomInstance {
       });
       for (const link of links) register(createArchwayPortal(link, { passage: true }));
       for (const gate of routeGates(module.manifest.id, (catalog as unknown as RegistryFile).worlds)) {
-        register(createArchwayPortal(gate, { passage: true, routeGate: true }));
+        const end = gate.id as 'entrance' | 'exit';
+        const custom = routeGateBuilders.get(end);
+        if (custom) {
+          const handle = custom(gate);
+          handle.aperture.userData.portalId = gate.id;
+          handle.aperture.userData.routeGate = true;
+          if (handle.aperture.userData.oneWay === undefined) handle.aperture.userData.oneWay = true;
+          if (handle.useFullOrientation) handle.aperture.userData.useFullOrientation = true;
+          if (handle.arrivalSpawn) room.routeGateSpawns.set(end, handle.arrivalSpawn);
+          register(handle);
+        } else {
+          register(createArchwayPortal(gate, { passage: true, routeGate: true }));
+        }
       }
       return room;
     } catch (error) {
@@ -138,7 +153,7 @@ export class RoomInstance {
   }
 
   spawn(id?: string): SpawnPoint {
-    if (id === 'entrance' || id === 'exit') return threshold(id);
+    if (id === 'entrance' || id === 'exit') return this.routeGateSpawns.get(id) ?? threshold(id);
     const spawns = this.module.manifest.spawns;
     return (id && id !== 'default' ? spawns[id] : undefined) ?? this.spawnOverride ?? spawns.default;
   }

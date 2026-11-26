@@ -212,6 +212,14 @@ export interface PortalVisualHandle {
   triggerRadius: number;
   /** Optional vertical cylinder bounds [minY, maxY] for tall custom portals. */
   triggerYRange?: [number, number];
+  /** Optional custom opening radius (m) for larger portals; defaults to PORTAL_RADIUS. */
+  openingRadius?: number;
+  /** Optional local Y center of the opening; defaults to PORTAL_CENTER_Y (or 0 when useFullOrientation is true). */
+  portalCenterY?: number;
+  /** Use the aperture's full 3D orientation (e.g. an overhead dome/ceiling portal) for framing and crossing. */
+  useFullOrientation?: boolean;
+  /** Optional custom arrival spawn when entering this room via this route gate. */
+  arrivalSpawn?: SpawnPoint;
   setProximity?: (proximity01: number) => void;
   update?: (dt: number, elapsed: number) => void;
   dispose?: () => void;
@@ -347,6 +355,8 @@ export interface WorldContext {
   addPortal: (portal: PortalDefinition) => PortalVisualHandle;
   /** Register a custom-rendered portal (reserve it with `customPortalSlots` first). */
   registerCustomPortal: (handle: PortalVisualHandle) => void;
+  /** Replace the default ring visual/placement for the engine's 'entrance' or 'exit' route gate. */
+  customizeRouteGate?: (end: 'entrance' | 'exit', build: (gate: PortalDefinition) => PortalVisualHandle) => void;
   /**
    * Pause, if this stretch of setup has run for a few milliseconds, so the browser
    * can draw a frame; otherwise return at once. Rooms load while the player walks

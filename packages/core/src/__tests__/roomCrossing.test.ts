@@ -7,7 +7,7 @@ import { defineRoom } from '../portal/defineRoom';
 import { createReturnPortalFromHandoff, placeHandoffArrival } from '../portal/handoff';
 import { createArchwayPortal } from '../engine/PortalMesh';
 import { RoomInstance } from '../engine/RoomInstance';
-import { PortalPreviews, portalPixels } from '../engine/PortalPreviews';
+import { PortalPreviews, framePortal, portalPixels } from '../engine/PortalPreviews';
 import {
   beginCrossing,
   canOfferPortalPrompt,
@@ -591,5 +591,75 @@ describe('federated arrival', () => {
     expect(detectFeetCrossing(home, v(...arrival.position), behind)).toBe(1);
     // ...but coming down the room from the entrance walks harmlessly through its back.
     expect(detectFeetCrossing(home, behind, v(...arrival.position))).toBeNull();
+  });
+});
+
+describe('overhead dome-roof portals (useFullOrientation)', () => {
+  function domePortal(): PortalVisualHandle {
+    const group = new THREE.Group();
+    group.position.set(0, 26.2, -14);
+    group.rotation.x = Math.PI / 2; // local +Z faces DOWN into the rotunda, local -Z faces UP into the dome
+    const geo = new THREE.SphereGeometry(17, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.49);
+    geo.rotateX(-Math.PI / 2);
+    const aperture = new THREE.Mesh(geo, new THREE.MeshBasicMaterial());
+    aperture.userData.oneWay = true;
+    aperture.userData.routeGate = true;
+    aperture.userData.useFullOrientation = true;
+    group.add(aperture);
+    group.updateMatrixWorld(true);
+    return {
+      portal: {
+        id: 'exit',
+        label: 'Next',
+        position: [0, 26.2, -14],
+        yaw: 0,
+        targetWorldId: 'laser-lab',
+        targetSpawnId: 'entrance',
+        oneWay: true,
+      },
+      group,
+      passage: true,
+      aperture,
+      triggerCenter: v(0, 26.2, -14),
+      triggerRadius: 15.6,
+      openingRadius: 15.6,
+      portalCenterY: 0,
+      useFullOrientation: true,
+    };
+  }
+
+  it('triggers crossing when feet ascend up through the dome plane anywhere inside its wide radius', () => {
+    const dome = domePortal();
+    expect(detectFeetCrossing(dome, v(0, 25.9, -14), v(0, 26.5, -14))).toBe(1);
+    expect(detectFeetCrossing(dome, v(10, 25.9, -10), v(10, 26.5, -10))).toBe(1);
+    // Outside the 15.6 m opening radius is ignored, and descending through the back is ignored (one-way)
+    expect(detectFeetCrossing(dome, v(18, 25.9, -14), v(18, 26.5, -14))).toBeNull();
+    expect(detectFeetCrossing(dome, v(0, 26.5, -14), v(0, 25.9, -14))).toBeNull();
+  });
+
+  it('computes 3D bounding-box pixel rect and maps looking UP into the dome to looking forward (-Z) right-side up', () => {
+    const dome = domePortal();
+    const size = new THREE.Vector2(1920, 1080);
+    const viewer = new THREE.PerspectiveCamera(62, size.x / size.y, 0.1, 450);
+    viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
+    viewer.position.set(0, 10, -14);
+    viewer.rotation.set(Math.PI / 2 - 0.05, 0, 0, 'YXZ'); // looking nearly straight UP at the dome
+    viewer.updateProjectionMatrix();
+    viewer.updateMatrixWorld();
+
+    const bounds = portalPixels(dome.aperture, viewer, size, new THREE.Vector4());
+    expect(bounds.z).toBeGreaterThan(800);
+    expect(bounds.w).toBeGreaterThan(500);
+
+    const destCam = new THREE.PerspectiveCamera();
+    const spawn = { position: [0, 0, 36.25] as [number, number, number], yaw: 0 };
+    framePortal(destCam, viewer, dome.aperture, spawn, 26.2, 0, size, bounds);
+
+    const destForward = new THREE.Vector3(0, 0, -1).applyQuaternion(destCam.quaternion);
+    const destUp = new THREE.Vector3(0, 1, 0).applyQuaternion(destCam.quaternion);
+    // Looking UP into the dome maps directly to looking forward (-Z) into the destination room, right-side up (+Y)
+    expect(destForward.z).toBeLessThan(-0.95);
+    expect(destUp.y).toBeGreaterThan(0.95);
+    expect(destCam.position.y).toBeGreaterThan(1.0);
   });
 });

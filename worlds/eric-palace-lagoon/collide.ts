@@ -9,7 +9,8 @@
  *
  * palace.json is Earth's, in Earth's San Francisco frame; it's moved into the room's
  * frame once, here, the same way palaceMesh.worker.ts moves the mesh. Heights in it are
- * over the Palace's ground, which is the room's y = 0.
+ * over the Palace's ground, which stands PALACE.floor under the room's y = 0 (the podium's deck is y = 0, level
+ * with the portals): `DROP` turns a room height into one of palace.json's and back.
  */
 import type { RoomCollider, Vec3Tuple } from '@portalverse/core/types';
 import earth from './palace.json';
@@ -20,6 +21,7 @@ type P2 = [number, number];
 const cos = Math.cos(PALACE.turn), sin = Math.sin(PALACE.turn);
 const [ecx, ecz] = PALACE.earthCentre;
 const [ax, az] = PALACE.at;
+const DROP = PALACE.floor;
 const toRoom = ([x, z]: readonly number[]): P2 => {
   const dx = x - ecx, dz = z - ecz;
   return [dx * cos - dz * sin + ax, dx * sin + dz * cos + az];
@@ -110,11 +112,25 @@ function domeTop(x: number, z: number): number | null {
   return rc < drumR ? drumTop : null;
 }
 
-/** Is (x, y, z), grown by m, inside the high parts a flier can hit: the ring and attic, the drum and dome, the colonnade's entablature and boxes? */
+/** The inner dome vault ceiling over (x, z) inside the rotunda cavity, or null outside footR. */
+function innerDomeCeiling(x: number, z: number): number | null {
+  const rc = Math.hypot(x - J.centre[0], z - J.centre[1]);
+  const footR = J.drum[2] - 0.8;
+  if (rc >= footR) return null;
+  return J.domeIn[0] + (J.domeIn[1] - J.domeIn[0]) * Math.sqrt(1 - (rc / footR) ** 2);
+}
+
+/** Is (x, y, z), grown by m, inside the high parts a flier can hit: the ring and attic, the outer drum and dome shell,
+ *  the colonnade's entablature and boxes? The hollow inner dome cavity stays open so you can walk up into the dome portal. */
 function solidOverhead(x: number, y: number, z: number, m: number): boolean {
-  if (y > J.upper[0] - m && y < J.upper[1] + m && inPoly(J.outline, x, z) && !(y < J.domeIn[0] && inPoly(J.innerOct, x, z))) return true;
+  const inCavity = inPoly(J.innerOct, x, z);
+  const innerCeil = innerDomeCeiling(x, z);
+  if (y > J.upper[0] - m && y < J.upper[1] + m && inPoly(J.outline, x, z) && !inCavity) return true;
   const dome = domeTop(x, z);
-  if (dome !== null && y > J.upper[1] - m && y < dome + m) return true;
+  if (dome !== null && y > J.upper[1] - m && y < dome + m) {
+    // Inside the hollow dome vault: only the outer stone shell above the inner ceiling is solid.
+    if (innerCeil === null || y > innerCeil - m) return true;
+  }
   if (y > J.wingTop[0] - m && y < J.wingTop[1] + m) {
     for (const w of J.wings) if (distToLine(w, x, z) < 2.5 + m) return true;
     for (const [cx, cz] of J.clusters) if (Math.hypot(x - cx, z - cz) < 4.0 + m) return true;
@@ -126,7 +142,7 @@ export const palaceCollider: RoomCollider = {
   move(from: Readonly<Vec3Tuple>, to: Readonly<Vec3Tuple>, r: number, height: number): [number, number] {
     let x = to[0], z = to[2];
     if (!near(x, z, r + 2)) return [x, z];
-    const lo = to[1], hi = to[1] + height;
+    const lo = to[1] + DROP, hi = lo + height;
     // piers, pedestals and the hall: pushed out to their nearest edge, or back out the way you came
     for (const P of J.polys) {
       if (lo > P.y1 || hi < -2) continue;
@@ -154,7 +170,7 @@ export const palaceCollider: RoomCollider = {
       }
     }
     // the high parts, for a flier: stop rather than pass into them
-    const mid = to[1] + height * 0.5;
+    const mid = to[1] + DROP + height * 0.5;
     if (solidOverhead(x, mid, z, r) && !solidOverhead(from[0], mid, from[2], r)) return [from[0], from[2]];
     return [x, z];
   },
@@ -167,11 +183,18 @@ export const palaceCollider: RoomCollider = {
  */
 export function palaceSurface(x: number, z: number, fromY = Infinity): number {
   if (!near(x, z, 1)) return -Infinity;
+  return surfaceAt(x, z, fromY + DROP) - DROP;
+}
+
+function surfaceAt(x: number, z: number, fromY: number): number {
   const step = 0.6;
   let best = -Infinity;
   const consider = (top: number) => { if (top > best && fromY >= top - step) best = top; };
   const deck = podiumDeck(x, z);
   if (deck !== null) consider(deck);
+  // Colonnade stylobate & cluster pads (STYLO = 0.2 m above Earth datum, cleanly above the depressed lawn)
+  for (const w of J.wings) if (distToLine(w, x, z) < 2.75) { consider(0.2); break; }
+  for (const [cx, cz] of J.clusters) if (Math.hypot(x - cx, z - cz) < 3.6) { consider(0.22); break; }
   if (fromY < J.wingTop[0]) {
     // (walking on the ground: only the podium and the low tops matter)
     for (const P of J.polys) if (P.y1 <= fromY + step && inPoly(P.p, x, z)) consider(P.y1);
@@ -186,4 +209,20 @@ export function palaceSurface(x: number, z: number, fromY = Infinity): number {
   const dome = domeTop(x, z);
   if (dome !== null) consider(dome);
   return best;
+}
+
+/**
+ * Is (x, z) within `pad` metres of anything of the Palace that stands on the ground (the rotunda's podium, its piers
+ * and pedestals, the colonnade's columns and urns, its wings' walk, the hall)? For placing things round it.
+ */
+export function nearPalace(x: number, z: number, pad = 0): boolean {
+  if (!near(x, z, pad + 2)) return false;
+  // (the podium's octagon reaches to its corners: its apothem over cos 22.5°)
+  if (Math.hypot(x - J.centre[0], z - J.centre[1]) < (J.podium + 0.8) / Math.cos(Math.PI / 8) + pad) return true;
+  for (const P of J.polys) {
+    if (inPoly(P.p, x, z) || nearestOnPoly(P.p, x, z)[2] < pad) return true;
+  }
+  for (const [cx, cz, cr] of J.circles) if (Math.hypot(x - cx, z - cz) < cr + pad) return true;
+  for (const w of J.wings) if (distToLine(w, x, z) < 4 + pad) return true;
+  return false;
 }

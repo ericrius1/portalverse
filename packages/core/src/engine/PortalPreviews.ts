@@ -138,14 +138,19 @@ const clip = new THREE.Vector4();
 const farCorner = new THREE.Vector4();
 const corner = new THREE.Vector3();
 const pixelQuad = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-const pixelClip = [
-  new THREE.Vector3(),
-  new THREE.Vector3(),
-  new THREE.Vector3(),
-  new THREE.Vector3(),
-  new THREE.Vector3(),
+const pixelBox = Array.from({ length: 8 }, () => new THREE.Vector3());
+const BOX_EDGES: readonly [number, number][] = [
+  [0, 1], [1, 3], [3, 2], [2, 0],
+  [4, 5], [5, 7], [7, 6], [6, 4],
+  [0, 4], [1, 5], [2, 6], [3, 7],
 ];
+const pixelClip = Array.from({ length: 20 }, () => new THREE.Vector3());
 const PIXEL_CLIP_Z = -1e-4;
+const fullSrcQuat = new THREE.Quaternion();
+const fullSrcInvQuat = new THREE.Quaternion();
+const fullDestQuat = new THREE.Quaternion();
+const fullDeltaQuat = new THREE.Quaternion();
+const fullLocalRel = new THREE.Vector3();
 const crop = new THREE.Matrix4();
 const lensRel = new THREE.Vector3();
 const lensSpawnPos = new THREE.Vector3();
@@ -239,23 +244,42 @@ export function portalMapping(viewer: THREE.Vector3, aperture: Aperture, spawn: 
 export function portalPixels(aperture: Aperture, viewer: THREE.PerspectiveCamera, size: THREE.Vector2, out: THREE.Vector4) {
   if (!aperture.geometry.boundingBox) aperture.geometry.computeBoundingBox();
   const { min, max: maxB } = aperture.geometry.boundingBox!;
-  // Transform the 4 bounding corners into view space in winding order and clip against
-  // the eye plane so portals behind the camera never return full-screen bounds.
-  pixelQuad[0].set(min.x, min.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
-  pixelQuad[1].set(maxB.x, min.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
-  pixelQuad[2].set(maxB.x, maxB.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
-  pixelQuad[3].set(min.x, maxB.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
-
   let clipCount = 0;
-  for (let i = 0; i < 4; i++) {
-    const a = pixelQuad[i];
-    const b = pixelQuad[(i + 1) & 3];
-    const aIn = a.z < PIXEL_CLIP_Z;
-    const bIn = b.z < PIXEL_CLIP_Z;
-    if (aIn) pixelClip[clipCount++].copy(a);
-    if (aIn !== bIn) {
-      const t = (PIXEL_CLIP_Z - a.z) / (b.z - a.z);
-      pixelClip[clipCount++].lerpVectors(a, b, t);
+
+  if (maxB.z - min.z > 1e-4) {
+    // 3D aperture (e.g. a curved dome vault): clip all 12 bounding-box edges against the eye plane.
+    for (let i = 0; i < 8; i++) {
+      pixelBox[i]
+        .set(i & 1 ? maxB.x : min.x, i & 2 ? maxB.y : min.y, i & 4 ? maxB.z : min.z)
+        .applyMatrix4(aperture.matrixWorld)
+        .applyMatrix4(viewer.matrixWorldInverse);
+      if (pixelBox[i].z < PIXEL_CLIP_Z) pixelClip[clipCount++].copy(pixelBox[i]);
+    }
+    for (const [ia, ib] of BOX_EDGES) {
+      const a = pixelBox[ia];
+      const b = pixelBox[ib];
+      if ((a.z < PIXEL_CLIP_Z) !== (b.z < PIXEL_CLIP_Z)) {
+        const t = (PIXEL_CLIP_Z - a.z) / (b.z - a.z);
+        pixelClip[clipCount++].lerpVectors(a, b, t);
+      }
+    }
+  } else {
+    // Planar aperture: transform the 4 bounding corners in winding order and clip against the eye plane.
+    pixelQuad[0].set(min.x, min.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+    pixelQuad[1].set(maxB.x, min.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+    pixelQuad[2].set(maxB.x, maxB.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+    pixelQuad[3].set(min.x, maxB.y, min.z).applyMatrix4(aperture.matrixWorld).applyMatrix4(viewer.matrixWorldInverse);
+
+    for (let i = 0; i < 4; i++) {
+      const a = pixelQuad[i];
+      const b = pixelQuad[(i + 1) & 3];
+      const aIn = a.z < PIXEL_CLIP_Z;
+      const bIn = b.z < PIXEL_CLIP_Z;
+      if (aIn) pixelClip[clipCount++].copy(a);
+      if (aIn !== bIn) {
+        const t = (PIXEL_CLIP_Z - a.z) / (b.z - a.z);
+        pixelClip[clipCount++].lerpVectors(a, b, t);
+      }
     }
   }
   if (clipCount === 0) return out.set(0, 0, 0, 0);
@@ -288,6 +312,59 @@ export function framePortal(camera: THREE.PerspectiveCamera, viewer: THREE.Persp
   aperture: Aperture, spawn: SpawnPoint, sourceFloor: number, sourceYaw: number,
   size: THREE.Vector2, pixels: THREE.Vector4): void {
   aperture.getWorldPosition(origin);
+  if (aperture.userData.useFullOrientation === true) {
+    // Full-3D portal (e.g. an overhead dome roof): map the aperture's local frame rigidly into
+    // the destination doorway frame so looking up into the dome looks straight into the next room.
+    aperture.getWorldQuaternion(fullSrcQuat);
+    fullSrcInvQuat.copy(fullSrcQuat).invert();
+    fullDestQuat.setFromAxisAngle(up, spawn.yaw);
+    fullDeltaQuat.copy(fullDestQuat).multiply(fullSrcInvQuat);
+
+    fullLocalRel.copy(viewer.position).sub(origin).applyQuaternion(fullSrcInvQuat);
+    const absDist = Math.abs(fullLocalRel.z);
+    const effDist = effectivePortalDistance(absDist);
+    const destCenterY = spawn.position[1] + PORTAL_CENTER_Y;
+    const minEyeY = spawn.position[1] + 1.5;
+    const rawEyeY = destCenterY + fullLocalRel.y;
+    const liftY = rawEyeY < minEyeY ? minEyeY - rawEyeY : 0;
+
+    lensRel
+      .set(fullLocalRel.x * 0.45, fullLocalRel.y + liftY, Math.sign(fullLocalRel.z || 1) * effDist)
+      .applyQuaternion(fullDestQuat);
+    camera.position.copy(lensRel).add(lensSpawnPos.set(spawn.position[0], destCenterY, spawn.position[2]));
+    camera.quaternion.copy(fullDeltaQuat).multiply(viewer.quaternion);
+    camera.coordinateSystem = viewer.coordinateSystem;
+    camera.near = viewer.near;
+    camera.far = viewer.far;
+    camera.updateMatrixWorld();
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+
+    const sx = size.x / pixels.z, sy = size.y / pixels.w;
+    crop.makeScale(sx, sy, 1);
+    crop.setPosition(sx - 1 - 2 * pixels.x / pixels.z, 1 - sy + 2 * pixels.y / pixels.w, 0);
+    camera.projectionMatrix.multiplyMatrices(crop, viewer.projectionMatrix);
+    camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+
+    if (fullLocalRel.z > viewer.near && effDist > viewer.near) {
+      lensDestNormal.set(-Math.sin(spawn.yaw), 0, -Math.cos(spawn.yaw));
+      plane.setFromNormalAndCoplanarPoint(lensDestNormal, lensSpawnPos.fromArray(spawn.position));
+      plane.applyMatrix4(camera.matrixWorldInverse);
+      clip.set(plane.normal.x, plane.normal.y, plane.normal.z, plane.constant);
+      farCorner.set(Math.sign(clip.x), Math.sign(clip.y), 1, 1).applyMatrix4(camera.projectionMatrixInverse);
+      const dotVal = clip.dot(farCorner);
+      if (dotVal > 0) {
+        const webGPU = camera.coordinateSystem === THREE.WebGPUCoordinateSystem;
+        clip.multiplyScalar((webGPU ? 1 : 2) / dotVal);
+        const m = camera.projectionMatrix.elements;
+        m[2] = clip.x - (webGPU ? 0 : m[3]);
+        m[6] = clip.y - (webGPU ? 0 : m[7]);
+        m[10] = clip.z - (webGPU ? 0 : m[11]);
+        m[14] = clip.w - (webGPU ? 0 : m[15]);
+        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+      }
+    }
+    return;
+  }
   normal.set(0, 0, 1).transformDirection(aperture.matrixWorld);
   plane.setFromNormalAndCoplanarPoint(normal, origin);
   const distance = plane.distanceToPoint(viewer.position);
@@ -1080,10 +1157,10 @@ export class PortalPreviews {
         // Mirror the local character into the destination room while crossing the threshold
         // so you watch your character step right into the next room as the camera follows!
         let attachedProxy = false;
-        if (transitAvatar?.visible) {
+        if (transitAvatar?.visible && !handle.useFullOrientation) {
           proxyLocal.copy(transitAvatar.position);
           handle.group.worldToLocal(proxyLocal);
-          if (Math.abs(proxyLocal.x) < PORTAL_RADIUS + 1.5 && Math.abs(proxyLocal.z) < 16) {
+          if (Math.abs(proxyLocal.x) < (handle.openingRadius ?? PORTAL_RADIUS) + 1.5 && Math.abs(proxyLocal.z) < 16) {
             aperture.getWorldPosition(proxyOrigin);
             proxyNormal.set(0, 0, 1).transformDirection(aperture.matrixWorld);
             proxyPlane.setFromNormalAndCoplanarPoint(proxyNormal, proxyOrigin);
@@ -1181,7 +1258,9 @@ export class PortalPreviews {
     // far gate when we arrive at one of this room's route thresholds.
     const arrival = near.portal.targetSpawnId;
     if (arrival !== 'entrance' && arrival !== 'exit') return;
-    const far = room.portals.find(p => p.aperture.userData.routeGate && p.portal.id !== arrival && !p.portal.remoteUrl);
+    const far = room.portals.find(
+      p => p.aperture.userData.routeGate && p.portal.id !== arrival && !p.portal.remoteUrl && !p.useFullOrientation,
+    );
     if (!far) return;
     const farRoom = this.request(far.portal.targetWorldId, elapsed)?.room;
     if (!farRoom) {

@@ -133,8 +133,8 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 12],
-          "yaw": 1.1
+          "position": [0, 0, 35],
+          "yaw": 0
         }
       }
     },

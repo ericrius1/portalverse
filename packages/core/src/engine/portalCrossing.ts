@@ -28,7 +28,8 @@ const UP = new THREE.Vector3(0, 1, 0);
 const localA = new THREE.Vector3();
 const localB = new THREE.Vector3();
 
-type PortalFrame = Pick<PortalVisualHandle, 'group' | 'aperture' | 'portal'>;
+type PortalFrame = Pick<PortalVisualHandle, 'group' | 'aperture' | 'portal' | 'openingRadius' | 'portalCenterY' | 'useFullOrientation'>;
+type CrossingHandle = Pick<PortalVisualHandle, 'group' | 'aperture' | 'openingRadius' | 'portalCenterY' | 'useFullOrientation'>;
 
 /** Depth of a world point along the portal normal, signed so the entry side is positive. */
 function depth(handle: Pick<PortalVisualHandle, 'group' | 'aperture'>, point: THREE.Vector3, side: CrossingSide, out: THREE.Vector3): number {
@@ -40,14 +41,21 @@ function depth(handle: Pick<PortalVisualHandle, 'group' | 'aperture'>, point: TH
  * body must pass inside the circular opening itself. One-way portals ignore the back face.
  */
 export function detectFeetCrossing(
-  handle: Pick<PortalVisualHandle, 'group' | 'aperture'>,
+  handle: CrossingHandle,
   previousFeet: THREE.Vector3,
   feet: THREE.Vector3,
 ): CrossingSide | null {
   const before = handle.group.worldToLocal(localA.copy(previousFeet));
   const after = handle.group.worldToLocal(localB.copy(feet));
-  const radialDist = Math.hypot(after.x, after.y + 1.0 - PORTAL_CENTER_Y);
-  const withinOpening = after.y >= -0.35 && radialDist < PORTAL_RADIUS - 0.1;
+  const radius = handle.openingRadius ?? PORTAL_RADIUS;
+  let withinOpening: boolean;
+  if (handle.useFullOrientation) {
+    withinOpening = Math.hypot(after.x, after.y) < radius - 0.1;
+  } else {
+    const centerY = handle.portalCenterY ?? PORTAL_CENTER_Y;
+    const radialDist = Math.hypot(after.x, after.y + 1.0 - centerY);
+    withinOpening = after.y >= -0.35 && radialDist < radius - 0.1;
+  }
   if (!withinOpening) return null;
   if (before.z > 0 && after.z <= 0) return 1;
   if (!isOneWay(handle) && before.z < 0 && after.z >= 0) return -1;
@@ -56,13 +64,15 @@ export function detectFeetCrossing(
 
 /** Which face the camera passed through between two frames, or null. It must pass inside the opening. */
 export function detectCameraCrossing(
-  handle: Pick<PortalVisualHandle, 'group' | 'aperture'>,
+  handle: CrossingHandle,
   previousCamera: THREE.Vector3,
   camera: THREE.Vector3,
 ): CrossingSide | null {
   const before = handle.group.worldToLocal(localA.copy(previousCamera));
   const after = handle.group.worldToLocal(localB.copy(camera));
-  if (Math.hypot(after.x, after.y - PORTAL_CENTER_Y) >= PORTAL_RADIUS - 0.1) return null;
+  const radius = handle.openingRadius ?? PORTAL_RADIUS;
+  const centerY = handle.useFullOrientation ? 0 : (handle.portalCenterY ?? PORTAL_CENTER_Y);
+  if (Math.hypot(after.x, after.y - centerY) >= radius - 0.1) return null;
   if (before.z > 0 && after.z <= 0) return 1;
   if (!isOneWay(handle) && before.z < 0 && after.z >= 0) return -1;
   return null;
@@ -89,7 +99,7 @@ export interface CrossingStart {
  * portal, where the scenery around the ring would snap when the feet finally crossed.
  */
 export function beginCrossing(
-  handle: Pick<PortalVisualHandle, 'group' | 'aperture'>,
+  handle: CrossingHandle,
   motion: FrameMotion,
   firstPerson: boolean,
 ): CrossingStart | null {
@@ -111,6 +121,7 @@ export function canOfferPortalPrompt(
 ): boolean {
   const feetLocal = handle.group.worldToLocal(localA.copy(playerPos));
   if (isOneWay(handle) && feetLocal.z <= 0) return false;
+  if (handle.useFullOrientation) return true;
   const toX = handle.portal.position[0] - playerPos.x;
   const toZ = handle.portal.position[2] - playerPos.z;
   const len = Math.hypot(toX, toZ);

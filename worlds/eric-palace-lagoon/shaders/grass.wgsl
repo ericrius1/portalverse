@@ -45,9 +45,8 @@ fn windAt(xz: vec2f, t: f32) -> vec2f {
   let reach = f32(SIDE) * CELL * 0.5;
   let fade = select(1.0, 1.0 - smoothstep(reach * 0.6, reach * 0.98, length(rel)), FADES);
   if (fade <= 0.0) { return collapsed(); }
-  // where grass grows: not on the path, not in the water or on its muddy edge, not round the Palace
-  let edge = 1.45 + 0.25 * noise2(vec2f(xz.y * 0.8, 3.0));
-  if (abs(xz.x) < edge || xz.x < -72.0) { return collapsed(); }
+  // where grass grows: not on the walk, the podium or the colonnade's paving, not in the water or on its muddy edge
+  if (onWalk(xz) > 0.05 || podiumDist(xz) < 0.3 || wingDist(xz) < 5.0) { return collapsed(); }
   let shore = lagoonSdf(xz);
   if (shore < 1.6 + jitter.x * 1.5) { return collapsed(); }
   // behind the eye: nothing to see (a little margin for wide portal views)
@@ -106,5 +105,7 @@ fn windAt(xz: vec2f, t: f32) -> vec2f {
   let ao = mix(0.35, 1.0, i.t);
   var c = i.col * (G.sunColor * vis * (diff + through) + ambient(n) * ao);
   c += G.sunColor * vis * pow(saturate(dot(reflect(-l, n), v)), 18.0) * 0.06 * i.t;
+  // the night: the walk's lanterns lighting the blades round them
+  if (G.night > 0.0) { c += i.col * LAMP * lanternPools(p.xz) * G.night * (0.5 + 0.8 * i.t); }
   return vec4f(haze(c, p), 1.0);
 }

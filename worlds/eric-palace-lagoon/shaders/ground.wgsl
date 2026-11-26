@@ -1,10 +1,12 @@
 // The land: one grid made in the vertex shader from its index (nothing on the CPU, nothing uploaded), dense round the
-// path and the lagoon and coarser out toward the horizon, raised by terrainHeight. Meadow green under the grass, a
-// gravel path, the lagoon's muddy banks and bed, lawn round the Palace. And the sky, drawn last where nothing is.
+// Palace and the lagoon and coarser out toward the horizon, raised by terrainHeight. Meadow green under the grass, the
+// gravel walk on the portals' line with its lanterns' pools of light at night, the colonnade's paved walk, the
+// lagoon's muddy banks and bed, mown lawn on the Palace's grounds. And the sky, drawn last where nothing is.
 #include "./common"
+#include "../../../packages/core/src/rooms/projection/light"
 
 override GRID: u32 = 384u;
-const CENTRE = vec2f(-50.0, 0.0);
+const CENTRE = vec2f(10.0, -14.0);
 const REACH = 1100.0;
 
 /** the grid's warp: fine (under a metre) near the middle, about 10 m at the edge */
@@ -57,19 +59,31 @@ fn meadowAlbedo(xz: vec2f) -> vec3f {
   let shore = lagoonSdf(xz);
   var albedo = meadowAlbedo(xz);
   var rough = 0.95;
-  // the gravel path, its edges ragged
-  let pathEdge = 1.5 + 0.25 * noise2(vec2f(xz.y * 0.8, 3.0));
-  let onPath = 1.0 - smoothstep(pathEdge - 0.25, pathEdge, abs(xz.x));
+  // round the Palace: mown lawn, a little paler
+  let grounds = groundsMask(xz);
+  albedo = mix(albedo, vec3f(0.16, 0.22, 0.07) * (0.9 + 0.2 * noise2(xz * 0.4)), grounds * 0.6);
+  // the gravel walk on the portals' line, its edges ragged
+  let onPath = onWalk(xz);
   let gravel = vec3f(0.42, 0.37, 0.3) * (0.8 + 0.35 * noise2(xz * 9.0)) * (0.9 + 0.2 * noise2(xz * 1.3));
   albedo = mix(albedo, gravel, onPath);
+  // the colonnade's walk: pale paving under the wings
+  let wing = 1.0 - smoothstep(4.2, 4.8, wingDist(xz));
+  let slabs = abs(fract(xz / 1.4) - 0.5);
+  let joint = smoothstep(0.46, 0.49, max(slabs.x, slabs.y));
+  albedo = mix(albedo, vec3f(0.5, 0.45, 0.37) * (0.9 + 0.15 * hash12(floor(xz / 1.4))) * (1.0 - 0.3 * joint), wing);
+  rough = mix(rough, 0.8, wing);
   // the banks: damp earth, then mud under the water
   let wet = 1.0 - smoothstep(0.0, 2.5, shore);
   albedo = mix(albedo, vec3f(0.12, 0.1, 0.07), wet);
   if (p.y < G.waterY) { albedo = vec3f(0.08, 0.075, 0.05) * (0.8 + 0.4 * noise2(xz * 0.7)); }
-  // round the Palace: mown lawn, a little paler
-  albedo = mix(albedo, vec3f(0.17, 0.23, 0.07) * (0.9 + 0.2 * noise2(xz * 0.4)), smoothstep(-70.0, -85.0, xz.x) * (1.0 - wet));
   let vis = select(1.0, sunShadow(p, n), dot(n, G.sunDir) > 0.0);
-  let c = albedo * (G.sunColor * saturate(dot(n, G.sunDir)) * vis + ambient(n));
+  var c = albedo * (G.sunColor * saturate(dot(n, G.sunDir)) * vis + ambient(n));
+  // the night: the walk's lanterns (every 7 m on both sides of it) throw warm pools on the gravel and the grass
+  if (G.night > 0.0) {
+    c += albedo * LAMP * lanternPools(xz) * G.night;
+  }
+  // the drones' light where it spills on the ground
+  if (G.palace.w > 0.0 && distance(xz, G.palace.xy) < 160.0) { c += projectionTake(albedo) * projectedLight(p, n) * G.palace.w; }
   return vec4f(haze(c, p), 1.0);
 }
 
@@ -83,5 +97,5 @@ struct SOut { @builtin(position) pos: vec4f }
 }
 @fragment fn fsSky(i: SOut) -> @location(0) vec4f {
   let dir = viewRay(viewUV(i.pos));
-  return vec4f(skyColor(dir) + sunDisc(dir), 1.0);
+  return vec4f(skyFull(dir), 1.0);
 }

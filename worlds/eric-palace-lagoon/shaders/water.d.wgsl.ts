@@ -41,17 +41,31 @@ export interface Globals {
   skyHorizon: Vec3;
   reveal: number;
   ambSky: Vec3;
-  _p1: number;
+  dusk: number;
   ambGround: Vec3;
-  _p2: number;
+  night: number;
   lagoon: Vec4;
   vp: Vec4;
   lightViewProj: Mat4;
+  trueSun: Vec3;
+  aurora: number;
+  glow: Vec3;
+  stars: number;
+  moonDir: Vec3;
+  moonLit: number;
+  palace: Vec4;
+  skyTint: Vec4;
+  skyExtra: Vec4;
+}
+export interface SkyClouds {
+  col: Vec3;
+  alpha: number;
+  through: number;
 }
 export interface WOut {
   pos: Vec4;
   world: Vec3;
 }
 
-declare const shader: Shader<{ Frame: Frame; Globals: Globals; WOut: WOut }, 'frame' | 'G' | 'shadowMap' | 'refl' | 'samp_linear' | 'samp_repeat' | 'samp_nearest' | 'samp_shadow'>;
+declare const shader: Shader<{ Frame: Frame; Globals: Globals; SkyClouds: SkyClouds; WOut: WOut }, 'frame' | 'G' | 'shadowMap' | 'refl' | 'samp_linear' | 'samp_repeat' | 'samp_nearest' | 'samp_shadow'>;
 export default shader;

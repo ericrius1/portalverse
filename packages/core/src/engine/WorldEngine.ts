@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import {
   GATE_WIDTH,
+  PORTAL_RADIUS,
   RUN_SPEED,
   WARP_RADIUS,
   livePortalSlots,
@@ -338,7 +339,7 @@ export class WorldEngine {
     const arrival = room.spawn(options?.spawnId);
     let sourceOrigin: THREE.Vector3 | undefined;
     let yawDelta = 0;
-    if (source && options?.crossed) {
+    if (source && options?.crossed && !source.useFullOrientation) {
       sourceOrigin = new THREE.Vector3().fromArray(source.portal.position);
       const side = viewerSide(source, this.camera.position);
       yawDelta = crossingYawDelta(source.portal.yaw ?? 0, side, arrival.yaw);
@@ -454,8 +455,8 @@ export class WorldEngine {
     if (!room) return false;
 
     const arrival = room.spawn(portal.targetSpawnId);
-    const sourceOrigin = new THREE.Vector3().fromArray(portal.position);
-    const yawDelta = crossingYawDelta(portal.yaw ?? 0, sideSign, arrival.yaw);
+    const sourceOrigin = handle.useFullOrientation ? undefined : new THREE.Vector3().fromArray(portal.position);
+    const yawDelta = handle.useFullOrientation ? 0 : crossingYawDelta(portal.yaw ?? 0, sideSign, arrival.yaw);
 
     this.mountSequence++;
     this.installRoom(room, arrival, headingThrough(portal), sourceOrigin, yawDelta);
@@ -475,7 +476,7 @@ export class WorldEngine {
       return;
     }
     const handle = this.getAllPortals().find(p => p.portal === portal);
-    if (!handle || !handle.passage) {
+    if (!handle || !handle.passage || handle.useFullOrientation) {
       this.triggerPortal(portal, false);
       return;
     }
@@ -703,7 +704,8 @@ export class WorldEngine {
 
       // Detect the character, or the chase camera when backing in, entering a portal opening
       if (!this.inputLocked && !this.transitPortal) {
-        const ready = now >= this.portalCooldownUntil && dist < GATE_WIDTH + 2;
+        const reach = Math.max(GATE_WIDTH, (handle.openingRadius ?? PORTAL_RADIUS) * 2) + 2;
+        const ready = now >= this.portalCooldownUntil && dist < reach;
         if (handle.passage) {
           const start = beginCrossing(handle, this.frameMotion, this.avatar.firstPerson);
           if (start?.by === 'feet' && ready) {

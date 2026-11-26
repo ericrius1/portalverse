@@ -41,12 +41,42 @@ export interface Globals {
   skyHorizon: Vec3;
   reveal: number;
   ambSky: Vec3;
-  _p1: number;
+  dusk: number;
   ambGround: Vec3;
-  _p2: number;
+  night: number;
   lagoon: Vec4;
   vp: Vec4;
   lightViewProj: Mat4;
+  trueSun: Vec3;
+  aurora: number;
+  glow: Vec3;
+  stars: number;
+  moonDir: Vec3;
+  moonLit: number;
+  palace: Vec4;
+  skyTint: Vec4;
+  skyExtra: Vec4;
+}
+export interface SkyClouds {
+  col: Vec3;
+  alpha: number;
+  through: number;
+}
+export interface Projector {
+  viewProj: Mat4;
+  depthViewProj: Mat4;
+  pos: Vec3;
+  power: number;
+  tint: Vec3;
+  occlude: number;
+  axis: Vec3;
+  haze: number;
+  map: Vec4;
+  mapB: Vec4;
+  mapU: Vec4;
+  mapV: Vec4;
+  paint: Vec4;
+  clock: Vec4;
 }
 export interface GOut {
   pos: Vec4;
@@ -56,5 +86,5 @@ export interface SOut {
   pos: Vec4;
 }
 
-declare const shader: Shader<{ Frame: Frame; Globals: Globals; GOut: GOut; SOut: SOut }, 'frame' | 'G' | 'shadowMap' | 'samp_linear' | 'samp_repeat' | 'samp_nearest' | 'samp_shadow'>;
+declare const shader: Shader<{ Frame: Frame; Globals: Globals; SkyClouds: SkyClouds; Projector: Projector; GOut: GOut; SOut: SOut }, 'frame' | 'G' | 'projectors' | 'shadowMap' | 'projectorImage' | 'projectorDepth' | 'samp_linear' | 'samp_repeat' | 'samp_nearest' | 'samp_shadow'>;
 export default shader;
