@@ -347,7 +347,7 @@ export class WorldEngine {
     this.currentManifest = room.module.manifest;
     this.fallLimit = respawnHeight(room.falling);
     // Rooms that allow falling let you drop a little past the limit, into whatever is down there.
-    this.avatar.setWorldCollision(room.platforms, room.terrainHeight, this.fallLimit === null ? undefined : this.fallLimit - 40);
+    this.avatar.setWorldCollision(room.platforms, room.terrainHeight, this.fallLimit === null ? undefined : this.fallLimit - 40, room.collider, room.walkBounds);
     this.respawnPoint = { ...arrival, position: [...arrival.position], flying: false };
     if (this.fallen) {
       this.fallen = false;

@@ -1,6 +1,6 @@
 import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
-import type { AvatarState, PlatformCollider, SpawnPoint, TerrainHeight, Vec3Tuple } from '../types';
+import type { AvatarState, PlatformCollider, RoomCollider, SpawnPoint, TerrainHeight, Vec3Tuple, WalkBounds } from '../types';
 import {
   PLATFORMER_TUNING,
   createMovementState,
@@ -85,6 +85,11 @@ const JUMP_VELOCITY = 7.8;
 const JUMP_GRAVITY = 20.0;
 /** Walking stays on ground that drops away by less than this (downhill, stairs, sinking stones). */
 const GROUND_SNAP = 0.3;
+/** The player's size against a room's walls and columns (RoomCollider). */
+const AVATAR_RADIUS = 0.35;
+const AVATAR_HEIGHT = 1.8;
+/** How far from a room's middle a player can wander unless the room says otherwise. */
+const DEFAULT_WALK_BOUNDS: WalkBounds = { minX: -95, maxX: 95, minZ: -95, maxZ: 95 };
 const JUMP_HOLD_FROM = 0.06;
 const JUMP_HOLD_UNTIL = 0.34;
 
@@ -134,6 +139,8 @@ export class AvatarController {
   private readonly remoteRoot = new THREE.Group();
   private platforms: PlatformCollider[] = [];
   private terrainHeightFn: TerrainHeight | null = null;
+  private collider: RoomCollider | null = null;
+  private bounds: WalkBounds = DEFAULT_WALK_BOUNDS;
   private lowestY = FLOOR_LIMIT;
   private onFlightChange?: (flying: boolean) => void;
   private onColorChange?: (hexColor: string) => void;
@@ -240,10 +247,25 @@ export class AvatarController {
     platforms: PlatformCollider[],
     terrainHeightFn: TerrainHeight | null,
     lowestY = FLOOR_LIMIT,
+    collider: RoomCollider | null = null,
+    bounds: WalkBounds | null = null,
   ): void {
     this.platforms = platforms;
     this.terrainHeightFn = terrainHeightFn;
     this.lowestY = lowestY;
+    this.collider = collider;
+    this.bounds = bounds ?? DEFAULT_WALK_BOUNDS;
+  }
+
+  /** Push this step out of the room's walls and columns (`from` is where the feet were before it). */
+  private collide(fromX: number, fromY: number, fromZ: number): void {
+    if (!this.collider) return;
+    const p = this.position;
+    const [x, z] = this.collider.move([fromX, fromY, fromZ], [p.x, p.y, p.z], AVATAR_RADIUS, AVATAR_HEIGHT);
+    if (Number.isFinite(x) && Number.isFinite(z)) {
+      p.x = x;
+      p.z = z;
+    }
   }
 
   applySpawn(spawn: SpawnPoint): void {
@@ -566,8 +588,10 @@ export class AvatarController {
           this.takeoffDriftW = this.takeoffDriftW < 0.01 ? 0 : this.takeoffDriftW * Math.exp(-clampedDt / 0.55);
         }
 
+        const fromX = this.position.x, fromZ = this.position.z;
         this.position.x += this.flyVel.x * clampedDt;
         this.position.z += this.flyVel.z * clampedDt;
+        this.collide(fromX, this.position.y, fromZ);
 
         const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
         this.position.y += this.flyVel.y * clampedDt;
@@ -616,8 +640,10 @@ export class AvatarController {
         this.stride.x = damp(this.stride.x, wantX, strideRate, clampedDt);
         this.stride.y = damp(this.stride.y, wantZ, strideRate, clampedDt);
 
+        const fromX = this.position.x, fromZ = this.position.z;
         this.position.x += this.stride.x * clampedDt;
         this.position.z += this.stride.y * clampedDt;
+        this.collide(fromX, this.position.y, fromZ);
 
         // Holding Space briefly through the initial rise extends jump height (Earth repo feel).
         const holdingJump =
@@ -643,8 +669,8 @@ export class AvatarController {
       }
 
       // Soft world boundary so nobody wanders into NaN void
-      const boundedX = THREE.MathUtils.clamp(this.position.x, -95, 95);
-      const boundedZ = THREE.MathUtils.clamp(this.position.z, -95, 95);
+      const boundedX = THREE.MathUtils.clamp(this.position.x, this.bounds.minX, this.bounds.maxX);
+      const boundedZ = THREE.MathUtils.clamp(this.position.z, this.bounds.minZ, this.bounds.maxZ);
       if (this.movementMode === 'platformer') {
         if (boundedX !== this.position.x) this.stride.x = 0;
         if (boundedZ !== this.position.z) this.stride.y = 0;
@@ -710,8 +736,10 @@ export class AvatarController {
     // Only a jump raises vertical speed. Remember it so that another press in mid-air takes off.
     if (state.velocity.y > Math.max(0, this.velocityY)) this.jumpedInAir = true;
 
+    const fromX = this.position.x, fromZ = this.position.z;
     this.position.x += move.x;
     this.position.z += move.z;
+    this.collide(fromX, this.position.y, fromZ);
     const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
     this.position.y = resolveGround(state, this.position.y + move.y, floorY, PLATFORMER_TUNING.groundSnap);
 

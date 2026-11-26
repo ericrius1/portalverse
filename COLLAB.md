@@ -76,6 +76,10 @@ That's plenty of time, but it's all on one thread: the JavaScript thread that al
 
 To check a room, time its `mount`. Also record a trace in the browser's Performance panel while walking toward the room and look for long tasks.
 
+### Walls, columns and big rooms
+
+Floors come from `ctx.addPlatform` and `ctx.setTerrainHeight`. For things to walk into rather than onto, call `ctx.setCollider({ move(from, to, radius, height) })`: each step the engine passes where the player's feet were and where they're heading, and you return the x and z pushed out of whatever is solid at those heights, so the player slides along it. Players stay within 95 m of the room's middle; a bigger room widens that with `ctx.setWalkBounds({ minX, maxX, minZ, maxZ })`. `worlds/eric-palace-lagoon/collide.ts` is an example: Earth's Palace of Fine Arts solids (pier outlines, column circles, the podium, roofs a flier can land on).
+
 ### Rooms drawn with your own WebGPU code
 
 A room doesn't have to be Three.js. Portalverse asks for the WebGPU device itself and shares it: Three.js draws with it, and so can your room (`ctx.gpu.device`). Call `ctx.addGpuLayer({ render(view) })` and the engine calls `render` for every view of your room: the main view, live portal windows (off-axis), the portal at the far end of a room, snapshots. `view` carries the view and projection matrices (Three.js's, WebGPU clip space), the target's size and the viewport to draw in, the time and the mode. Draw however you like, submit your GPU work, and return your colour texture (linear HDR; the engine tone-maps it) and your depth texture with its convention (`{ reversed, near, far }`). The engine turns your depth into Three.js's and composites the colour with it under the room's Three.js scene, so portals and players are hidden behind your geometry and stand in front of it like anywhere else. Light the players with ordinary Three.js lights in `ctx.scene` that match your scene.

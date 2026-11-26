@@ -1,7 +1,7 @@
 import catalog from '../../../../registry.json';
 import { routeGates, threshold, SIDE_PORTALS } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
-import type { FallSettings, RegistryFile, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, TerrainHeight, WorldModule } from '../types';
+import type { FallSettings, RegistryFile, RoomCollider, WalkBounds, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, TerrainHeight, WorldModule } from '../types';
 import { createArchwayPortal } from './PortalMesh';
 import { breathe } from './breathe';
 import { GpuLayerCompositor, rendererDevice } from './gpuLayers';
@@ -20,6 +20,10 @@ export class RoomInstance {
   terrainHeight: TerrainHeight | null = null;
   /** Set when the room lets players fall; null keeps a floor everywhere. */
   falling: FallSettings | null = null;
+  /** Walls and columns, when the room has any. */
+  collider: RoomCollider | null = null;
+  /** How far the player can wander; null keeps the engine's default. */
+  walkBounds: WalkBounds | null = null;
   private active = false;
   private player: PlayerView | null = null;
   private enter: (portal: PortalDefinition) => void = noEntry;
@@ -80,6 +84,8 @@ export class RoomInstance {
         addPlatform: bounds => room.platforms.push(bounds),
         setTerrainHeight: fn => { room.terrainHeight = fn; },
         allowFalling: (settings = {}) => { room.falling = { ...settings }; },
+        setCollider: collider => { room.collider = collider; },
+        setWalkBounds: bounds => { room.walkBounds = { ...bounds }; },
         breathe,
         configureSpawn: spawn => { room.spawnOverride = spawn; },
         onUpdate: fn => room.updates.push(fn),

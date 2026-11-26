@@ -219,6 +219,24 @@ export interface PlatformCollider {
   topY: number;
 }
 
+/**
+ * Walls, columns and anything else a player can't walk through. Each step the engine
+ * asks where a step from `from` to `to` (the player's feet, room coordinates) ends up:
+ * return the x and z pushed out of whatever is solid at those heights (`height` is
+ * the player's height above their feet), so the player slides along it.
+ */
+export interface RoomCollider {
+  move: (from: Readonly<Vec3Tuple>, to: Readonly<Vec3Tuple>, radius: number, height: number) => [number, number];
+}
+
+/** How far a player can wander across a room's floor (metres, room coordinates). */
+export interface WalkBounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
 /** The controller supplies the feet height before vertical movement to support stacked one-way surfaces. */
 export type TerrainHeight = (x: number, z: number, fromY?: number) => number;
 
@@ -347,6 +365,10 @@ export interface WorldContext {
    * terrain height is `NO_GROUND`. Rooms that don't call this keep a floor everywhere.
    */
   allowFalling: (settings?: FallSettings) => void;
+  /** Solid things the player walks into and slides along (walls, columns, trunks). */
+  setCollider: (collider: RoomCollider) => void;
+  /** How far the player can wander, for rooms bigger than the default 95 m each way from the middle. */
+  setWalkBounds: (bounds: WalkBounds) => void;
   /** Override the default player spawn/flight mode on mount. */
   configureSpawn: (spawn: SpawnPoint) => void;
   /** Trigger entering a portal programmatically. */

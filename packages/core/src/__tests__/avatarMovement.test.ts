@@ -260,3 +260,30 @@ describe('jump height', () => {
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(0.025);
   });
 });
+
+describe.each(['classic', 'platformer'] as const)('room walls and bounds in %s', mode => {
+  it('stops at a room collider and slides along it', () => {
+    const { avatar, run } = setup();
+    avatar.setMovementMode(mode);
+    // a wall across the way at z = -3: nothing gets past it
+    avatar.setWorldCollision([], null, undefined, { move: (_from, to, r) => [to[0], Math.max(to[2], -3 + r)] });
+    avatar.applySpawn({ position: [0, 0, 0], yaw: 0.3 });
+    key('keydown', 'KeyW');
+    run(120);
+    key('keyup', 'KeyW');
+    expect(avatar.position.z).toBeGreaterThanOrEqual(-3);
+    expect(avatar.position.x).toBeLessThan(-1);
+  });
+
+  it('lets a room set how far the player can wander', () => {
+    const { avatar } = setup();
+    avatar.setMovementMode(mode);
+    avatar.setWorldCollision([], null, undefined, null, { minX: -200, maxX: 200, minZ: -200, maxZ: 200 });
+    avatar.applySpawn({ position: [-150, 0, 0], yaw: 0 });
+    avatar.update(FRAME, 0, false);
+    expect(avatar.position.x).toBe(-150);
+    avatar.setWorldCollision([], null);
+    avatar.update(FRAME, 0, false);
+    expect(avatar.position.x).toBe(-95);
+  });
+});

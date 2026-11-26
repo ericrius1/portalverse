@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { createFloatingLabel } from '@portalverse/core/engine/signage';
 import { SUN_COLOR, SUN_DIR, walkHeight } from './layout';
+import { palaceCollider, palaceSurface } from './collide';
 
 /**
  * PALACE LAGOON (`ericrius1`): the first room not drawn by Three.js.
@@ -20,7 +21,11 @@ export default defineRoom('eric-palace-lagoon', {
     sun.position.set(SUN_DIR[0] * 50, SUN_DIR[1] * 50, SUN_DIR[2] * 50);
     const sky = new THREE.HemisphereLight('#9fb8e6', '#4a5228', 1.1);
     ctx.scene.add(sun, sky);
-    ctx.setTerrainHeight(walkHeight);
+    // The meadow and the lagoon, the Palace's podium and (from above) its tops; its piers and columns to walk round.
+    ctx.setTerrainHeight((x, z, fromY) => Math.max(walkHeight(x, z), palaceSurface(x, z, fromY)));
+    ctx.setCollider(palaceCollider);
+    // Room enough to walk round the whole Palace, the hall behind it and the hills to the east.
+    ctx.setWalkBounds({ minX: -250, maxX: 160, minZ: -190, maxZ: 190 });
 
     const gpu = ctx.gpu;
     if (!gpu) {

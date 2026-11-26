@@ -2,6 +2,24 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Palace collisions and room walls — Unreleased (2026-11-26)
+
+### Added
+
+- **Room colliders (`ctx.setCollider`, `RoomCollider`)** — rooms can now have walls. Each step the avatar (classic, platformer and flight) asks the room's collider where a step from its feet's last position to the new one ends up, pushed out of whatever is solid at the player's height, so players slide along walls and round columns.
+- **Room walk bounds (`ctx.setWalkBounds`)** — the fixed ±95 m clamp is now a per-room setting with the same default, for rooms bigger than that.
+- **The Palace of Fine Arts is solid (`worlds/eric-palace-lagoon/collide.ts`)** — Earth's own Palace solids, moved into the room's frame. You walk round the 132 colonnade columns and urns, stop at the rotunda's eight piers and their pedestals and at the exhibition hall, and walk through the arches onto the podium and under the dome. Flying, you can't pass through the ring, the drum, the dome or the colonnade's entablature, and you can land on any of their tops, the dome's crown included. The room's walk bounds now reach round the whole Palace and the hall behind it.
+
+### Fixed
+
+- **The Palace was out of reach** — the old ±95 m clamp stopped players at x = −95, short of the rotunda at x = −110.
+
+### Design & engineering decisions
+
+- **The collider answers "where does this step end up", not "is this solid".** That is the shape Earth's solids already had, and it gives sliding for free: a step into a column is pushed out to its edge along the way it came in, so movement continues round it instead of stopping dead.
+- **Roofs are floors from above.** Tops are part of the room's terrain height function, which already receives the feet's height before the vertical move (`fromY`), so a flier above the dome lands on it while someone walking under it sees only the podium.
+- **The collision outline is bundled; the mesh stays on R2.** `palace.json` (12 KB, Earth's `pipeline/palace_model.py` solids) ships with the room; the 5 MB mesh is still fetched from Earth's R2.
+
 ## Rooms drawn with any WebGPU code, and the Palace Lagoon — Unreleased (2026-11-26)
 
 ### Added
