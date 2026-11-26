@@ -186,7 +186,7 @@ export class WorldEngine {
       callbacks.onPointerLockChange,
       callbacks.onMovementModeChange,
     );
-    this.playerView = { position: this.avatar.position };
+    this.playerView = { position: this.avatar.position, camera: this.camera };
     this.frameMotion = {
       previousFeet: this.previousFeet,
       feet: this.avatar.position,

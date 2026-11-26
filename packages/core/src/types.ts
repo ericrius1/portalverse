@@ -234,6 +234,8 @@ export interface FallSettings {
 
 /** What a room can read about the local player while it is the active room. */
 export interface PlayerView {
+  /** The live player camera, for projecting room interactions into the viewport. */
+  readonly camera: THREE.PerspectiveCamera;
   /** The player's feet, in this room's coordinates. Live and read-only: never modify it. */
   readonly position: THREE.Vector3;
 }

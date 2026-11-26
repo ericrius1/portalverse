@@ -530,7 +530,7 @@ export class Walkway {
 }
 
 /** The loose slab's drifting top plane and its beveled rim, clipped to its polygon. */
-function looseStoneSurface(stone: Stone, x: number, z: number, t: number): number {
+export function looseStoneSurface(stone: Stone, x: number, z: number, t: number): number {
   let inset = stone.chamfer;
   const poly = stone.polygon;
   for (let i = 0; i < poly.length; i++) {

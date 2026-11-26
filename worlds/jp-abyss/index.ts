@@ -12,6 +12,9 @@
  * `stoneMotion` so what you see and what you stand on move together. Walk off the
  * edge and you fall; the engine dims the view and offers a respawn at the fog.
  */
+import { loadEncounter, TREASURE_STRAY, type ChestEncounter } from './encounter';
+import preset from './secret-path.json';
+import { IslandPath, islandTemplates, readPath } from './islands';
 import * as THREE from 'three/webgpu';
 import {
   Fn,
@@ -53,7 +56,7 @@ import { breathe, seededRandom } from '@portalverse/core/rooms/kit';
 import { buildPathStones, buildStrayStones, centreline, distanceToPath, TILT, Walkway } from './path';
 import { buildSpikeGeometry, buildStoneGeometry, buildWispGeometry, moteAttributes, stoneUnderside, type Mote, type Wisp } from './geometry';
 import { abyssNoisePixels, NOISE_SIZE } from './noise';
-import { retriggerStep, tuningUniforms } from './tuning';
+import { WalkSteps, retriggerStep, tuningUniforms } from './tuning';
 
 type Vec4Node = THREE.Node<'vec4'>;
 type Vec3Node = THREE.Node<'vec3'>;
@@ -255,13 +258,14 @@ export default defineRoom('jp-abyss', {
     // The stones, and the surface you walk on, follow one shared clock.
     const { walkway } = layout;
     const tune = tuningUniforms();
-    if (import.meta.env.DEV && typeof window !== 'undefined') {
-      const { enableTuningShortcut } = await import('./tuningShortcut');
-      ctx.onActivate(() => enableTuningShortcut(tune));
-    }
+    let islands: IslandPath | undefined;
+    let encounter: ChestEncounter | undefined;
+    const hostStone = walkway.stones.filter(stone => stone.pathRow === undefined)[TREASURE_STRAY];
+    const hostIndex = walkway.stones.indexOf(hostStone);
     const clock = uniform(0);
     let now = 0;
     let lastStone = -1;
+    const strides = new WalkSteps();
     const pendingSteps: Array<{ stone: number; at: number }> = [];
     const glowStart = performance.now();
     const glowClock = uniform(0);
@@ -269,7 +273,7 @@ export default defineRoom('jp-abyss', {
     const stepTimes = new THREE.BufferAttribute(
       new Float32Array(stoneTemplate.getAttribute('position').count).fill(-1e6), 1,
     );
-    ctx.setTerrainHeight((x, z, fromY) => walkway.heightAt(x, z, now, fromY));
+    ctx.setTerrainHeight((x, z, fromY) => Math.max(walkway.heightAt(x, z, now, fromY), islands?.heightAt(x, z, fromY) ?? -Infinity));
     // Step off the path and you fall; reach the top of the fog and you're offered a respawn.
     ctx.allowFalling({ respawnBelow: FOG_LAYERS[FOG_LAYERS.length - 1].y });
 
@@ -281,6 +285,18 @@ export default defineRoom('jp-abyss', {
     noise.generateMipmaps = true;
     noise.colorSpace = THREE.NoColorSpace;
     noise.needsUpdate = true;
+
+    ctx.onDispose(() => {
+      encounter?.dispose();
+      islands?.clear();
+      ctx.scene.remove(root);
+      ctx.scene.backgroundNode = null;
+      ctx.scene.fog = null;
+      for (const geometry of geometries) geometry.dispose();
+      for (const material of materials) material.dispose();
+      for (const mesh of instanced) mesh.dispose();
+      noise.dispose();
+    });
 
     // Night sky: near-black overhead, fading to the fog's colour at the horizon, with a pale moon.
     {
@@ -305,6 +321,9 @@ export default defineRoom('jp-abyss', {
     root.add(underglow);
 
     await ctx.breathe();
+    const smokeMaterial = own(new THREE.MeshBasicNodeMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
+    }));
     // Stones: weathered grey with lichen on top, cracked, worn at the edges, glowing underneath.
     {
       const motion = attribute<'vec4'>('aMotion', 'vec4');
@@ -356,6 +375,20 @@ export default defineRoom('jp-abyss', {
       const stones = own(copyOf(stoneTemplate));
       stones.setAttribute('aStepTime', stepTimes);
       root.add(new THREE.Mesh(stones, material));
+
+      const path = new IslandPath(root, material, await islandTemplates(), smokeMaterial);
+      islands = path;
+      const published = readPath(preset);
+      if (!published?.encounter) throw new Error('Missing Abyss encounter placement');
+      let initial = published;
+      if (import.meta.env.DEV && typeof window !== 'undefined') {
+        const { enableTuningShortcut, loadDraft } = await import('./tuningShortcut');
+        initial = loadDraft() ?? published;
+        ctx.onActivate(() => enableTuningShortcut(tune, path, encounter!, ctx));
+      }
+      for (const island of initial.islands) path.add(island);
+      encounter = await loadEncounter(hostStone, initial.encounter ?? published.encounter);
+      root.add(encounter.anchor);
     }
 
     await ctx.breathe();
@@ -402,20 +435,18 @@ export default defineRoom('jp-abyss', {
       const motion = attribute<'vec4'>('aMotion', 'vec4');
       const phase = attribute<'vec4'>('aPhase', 'vec4');
       const seed = origin.w;
-      const length = attribute<'vec2'>('aLength', 'vec2');
+      const length = attribute<'vec4'>('aLength', 'vec4');
       const lengthMin = mix(tune.strayWispMin, tune.pathWispMin, length.y);
       const lengthMax = mix(tune.strayWispMax, tune.pathWispMax, length.y);
-      const wispLength = mix(lengthMax, mix(lengthMin, lengthMax, length.x), tune.lengthRandomness);
+      const wispLength = mix(lengthMax, mix(lengthMin, lengthMax, length.x), tune.lengthRandomness).mul(length.z);
       // Three independent, fixed samples per ribbon. Its shape can drift without rerolling its appearance.
-      const opacity = varying(mix(tune.opacityMin, tune.opacityMax, seed));
+      const opacity = varying(mix(tune.opacityMin, tune.opacityMax, seed).mul(length.w));
       const tailFalloff = varying(mix(tune.tailFalloffMin, tune.tailFalloffMax, phase.w.div(6.283)));
       const thin = smoothstep(0.45, 0.95, seed);
       const thinness = thin.mul(tune.wispThinness);
       const along = uv().y;
       const across = uv().x;
-      const material = own(new THREE.MeshBasicNodeMaterial({
-        transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
-      }));
+      const material = smokeMaterial;
       material.positionNode = Fn(() => {
         const shape = positionGeometry.toVar();
         shape.y.mulAssign(wispLength);
@@ -492,13 +523,17 @@ export default defineRoom('jp-abyss', {
       });
     }
 
-    ctx.onActivate(() => { lastStone = -1; });
-    ctx.onUpdate((_dt, elapsed) => {
+    ctx.onActivate(() => { lastStone = -1; strides.reset(); return () => encounter?.reset(); });
+    ctx.onUpdate((dt, elapsed) => {
       glowClock.value = (performance.now() - glowStart) / 1000;
       const feet = ctx.player?.position;
       // The controller sampled the walkway using the previous frame's clock.
-      const index = feet && tune.stepBrightness.value > 0 ? walkway.stoneAtFeet(feet.x, feet.y, feet.z, now) : -1;
-      if (index >= 0 && index !== lastStone) {
+      const walked = strides.update(feet, glowClock.value);
+      islands?.updateSmoke();
+      const onIsland = islands?.step(feet, glowClock.value, tune, walked);
+      const index = feet && !onIsland ? walkway.stoneAtFeet(feet.x, feet.y, feet.z, now) : -1;
+      encounter?.update(dt, elapsed, index === hostIndex);
+      if (tune.stepBrightness.value > 0 && index >= 0 && (index !== lastStone || walked)) {
         const [first, last] = walkway.stepSpan(index, tune.fullPathWidth.value);
         // A row is built from one edge to the other. Spread in both directions from contact.
         for (let i = first; i <= last; i++) {
@@ -520,16 +555,6 @@ export default defineRoom('jp-abyss', {
       lastStone = index;
       now = elapsed;
       clock.value = elapsed;
-    });
-
-    ctx.onDispose(() => {
-      ctx.scene.remove(root);
-      ctx.scene.backgroundNode = null;
-      ctx.scene.fog = null;
-      for (const geometry of geometries) geometry.dispose();
-      for (const material of materials) material.dispose();
-      for (const mesh of instanced) mesh.dispose();
-      noise.dispose();
     });
   },
 });

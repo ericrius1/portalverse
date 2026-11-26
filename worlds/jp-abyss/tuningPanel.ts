@@ -14,7 +14,7 @@ function exportPreset(tune: TuningUniforms) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function Panel({ tune, apply }: { tune: TuningUniforms; apply: (values: Partial<AbyssTuning>) => void }) {
+function Panel({ tune, apply, openEditor }: { openEditor: () => void; tune: TuningUniforms; apply: (values: Partial<AbyssTuning>) => void }) {
   const store = useCreateStore();
   const slider = (key: NumericSetting, label: string, min: number, max: number, step: number) => ({
     label, min, max, step, value: tune[key].value,
@@ -25,6 +25,7 @@ function Panel({ tune, apply }: { tune: TuningUniforms; apply: (values: Partial<
     onChange: ([a, b]: [number, number]) => { tune[low].value = a; tune[high].value = b; },
   });
   useControls(() => ({
+    'Edit islands (I)': button(openEditor),
     Stones: folder({
       stoneBrightness: slider('stoneBrightness', 'Rock brightness', 0, 4, 0.05),
       glowBrightness: slider('glowBrightness', 'Glow brightness', 0, 5, 0.05),
@@ -68,11 +69,11 @@ function Panel({ tune, apply }: { tune: TuningUniforms; apply: (values: Partial<
   });
 }
 
-export function mountTuningPanel(host: HTMLElement, tune: TuningUniforms) {
+export function mountTuningPanel(host: HTMLElement, tune: TuningUniforms, openEditor: () => void) {
   const root = createRoot(host);
   let revision = 0;
   function render() {
-    root.render(createElement(Panel, { key: revision, tune, apply }));
+    root.render(createElement(Panel, { key: revision, tune, apply, openEditor }));
   }
   function apply({ fullPathWidth, ...values }: Partial<AbyssTuning>) {
     if (fullPathWidth !== undefined) tune.fullPathWidth.value = fullPathWidth;

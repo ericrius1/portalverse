@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 export default defineConfig({
   plugins: [roomBuildBudget()],
   // Pre-bundle the on-demand dev panel so its first open doesn't reload the running world.
-  optimizeDeps: { include: ['leva', 'react', 'react-dom/client'] },
+  optimizeDeps: { include: ['leva', 'react', 'react-dom/client', 'three/addons/controls/TransformControls.js'] },
   resolve: {
     alias: {
       '@portalverse/core': resolve(__dirname, 'packages/core/src'),

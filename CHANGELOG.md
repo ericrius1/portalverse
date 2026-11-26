@@ -2,6 +2,41 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Abyss secret path smoke and footsteps — Unreleased
+
+### Changed
+
+- The latest editor export sets the default secret path and Shadow Man placement. Landing on the destination island summons the man with the chest hidden.
+- Each added stepping stone trails one smoke ribbon. In path order the three ribbons are faint and wispy, medium, and full strength.
+- Walking again on the same stone relights its cracks. Continued strides refresh the trail and standing still lets it fade.
+
+### Design & engineering decisions
+
+- The hidden chest anchor preserves the exported position and rotation of the apparition. Smoke shares the room’s existing material and tuning. Footsteps measure horizontal travel so island levitation leaves the idle fade intact.
+
+## Abyss treasure encounter — Unreleased
+
+### Added
+
+- A treasure chest rides the far side of the large floating stone beyond the secret path. Landing on that stone summons the Shadow Man at the chest. His original emergence animation plays once and fades out. Leaving and landing again can replay the encounter.
+- The dev island editor can move and rotate authored stones, the chest, and the shadow’s spawn on all three axes. Drafts and JSON exports include their transforms. Earlier island layouts open with the default encounter.
+
+### Design & engineering decisions
+
+- The chest follows the landing surface’s rise and tilt. Its child spawn stays attached when the chest is moved. Rotated jump stones use their rendered top and bevel for footing.
+
+## Abyss floating island editor — Unreleased
+
+### Added
+
+- Abyss now loads JP’s three-island secret jump path by default, using the exact rock shapes, sizes and positions from the editor export.
+- In dev mode, press **I** in Abyss or choose **Edit islands** in the **H** panel. Add rocks, cycle through three shapes and three sizes, and drag their axes or enter coordinates. **Playtest** returns to the game with the islands in place.
+- Island drafts save in the current browser. **Export JSON** downloads a layout that can replace `worlds/jp-abyss/secret-path.json` to ship the path.
+
+### Design & engineering decisions
+
+- Authored islands use the Abyss rock material, footstep glow and beveled landing surface. Their positions stay fixed so jump distances remain reproducible while editing and playing.
+
 ## YOU DIED fall screen — Unreleased
 
 ### Changed

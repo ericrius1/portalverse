@@ -46,3 +46,39 @@ export function retriggerStep(now: number, previous: number, fadeIn: number, fad
   const remaining = (1 - MathUtils.smoothstep(age - fadeIn, 0, fadeOut)) ** curve;
   return now - remaining * fadeIn;
 }
+
+/** Horizontal foot travel only. A levitating surface or a camera turn cannot light a resting stone. */
+export class WalkSteps {
+  private x = NaN;
+  private z = NaN;
+  private lastMotion = -Infinity;
+  private distance = 0;
+
+  reset() {
+    this.x = NaN;
+    this.lastMotion = -Infinity;
+    this.distance = 0;
+  }
+
+  update(feet: { x: number; z: number } | undefined, now: number): boolean {
+    if (!feet) {
+      this.reset();
+      return false;
+    }
+    if (Number.isNaN(this.x)) {
+      this.x = feet.x;
+      this.z = feet.z;
+      return false;
+    }
+    const travel = Math.hypot(feet.x - this.x, feet.z - this.z);
+    if (travel < 0.02) return false;
+    this.x = feet.x;
+    this.z = feet.z;
+    this.distance += travel;
+    const resumed = now - this.lastMotion > 0.18;
+    this.lastMotion = now;
+    if (!resumed && this.distance < 0.8) return false;
+    this.distance = 0;
+    return true;
+  }
+}

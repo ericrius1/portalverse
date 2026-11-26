@@ -232,7 +232,7 @@ describe('room lifecycle across crossings', () => {
 
     expect(ctx().mode).toBe('preview');
     expect(ctx().player).toBeNull();
-    const player = { position: v(1, 0, 2) };
+    const player = { position: v(1, 0, 2), camera: new THREE.PerspectiveCamera() };
     room.activate(enter, player);
     expect(ctx().mode).toBe('active');
     expect(ctx().player).toBe(player);

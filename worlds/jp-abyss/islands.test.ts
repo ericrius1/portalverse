@@ -1,0 +1,86 @@
+import { expect, it } from 'vitest';
+import * as THREE from 'three/webgpu';
+import { IslandPath, islandTemplates, readPath } from './islands';
+import { WalkSteps, tuningUniforms } from './tuning';
+
+it('keeps the landing surface, step glow and exported layout attached to the edited rock', async () => {
+  const material = new THREE.MeshBasicMaterial();
+  const path = new IslandPath(new THREE.Group(), material, await islandTemplates(), material);
+  const index = path.add({ shape: 'Slab', size: 'Medium', x: 10, y: 2, z: -8 });
+  const mesh = path.entries[index].mesh;
+  expect(path.heightAt(10, -8)).toBe(2);
+  expect(path.heightAt(10, -8, 0)).toBe(-Infinity);
+  mesh.position.set(20, 4, 15);
+  expect(path.heightAt(10, -8)).toBe(-Infinity);
+  expect(path.heightAt(20, 15)).toBe(4);
+  expect(path.heightAt(20, 17)).toBe(-Infinity);
+  path.reshape(index, 'Shard', 'Large');
+  expect(path.heightAt(20, 17)).toBe(4);
+  expect(path.step(mesh.position, 12, tuningUniforms(), false)).toBe(true);
+  expect(mesh.geometry.getAttribute('aStepTime').getX(0)).toBe(12);
+  path.add({ shape: 'Crag', size: 'Small', x: 20, y: 7, z: 15 });
+  expect(path.heightAt(20, 15, 4)).toBe(4);
+  expect(path.heightAt(20, 15, 7)).toBe(7);
+  const saved = readPath(JSON.parse(JSON.stringify(path.snapshot())))!;
+  path.clear();
+  expect(path.heightAt(20, 15)).toBe(-Infinity);
+  saved.islands.forEach(island => path.add(island));
+  expect(path.heightAt(20, 17)).toBe(4);
+  expect(readPath({ version: 1, islands: [{ ...saved.islands[0], x: null }] })).toBeUndefined();
+  path.clear();
+  material.dispose();
+});
+
+it('lands on the rotated top and preserves degrees and chest-relative placements on export', async () => {
+  const material = new THREE.MeshBasicMaterial();
+  const path = new IslandPath(new THREE.Group(), material, await islandTemplates(), material);
+  path.add({ x: 3, y: 4, z: 5, rotation: [30, 45, -20], shape: 'Shard', size: 'Medium' });
+  const mesh = path.entries[0].mesh;
+  const surface = mesh.localToWorld(new THREE.Vector3(0, 0, 1.2));
+  expect(path.heightAt(surface.x, surface.z)).toBeCloseTo(surface.y, 6);
+  expect(path.heightAt(surface.x, surface.z, surface.y - 2)).toBe(-Infinity);
+  const outside = mesh.localToWorld(new THREE.Vector3(1.5, 0, 1.2));
+  expect(path.heightAt(outside.x, outside.z)).toBe(-Infinity);
+  const encounter = { chest: { x: -2, y: 0, z: 1 }, shadow: { x: 0, y: 0.6, z: 0 } };
+  const saved = readPath(JSON.parse(JSON.stringify(path.snapshot(encounter))))!;
+  expect(saved.encounter).toEqual(encounter);
+  expect(saved.islands[0].rotation?.[1]).toBeCloseTo(45);
+  const legacy = { version: 1, islands: [{ x: 0, y: 0, z: 0, shape: 'Slab', size: 'Small' }] };
+  expect(readPath(legacy)?.islands[0].rotation).toBeUndefined();
+  path.clear();
+  material.dispose();
+});
+
+it('relights after walking resumes on the same stone and ignores idle vertical drift', async () => {
+  const material = new THREE.MeshBasicMaterial();
+  const path = new IslandPath(new THREE.Group(), material, await islandTemplates(), material);
+  const island = { x: 0, y: 0, z: 0, shape: 'Slab', size: 'Medium' } as const;
+  path.add(island);
+  path.add({ ...island, x: 4 });
+  path.add({ ...island, x: 8 });
+  const [first] = path.entries;
+  const profiles = path.entries.map(({ smoke }) => smoke.geometry.getAttribute('aLength').getW(0));
+  expect(profiles[0]).toBeLessThan(profiles[1]);
+  expect(profiles[1]).toBeLessThan(profiles[2]);
+  expect(profiles[2]).toBe(1);
+  first.mesh.rotation.y = 0.6;
+  path.updateSmoke();
+  expect(first.smoke.getWorldQuaternion(new THREE.Quaternion()).angleTo(new THREE.Quaternion())).toBeCloseTo(0);
+  const settings = tuningUniforms();
+  const steps = new WalkSteps();
+  const feet = new THREE.Vector3();
+  const stamp = (time: number) => {
+    expect(path.step(feet, time, settings, steps.update(feet, time))).toBe(true);
+    return first.mesh.geometry.getAttribute('aStepTime').getX(0);
+  };
+  expect(stamp(0)).toBe(0);
+  feet.y += 0.005;
+  expect(stamp(7)).toBe(0);
+  feet.z += 0.04;
+  expect(stamp(7.02)).toBeCloseTo(7.02);
+  expect(stamp(16)).toBeCloseTo(7.02);
+  feet.x -= 0.05;
+  expect(stamp(16.02)).toBeCloseTo(16.02);
+  path.clear();
+  material.dispose();
+});

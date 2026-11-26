@@ -1,0 +1,29 @@
+.abyss-gizmo-layer { position: fixed; inset: 0; z-index: 5; touch-action: none; }
+.abyss-editor {
+  box-sizing: border-box; padding: 16px; border: 1px solid #454353; border-radius: 9px;
+  background: #191922f5; color: #eeeaf8; font: 14px/1.4 system-ui, sans-serif;
+}
+.abyss-editor h2 { font-size: 17px; margin: 0 0 12px; }
+.abyss-editor fieldset { border: 0; padding: 0; margin: 12px 0; min-width: 0; }
+.abyss-editor label, .abyss-editor .actions, .abyss-editor .coordinates, .abyss-editor .variant {
+  display: flex; align-items: center; gap: 6px;
+}
+.abyss-editor select, .abyss-editor button, .abyss-editor input {
+  background: #30303d; color: inherit; border: 1px solid #555366; border-radius: 4px;
+  padding: 5px 8px; font: inherit; min-width: 0;
+}
+.abyss-editor select, .abyss-editor .actions button, .abyss-editor .coordinates label { flex: 1; }
+.abyss-editor button { cursor: pointer; }
+.abyss-editor button:hover:enabled { background: #464455; }
+.abyss-editor button[data-add] { background: #31524c; border-color: #587d73; }
+.abyss-editor :disabled { opacity: 0.55; }
+.abyss-editor .variant { margin: 8px 0; }
+.abyss-editor .variant span { flex: 1; }
+.abyss-editor .variant output { text-align: center; width: 62px; }
+.abyss-editor .coordinates input { width: 100%; padding: 4px; }
+.abyss-editor p, .abyss-editor small { color: #c3bfd0; }
+.abyss-editor small:not(:empty) { display: block; margin-top: 8px; }
+.abyss-editor kbd { font-size: 11px; opacity: 0.8; }
+
+.abyss-editor button[aria-pressed="true"] { background: #31524c; border-color: #587d73; }
+.abyss-editor > label, .abyss-editor .coordinates { margin-top: 10px; }

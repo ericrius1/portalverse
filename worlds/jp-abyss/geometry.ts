@@ -117,6 +117,8 @@ export interface Wisp {
   origin: THREE.Vector3;
   width: number;
   lengthFraction: number;
+  lengthScale?: number;
+  opacityScale?: number;
   seed: number;
 }
 
@@ -142,7 +144,7 @@ export function buildWispGeometry(wisps: Wisp[]): THREE.BufferGeometry {
         const u = c / COLS;
         const v = r / ROWS;
         position.push((u - 0.5) * wisp.width, -v, 0);
-        lengths.push(wisp.lengthFraction, Number(wisp.stone.pathRow !== undefined));
+        lengths.push(wisp.lengthFraction, Number(wisp.stone.pathRow !== undefined), wisp.lengthScale ?? 1, wisp.opacityScale ?? 1);
         uv.push(u, v);
         origin.push(wisp.origin.x, wisp.origin.y, wisp.origin.z, wisp.seed);
         motion.push(...attrs.motion);
@@ -161,7 +163,7 @@ export function buildWispGeometry(wisps: Wisp[]): THREE.BufferGeometry {
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geometry.setAttribute('aOrigin', new THREE.Float32BufferAttribute(origin, 4));
-  geometry.setAttribute('aLength', new THREE.Float32BufferAttribute(lengths, 2));
+  geometry.setAttribute('aLength', new THREE.Float32BufferAttribute(lengths, 4));
   geometry.setAttribute('aMotion', new THREE.Float32BufferAttribute(motion, 4));
   geometry.setAttribute('aPhase', new THREE.Float32BufferAttribute(phase, 4));
   geometry.setIndex(index);
