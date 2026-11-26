@@ -277,6 +277,7 @@ async function boot(): Promise<void> {
   const engine = new WorldEngine(viewport, identity.color, {
     loadLocalWorld: id => registry.getManifest(id)?.kind === 'local' ? registry.loadWorld(id) : undefined,
     onWorldLoaded: (manifest) => {
+      soundtrack.enterRoom(manifest.id);
       activeManifest = manifest;
       activeWorldId = manifest.id;
       tutorial.notifyWorldChanged(manifest.id);
@@ -285,6 +286,7 @@ async function boot(): Promise<void> {
       syncUrlBar();
     },
     onPortalPromoted: (manifest) => {
+      soundtrack.enterRoom(manifest.id);
       soundtrack.playPortalWhoosh();
       net.switchWorld(
         manifest.id,

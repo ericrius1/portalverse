@@ -3,12 +3,13 @@ import catalog from '../../../../registry.json';
 import type { RegistryFile } from '../types';
 import { ROUTE_LENGTH } from '../portal/roomLayout';
 import {
-  APPROACH_RADIUS,
+  PREVIEW_MAX,
+  PREVIEW_RADIUS,
   LOOP_SECONDS,
   PHRASE_SECONDS,
   ROOM_VIBES,
   STEM_IDS,
-  approachBlend,
+  gateCloseness,
   loopOffset,
   mixVibes,
   motionMultiplier,
@@ -37,30 +38,30 @@ describe('soundtrack mixing', () => {
     }
   });
 
-  it('blends half and half at a gate, and nothing from the far room mid-room', () => {
-    expect(approachBlend(0)).toBeCloseTo(0.5);
-    expect(approachBlend(APPROACH_RADIUS)).toBe(0);
-    expect(approachBlend(ROUTE_LENGTH / 2)).toBeLessThan(0.05);
-    expect(approachBlend(10)).toBeGreaterThan(approachBlend(20));
+  it('keeps each room to itself until a few metres from a gate', () => {
+    expect(gateCloseness(PREVIEW_RADIUS)).toBe(0);
+    expect(gateCloseness(ROUTE_LENGTH / 2)).toBe(0);
+    expect(gateCloseness(0)).toBe(1);
+    expect(gateCloseness(3)).toBeGreaterThan(gateCloseness(7));
+    const mix = mixVibes(vibeFor('jp-abyss'), vibeFor('laser-lab'), gateCloseness(ROUTE_LENGTH / 4));
+    expect(mix['holo-bed'].level).toBe(0);
   });
 
-  it('is continuous across a crossing: the mix at one gate mirrors the mix at the other', () => {
-    const a = vibeFor('jp-abyss');
-    const b = vibeFor('laser-lab');
-    const before = mixVibes(a, b, approachBlend(0));
-    const after = mixVibes(b, a, approachBlend(0));
-    for (const id of STEM_IDS) {
-      expect(after[id].level).toBeCloseTo(before[id].level);
-      expect(before[id].muffle).toBeCloseTo(0);
-    }
-  });
-
-  it('muffles stems that only the distant neighbour plays', () => {
-    const mix = mixVibes(vibeFor('jp-abyss'), vibeFor('eric-sun-observatory'), 0.1);
-    expect(mix['golden-bed'].level).toBeGreaterThan(0);
-    expect(mix['golden-bed'].muffle).toBeGreaterThan(0.5);
-    expect(mix['abyss-bed'].muffle).toBe(0);
+  it('only hints at the next room, muffled, even at the portal', () => {
+    const far = mixVibes(vibeFor('jp-abyss'), vibeFor('eric-sun-observatory'), 0.3);
+    expect(far['golden-bed'].level).toBeGreaterThan(0);
+    expect(far['golden-bed'].level).toBeLessThan(PREVIEW_MAX);
+    expect(far['golden-bed'].muffle).toBeGreaterThan(0.8);
+    expect(far['abyss-bed']).toEqual({ level: 1, muffle: 0 });
+    const at = mixVibes(vibeFor('jp-abyss'), vibeFor('eric-sun-observatory'), 1);
+    expect(at['golden-bed'].level).toBeCloseTo(PREVIEW_MAX);
+    expect(at['golden-bed'].muffle).toBeCloseTo(0);
     expect(muffleCutoff(1)).toBeLessThan(muffleCutoff(0));
+  });
+
+  it('never doubles a stem both rooms share', () => {
+    const mix = mixVibes(vibeFor('jp-world'), vibeFor('jp-garden'), 1);
+    expect(mix['golden-bed']).toEqual({ level: 1, muffle: 0 });
   });
 
   it('keeps beds up every phrase while layers can drop out', () => {

@@ -2,6 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Tighter soundtrack transitions — Unreleased (2026-11-26)
+
+### Changed
+
+- **Each room plays its own music** — the next room is no longer mixed in from 40 m away. Within 10 m of a gate you hear only a faint, muffled hint of it (at most 30%, and never on top of a stem both rooms share).
+- **The switch happens at the crossing** — stepping through crossfades to the new room's blend in under a second, together with a 1.3 s filter sweep. The room you came from stays out while you're still at the gate you came in by.
+- **Lighter portal effects** — the warp darkens the music to 5 kHz (was ~1.8 kHz), with less reverb and a quieter hum and whoosh. The limiter now only catches peaks, so the whoosh no longer pumps the music.
+
+### Design & engineering decisions
+
+- Playtesting showed the long spatial blend kept two rooms' beds clashing for most of the walk, and left the old room hanging after arrival. The transition belongs to the moment of crossing, so `enterRoom()` schedules the crossfade from the crossing callback itself, not from a frame that may arrive late while the new room mounts.
+- The crossing sweep has its own filter, so the warp filter and the sweep never override each other.
+
 ## Adaptive soundtrack and portal sounds — Unreleased (2026-11-26)
 
 ### Added

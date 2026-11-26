@@ -3,10 +3,9 @@
  *
  * Every stem is an 8-bar loop at 88 BPM in D minor, so any of them can play against any
  * other, phase-locked to one shared bar grid. Each room asks for a blend of stems (its
- * vibe). Walking toward a gate brings the next room's blend in, like a DJ fading in the
- * next record: half and half at the portal itself, so stepping through is seamless. On
- * the far side you stand at the other room's gate, so the same half-and-half picks up
- * where it left off and fades out as you walk in.
+ * vibe) and plays it on its own. Within a few metres of a gate you hear a faint, muffled
+ * hint of the room beyond; the switch itself happens as you step through, with a quick
+ * crossfade timed to the crossing.
  */
 
 export const MUSIC_BPM = 88;
@@ -68,8 +67,10 @@ export const DEFAULT_VIBE: Vibe = { 'holo-bed': 0.6, 'shimmer-bells': 0.4, 'gold
 export const vibeFor = (roomId: string | null | undefined): Vibe =>
   (roomId && ROOM_VIBES[roomId]) || DEFAULT_VIBE;
 
-/** Where the next room starts fading in, in metres from its gate. */
-export const APPROACH_RADIUS = 40;
+/** How close to a gate (metres) before the room beyond it can be heard at all. */
+export const PREVIEW_RADIUS = 10;
+/** The loudest the room beyond a gate gets before you cross: a hint, never a second song. */
+export const PREVIEW_MAX = 0.3;
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const smoothstep = (t: number) => {
@@ -78,39 +79,37 @@ const smoothstep = (t: number) => {
 };
 
 /**
- * How much of a neighbouring room's music to blend in at this distance from the gate
- * that leads there: 0 beyond APPROACH_RADIUS, 0.5 at the portal itself.
+ * How close the player is to a gate, 0 (PREVIEW_RADIUS or further) .. 1 (at the portal).
  */
-export function approachBlend(distanceToGate: number, radius = APPROACH_RADIUS): number {
-  return 0.5 * smoothstep(1 - Math.max(0, distanceToGate) / radius);
+export function gateCloseness(distanceToGate: number, radius = PREVIEW_RADIUS): number {
+  return smoothstep(1 - Math.max(0, distanceToGate) / radius);
 }
 
 export interface StemMix {
   /** Loudness, 0..1, before phrase and motion variation. */
   level: number;
   /**
-   * How muffled the stem should sound, 0 (open) .. 1 (heard through a wall). A stem that
-   * only the neighbouring room plays is muffled while that room is still far off, and
-   * opens up as the player reaches the portal.
+   * How muffled the stem should sound, 0 (open) .. 1 (heard through a wall). The room
+   * beyond a gate is heard muffled, opening up only as the player reaches the portal.
    */
   muffle: number;
 }
 
 /**
- * The blend of the current room with whichever neighbour the player is closer to.
- * `blend` is that neighbour's share (0..0.5) from approachBlend.
+ * The current room's mix, plus a faint, muffled hint of the room beyond the gate the
+ * player is walking up to. `closeness` comes from gateCloseness. The real change happens
+ * at the crossing: the room switches and the stems crossfade quickly to the new blend.
+ * Stems both rooms share never double up, and they stay open.
  */
-export function mixVibes(current: Vibe, neighbour: Vibe | null, blend: number): Record<StemId, StemMix> {
-  const b = neighbour ? Math.min(0.5, Math.max(0, blend)) : 0;
+export function mixVibes(current: Vibe, neighbour: Vibe | null, closeness: number): Record<StemId, StemMix> {
+  const c = neighbour ? clamp01(closeness) : 0;
+  const preview = PREVIEW_MAX * c;
   const out = {} as Record<StemId, StemMix>;
   for (const id of STEM_IDS) {
-    const own = (current[id] ?? 0) * (1 - b);
-    const theirs = (neighbour?.[id] ?? 0) * b;
-    const level = own + theirs;
-    const share = level > 1e-6 ? theirs / level : 0;
-    // Fully open at the portal (b = 0.5), fully muffled while the neighbour is a faint hint.
-    const distance = 1 - smoothstep((b - 0.05) / 0.4);
-    out[id] = { level, muffle: share * distance };
+    const own = current[id] ?? 0;
+    const hint = (neighbour?.[id] ?? 0) * preview;
+    const level = Math.max(own, hint);
+    out[id] = { level, muffle: hint > own ? 1 - c * c : 0 };
   }
   return out;
 }
