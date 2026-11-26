@@ -57,7 +57,16 @@ export interface TransitAvatarState {
   visible: boolean;
 }
 
+/** One-shot wakeup for an idle wait or a superseded trip. */
+function wakeup() {
+  let wake!: () => void;
+  const promise = new Promise<void>(resolve => { wake = resolve; });
+  return { promise, wake };
+}
+
 interface Destination {
+  expedite?: () => void;
+  discarded?: boolean;
   ready: Promise<RoomInstance>;
   room?: RoomInstance;
   lastSeen: number;
@@ -409,17 +418,16 @@ export class PortalPreviews {
   private readonly order: readonly string[];
   /** Outer rooms of the window still waiting to load, in order. */
   private queue: string[] = [];
-  private loadingQueue = false;
-  /** The rooms needed right now. The queue waits for them. */
-  private urgent: Promise<unknown> = Promise.resolve();
+  private queueVersion = 0;
+  private generation = 0;
+  private windowIds = new Set<string>();
+  private trip?: { id: string; done: ReturnType<typeof wakeup> };
   /** The room the player is in, which this cache doesn't own but keeps supplied with snapshots. */
   private activeRoom?: RoomInstance;
   private readonly compileCamera = new THREE.PerspectiveCamera();
   private compileTarget?: THREE.RenderTarget;
   /** Compiles run one after another; three.js shares precompile state between calls. */
-  private compiling: Promise<void> = Promise.resolve();
-  /** Bumped by `clear()` so rooms still being prepared stop touching the GPU. */
-  private generation = 0;
+  private compiling?: Promise<void>;
 
   constructor(
     private readonly renderer: THREE.WebGPURenderer,
@@ -439,14 +447,23 @@ export class PortalPreviews {
     }
     const module = this.load(id);
     if (!module) return;
+    const priority = wakeup();
     const generation = this.generation;
+    const current = () => generation === this.generation && !entry.discarded;
     const ready = module
       .then(mod => RoomInstance.mount(mod, this.renderer))
-      .then(room => this.prepareRoom(room, generation));
-    const entry: Destination = { ready, lastSeen: elapsed };
+      .then(room => this.prepareRoom(room, id, current, () =>
+        entry.expedite ? Promise.race([this.idle(), priority.promise]) : Promise.resolve(),
+      ));
+    const entry: Destination = {
+      ready, lastSeen: elapsed, pinned: this.windowIds.has(id) || existing?.pinned,
+      expedite: priority.wake,
+    };
     this.destinations.set(id, entry);
     void ready.then(room => {
+      if (!current()) return;
       entry.room = room;
+      entry.expedite = undefined;
       this.applySnapshotsToRoom(room);
     }).catch(error => {
       entry.retryAfter = performance.now() + 5000;
@@ -459,15 +476,21 @@ export class PortalPreviews {
    * Do a new room's GPU work before it counts as ready: compile its shaders and
    * photograph both ends, a step per idle slot. A failed step leaves the room usable.
    */
-  private async prepareRoom(room: RoomInstance, generation: number): Promise<RoomInstance> {
+  private async prepareRoom(
+    room: RoomInstance, id: string, current: () => boolean, waitForSlot: () => Promise<void>,
+  ): Promise<RoomInstance> {
+    if (!current()) return room;
+    this.applySnapshotsToRoom(room);
     const steps = [
-      () => this.compile(room, generation),
+      () => this.compile(room, id, current),
       () => this.captureSnapshot(room, 'entrance'),
       () => this.captureSnapshot(room, 'exit'),
     ];
     for (const step of steps) {
-      await this.idle();
-      if (generation !== this.generation) return room;
+      await waitForSlot();
+      // Give a selected destination the next available GPU work slot.
+      while (current() && this.trip && this.trip.id !== id) await this.trip.done.promise;
+      if (!current()) return room;
       try {
         await step();
       } catch (error) {
@@ -478,40 +501,59 @@ export class PortalPreviews {
     return room;
   }
 
-  private compile(room: RoomInstance, generation: number): Promise<void> {
-    const run = async () => {
-      if (generation !== this.generation) return;
-      // Compile everything, not just what one camera happens to see.
-      const culled: THREE.Object3D[] = [];
-      room.scene.traverse(object => {
-        if (!object.frustumCulled) return;
-        object.frustumCulled = false;
-        culled.push(object);
-      });
-      const previous = this.renderer.getRenderTarget();
-      try {
-        this.compileTarget ??= createSceneTarget(1, 1);
-        this.compileCamera.coordinateSystem = this.renderer.coordinateSystem;
-        this.compileCamera.updateProjectionMatrix();
-        this.renderer.setRenderTarget(this.compileTarget);
-        const pending = this.renderer.compileAsync(room.scene, this.compileCamera);
-        // three.js has recorded the target by now. Frames keep drawing while it compiles.
-        this.renderer.setRenderTarget(previous);
-        await pending;
-      } finally {
-        // Each time three.js yields and resumes, it leaves the renderer on the compile target.
-        this.renderer.setRenderTarget(previous);
-        for (const object of culled) object.frustumCulled = true;
-      }
-    };
-    const result = this.compiling.then(run);
-    this.compiling = result.catch(() => {});
-    return result;
+  private async compile(room: RoomInstance, id: string, current: () => boolean): Promise<void> {
+    // Three.js shares compilation state. A running compile can finish, but waiters
+    // must recheck the destination before claiming the renderer.
+    while (current()) {
+      if (this.trip && this.trip.id !== id) await this.trip.done.promise;
+      else if (this.compiling) await this.compiling;
+      else break;
+    }
+    if (!current()) return;
+    const work = this.compileScene(room);
+    this.compiling = work.catch(() => {});
+    try {
+      await work;
+    } finally {
+      this.compiling = undefined;
+    }
   }
 
-  prepare(id: string): Promise<RoomInstance> | undefined {
+  private async compileScene(room: RoomInstance): Promise<void> {
+    // Compile everything, not just what one camera happens to see.
+    const culled: THREE.Object3D[] = [];
+    room.scene.traverse(object => {
+      if (!object.frustumCulled) return;
+      object.frustumCulled = false;
+      culled.push(object);
+    });
+    this.compileTarget ??= createSceneTarget(1, 1);
+    const target = this.renderer.getRenderTarget();
+    const previous = target === this.compileTarget ? null : target;
+    try {
+      this.compileCamera.coordinateSystem = this.renderer.coordinateSystem;
+      this.compileCamera.updateProjectionMatrix();
+      this.renderer.setRenderTarget(this.compileTarget);
+      const pending = this.renderer.compileAsync(room.scene, this.compileCamera);
+      // three.js has recorded the target by now. Frames keep drawing while it compiles.
+      this.renderer.setRenderTarget(previous);
+      await pending;
+    } finally {
+      // Each time three.js yields and resumes, it leaves the renderer on the compile target.
+      this.renderer.setRenderTarget(previous);
+      for (const object of culled) object.frustumCulled = true;
+    }
+  }
+
+  prepare(id: string, urgent = true): Promise<RoomInstance> | undefined {
     const dest = this.destination(id, this.lastElapsed);
-    if (dest) dest.pinned = true;
+    if (dest) {
+      dest.pinned = true;
+      if (urgent) {
+        dest.expedite?.();
+        dest.expedite = undefined;
+      }
+    }
     return dest?.ready;
   }
 
@@ -538,7 +580,16 @@ export class PortalPreviews {
   /** Prepare the room the player is travelling to, ahead of anything still queued. */
   travelTo(id: string): Promise<RoomInstance> | undefined {
     const ready = this.prepare(id);
-    if (ready) this.urgent = ready.catch(() => {});
+    if (!ready) return;
+    this.trip?.done.wake();
+    const trip = { id, done: wakeup() };
+    this.trip = trip;
+    const finish = () => {
+      if (this.trip === trip) this.trip = undefined;
+      trip.done.wake();
+    };
+    void ready.then(finish, finish);
+    void this.loadQueued(ready.catch(() => {}));
     return ready;
   }
 
@@ -548,7 +599,9 @@ export class PortalPreviews {
    * unpinned, so they unload once they've gone unseen for a few seconds.
    * Resolves when the neighbours are ready.
    */
-  syncPinnedForRoom(room: RoomInstance, heading: Heading = 1): Promise<void> {
+  syncPinnedForRoom(room: RoomInstance, heading: Heading = 1, startup = false): Promise<void> {
+    this.trip?.done.wake();
+    this.trip = undefined;
     this.activeRoom = room;
     const center = room.module.manifest.id;
     const window = roomWindow(this.order, center, heading);
@@ -560,9 +613,9 @@ export class PortalPreviews {
     }
     neighbours.delete(center);
 
-    const keep = new Set([...neighbours, ...window.map(entry => entry.id)]);
+    this.windowIds = new Set([...neighbours, ...window.map(entry => entry.id)]);
     for (const [id, dest] of this.destinations) {
-      if (keep.has(id)) {
+      if (this.windowIds.has(id)) {
         dest.pinned = true;
       } else if (dest.pinned) {
         dest.pinned = false;
@@ -570,13 +623,12 @@ export class PortalPreviews {
       }
     }
 
-    const pending = [...neighbours].map(id => this.prepare(id)?.catch(() => {}));
+    const pending = [...neighbours].map(id => this.prepare(id, startup)?.catch(() => {}));
     this.queue = window
       .map(entry => entry.id)
       .filter(id => !neighbours.has(id) && this.needsLoad(id));
     const ready = Promise.all(pending).then(() => {});
-    this.urgent = ready;
-    void this.loadQueued();
+    void this.loadQueued(ready);
     return ready;
   }
 
@@ -587,26 +639,18 @@ export class PortalPreviews {
 
   private needsLoad(id: string): boolean {
     const dest = this.destinations.get(id);
-    return !dest || (!!dest.retryAfter && performance.now() >= dest.retryAfter);
+    return !dest?.room && (!dest?.retryAfter || performance.now() >= dest.retryAfter);
   }
 
   /** Load queued rooms one after another, each starting when there's spare time. */
-  private async loadQueued(): Promise<void> {
-    if (this.loadingQueue) return;
-    this.loadingQueue = true;
-    try {
-      while (this.queue.length) {
-        const urgent = this.urgent;
-        await urgent;
-        await this.idle();
-        // The player may have moved on while we waited: wait again, then read the queue.
-        if (urgent !== this.urgent) continue;
-        const id = this.queue.shift();
-        if (id === undefined) break;
-        await this.prepare(id)?.catch(() => {});
-      }
-    } finally {
-      this.loadingQueue = false;
+  private async loadQueued(ready: Promise<unknown>): Promise<void> {
+    const version = ++this.queueVersion;
+    await ready;
+    while (version === this.queueVersion && this.queue.length) {
+      await this.idle();
+      if (version !== this.queueVersion) return;
+      const id = this.queue.shift()!;
+      await this.prepare(id, false)?.catch(() => {});
     }
   }
 
@@ -768,6 +812,8 @@ export class PortalPreviews {
   }
 
   private discard(dest: Destination): void {
+    dest.discarded = true;
+    dest.expedite?.();
     void dest.ready.then(room => {
       this.releaseRoomSnapshotMaterials(room);
       room.dispose();
@@ -1114,12 +1160,17 @@ export class PortalPreviews {
     this.renderRoom(farRoom, this.farCamera, far.portal.targetSpawnId, effectivePortalDistance(farDistance));
   }
 
-  clear(): void {
+  clear(): Promise<void> {
+    this.queueVersion++;
     this.generation++;
+    this.trip?.done.wake();
+    this.trip = undefined;
+    this.windowIds.clear();
     this.queue = [];
     this.activeRoom = undefined;
-    this.compileTarget?.dispose();
+    const target = this.compileTarget;
     this.compileTarget = undefined;
+    const compileFinished = this.compiling ?? Promise.resolve();
     this.releaseViews();
     this.seenWithoutLive.clear();
     this.nextSeenWithoutLive.clear();
@@ -1134,5 +1185,6 @@ export class PortalPreviews {
     this.destinations.clear();
     for (const snap of this.snapshots.values()) snap.target.dispose();
     this.snapshots.clear();
+    return compileFinished.then(() => target?.dispose());
   }
 }

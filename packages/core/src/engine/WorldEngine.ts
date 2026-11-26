@@ -80,6 +80,7 @@ export class WorldEngine {
   private readonly container: HTMLElement;
   private readonly callbacks: WorldEngineCallbacks;
   private room?: RoomInstance;
+  private adjacentReady: Promise<void> = Promise.resolve();
   private readonly previews?: PortalPreviews;
   private readonly ripplePass: PortalRipplePass;
   private readonly transitRig: StylizedAvatarRig;
@@ -224,17 +225,20 @@ export class WorldEngine {
   }
 
   /**
-   * Make `module` the active room. Resolves with the spawn the player arrived at,
+   * Make a local room ID or supplied module active. Resolves with the spawn the player arrived at,
    * or undefined when a later mount superseded this one.
    */
   async mountWorld(
-    module: WorldModule,
+    world: WorldModule | string,
     options?: { spawnId?: string; extraPortals?: PortalDefinition[]; fromPortal?: PortalDefinition; crossed?: boolean },
   ): Promise<SpawnPoint | undefined> {
     const sequence = ++this.mountSequence;
     const source = this.getAllPortals().find(p => p.portal === options?.fromPortal);
-    const cached = this.previews?.travelTo(module.manifest.id);
-    const room = await (cached ?? RoomInstance.mount(module, this.renderer));
+    const id = typeof world === 'string' ? world : world.manifest.id;
+    const cached = this.previews?.travelTo(id);
+    const mounting = cached ?? (typeof world === 'string' ? undefined : RoomInstance.mount(world, this.renderer));
+    if (!mounting) throw new Error(`No local loader for room "${id}"`);
+    const room = await mounting;
     if (sequence !== this.mountSequence) {
       if (!cached) this.disposeRoom(room);
       return undefined;
@@ -249,15 +253,14 @@ export class WorldEngine {
       yawDelta = crossingYawDelta(source.portal.yaw ?? 0, side, arrival.yaw);
     }
 
-    this.previews?.take(module.manifest.id);
+    this.previews?.take(id);
     this.installRoom(room, arrival, headingThrough(options?.fromPortal), sourceOrigin, yawDelta, options?.extraPortals);
     return arrival;
   }
 
   /** Wait for the next (exit) and previous (entrance) rooms; the rest of the window loads behind them. */
-  async preloadAdjacentRooms(): Promise<void> {
-    if (!this.room || !this.previews) return;
-    await this.previews.syncPinnedForRoom(this.room);
+  preloadAdjacentRooms(): Promise<void> {
+    return this.adjacentReady;
   }
 
   /**
@@ -326,7 +329,7 @@ export class WorldEngine {
     room.activate(portal => this.requestPortalEntry(portal), this.playerView);
 
     // Move the room window: neighbours load immediately so transitions never stall
-    void this.previews?.syncPinnedForRoom(room, heading);
+    this.adjacentReady = this.previews?.syncPinnedForRoom(room, heading, !prevRoom) ?? Promise.resolve();
 
     // Brief portal reentry grace period so players don't immediately re-trigger a portal at spawn
     this.portalCooldownUntil = performance.now() + 900;
@@ -484,9 +487,9 @@ export class WorldEngine {
     else room.dispose();
   }
 
-  private unmountCurrentWorld(): void {
+  private unmountCurrentWorld(): Promise<void> {
     this.swapOutCurrentRoom(false);
-    this.previews?.clear();
+    return this.previews?.clear() ?? Promise.resolve();
   }
 
   private readonly renderMainPass = (): void => {
@@ -706,7 +709,7 @@ export class WorldEngine {
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDown);
-    this.unmountCurrentWorld();
+    const previewsCleared = this.unmountCurrentWorld();
     this.ripplePass.dispose();
     this.warpSphereGeometry.dispose();
     this.warpSphereMaterial.dispose();
@@ -714,6 +717,6 @@ export class WorldEngine {
     this.warpCircleMaterial.dispose();
     this.transitRig.dispose();
     this.avatar.dispose();
-    this.renderer.dispose();
+    void previewsCleared.then(() => this.renderer.dispose());
   }
 }

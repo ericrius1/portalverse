@@ -114,6 +114,47 @@ describe('preparing a room as it loads', () => {
     previews.clear();
   });
 
+  it('wakes an idle preview immediately when the player selects that room', async () => {
+    const fake = fakeRenderer();
+    const slot = gate();
+    const load = vi.fn(async (id: string) => emptyRoom(id));
+    const previews = new PortalPreviews(fake.renderer, load, { idle: () => slot.closed });
+    const background = previews.prepare('jp-world', false);
+    await flush();
+    expect(fake.compileAsync).not.toHaveBeenCalled();
+    const trip = previews.travelTo('jp-world');
+    expect(trip).toBe(background);
+    await flush();
+    expect(fake.compileAsync).toHaveBeenCalledTimes(1);
+    expect(fake.renders).toHaveLength(2);
+    slot.open();
+    await trip;
+    expect(load).toHaveBeenCalledTimes(1);
+    await previews.clear();
+  });
+
+  it('gives the next compiler slot to the selected room', async () => {
+    const fake = fakeRenderer();
+    const first = gate();
+    const order: string[] = [];
+    fake.compileAsync.mockImplementation(async scene => {
+      order.push(scene.name);
+      if (order.length === 1) await first.closed;
+    });
+    const previews = new PortalPreviews(fake.renderer, async id =>
+      defineRoom(id, { mount: ctx => { ctx.scene.name = id; } }), { idle: now });
+    const running = previews.prepare('jp-world', false);
+    const waiting = previews.prepare('eric-world', false);
+    await flush();
+    const selected = previews.travelTo('jp-loft');
+    await flush();
+    expect(order).toEqual(['jp-world']);
+    first.open();
+    await Promise.all([running, waiting, selected]);
+    expect(order).toEqual(['jp-world', 'jp-loft', 'eric-world']);
+    await previews.clear();
+  });
+
   it('still delivers the room when compiling fails', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fake = fakeRenderer();
@@ -131,13 +172,20 @@ describe('preparing a room as it loads', () => {
     const disposed = vi.fn();
     const module = defineRoom('jp-world', { mount: ctx => ctx.onDispose(disposed) });
     const compiling = gate();
-    fake.compileAsync.mockImplementation(() => compiling.closed);
+    const disposedTarget = vi.fn();
+    fake.compileAsync.mockImplementation(() => {
+      fake.target()!.addEventListener('dispose', disposedTarget);
+      return compiling.closed;
+    });
     const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(module), { idle: now });
 
     const ready = previews.prepare('jp-world')!;
     await flush();
-    previews.clear();
+    const cleared = previews.clear();
+    expect(disposedTarget).not.toHaveBeenCalled();
     compiling.open();
+    await cleared;
+    expect(disposedTarget).toHaveBeenCalledTimes(1);
     await ready;
     await flush();
     expect(disposed).toHaveBeenCalledTimes(1);
@@ -188,6 +236,25 @@ async function settle() {
 
 describe('the room window', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it('finishes startup neighbours before an idle slot is available', async () => {
+    const fake = fakeRenderer();
+    const slot = gate();
+    const loads: string[] = [];
+    const previews = new PortalPreviews(fake.renderer, async id => {
+      loads.push(id);
+      return emptyRoom(id);
+    }, { idle: () => slot.closed });
+    const room = await RoomInstance.mount(emptyRoom(at(3)), fake.renderer);
+    const ready = previews.syncPinnedForRoom(room, 1, true);
+    await flush();
+    expect(fake.renders).toHaveLength(4);
+    expect(loads).toEqual([at(4), at(2)]);
+    await ready;
+    await previews.clear();
+    slot.open();
+    room.dispose();
+  });
 
   it('loads neighbours at once and the outer rooms one at a time', async () => {
     const { previews, loads, holds, home } = loop();
@@ -330,5 +397,63 @@ describe('the room window', () => {
     await settle();
     expect(loads).toContain(at(1));
     previews.clear();
+  });
+  it('prepares the new window while an obsolete neighbour is still downloading', async () => {
+    const { previews, loads, holds, home } = loop();
+    const old = gate();
+    holds.set(at(2), old.closed);
+    const oldWindow = previews.syncPinnedForRoom(await home(at(3)));
+    await flush();
+    await previews.syncPinnedForRoom(await home(at(8)));
+    await settle();
+    const started = [...loads];
+    old.open();
+    await oldWindow;
+    await settle();
+    previews.clear();
+    expect(started).toEqual(expect.arrayContaining([at(10), at(6)]));
+  });
+
+  it('uses cached neighbour images in the new snapshots when a room remounts', async () => {
+    const fake = fakeRenderer();
+    const previews = new PortalPreviews(fake.renderer, id => Promise.resolve(emptyRoom(id)), { idle: now });
+    await previews.prepare(at(0));
+    await previews.prepare(at(2));
+    await previews.prepare(at(1));
+    previews.disposeRoom(previews.takeReady(at(1))!);
+    const captured: Array<{ aperture: THREE.Mesh; material: unknown }> = [];
+    fake.renderer.render = (scene, camera) => scene.traverseVisible(o => {
+      if (o.userData.portalId && o.layers.test(camera.layers)) {
+        const aperture = o as THREE.Mesh;
+        captured.push({ aperture, material: aperture.material });
+      }
+    });
+    await previews.prepare(at(1));
+    expect(captured).toHaveLength(2);
+    const results = captured.map(({ aperture, material }) => material === aperture.material);
+    previews.clear();
+    expect(results).toEqual([true, true]);
+  });
+
+  it('keeps a recovered adjacent room ready after the player looks away', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { previews, disposed, failures, home, frame } = loop();
+    failures.add(at(4));
+    const current = await home(at(3));
+    await previews.syncPinnedForRoom(current);
+    await settle();
+    const exit = current.portals.find(p => p.portal.id === 'exit')!;
+    exit.group.updateMatrixWorld(true);
+    const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 450);
+    camera.position.set(0, 3, -20);
+    camera.lookAt(0, 3, -40);
+    clock.mockReturnValue(7000);
+    previews.render([exit], camera, 1 / 60, 7);
+    await settle();
+    await frame(12);
+    const dropped = [...disposed];
+    previews.clear();
+    expect(dropped).not.toContain(at(4));
   });
 });

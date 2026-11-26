@@ -13,6 +13,9 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 
 - **Black screen while rooms precompile** (found during this branch, never shipped) — three.js leaves the renderer on the precompile target each time it resumes, so the final composite is now drawn to the screen explicitly.
 
+- Menu jumps now give the selected room priority from the start of its download. The current room and its neighbours can finish preparing during startup without waiting for browser idle time. A slow load from the previous window no longer holds up the new window.
+- Retried rooms keep their place in the five-room window. Returning rooms use existing neighbour pictures when capturing their own portal snapshots. On shutdown, an in-flight shader compile finishes before its render target and renderer are released.
+
 ### Design & engineering decisions
 
 - **Why**: efficiency, as the loop grows. Five matches what portals draw live; farther portals show snapshots.

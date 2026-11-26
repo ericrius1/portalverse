@@ -453,12 +453,12 @@ async function boot(): Promise<void> {
     isTransitioning = true;
 
     try {
-      const worldModule = await registry.loadWorld(worldId);
-      await engine.mountWorld(worldModule, {
+      const arrival = await engine.mountWorld(worldId, {
         spawnId: opts?.spawnId,
         fromPortal: opts?.fromPortal,
         crossed: opts?.crossed,
       });
+      if (!arrival) return;
       net.switchWorld(
         worldId,
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
@@ -762,8 +762,7 @@ async function boot(): Promise<void> {
     await engine.init();
 
     setLoadPhase(35, `LOADING ${activeManifest.name.toUpperCase()}`);
-    const startModule = await registry.loadWorld(initialWorldId);
-    const spawn = await engine.mountWorld(startModule, {
+    const spawn = await engine.mountWorld(initialWorldId, {
       spawnId: route.spawnId ?? route.handoff?.targetSpawnId,
       extraPortals: combinedDynamicPortals(),
     });
