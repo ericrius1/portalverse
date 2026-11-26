@@ -396,6 +396,30 @@ describe('the room window', () => {
     previews.clear();
   });
 
+  it('renders an outer room that finished loading before its queue turn', async () => {
+    const fake = fakeRenderer();
+    const slot = gate();
+    const previews = new PortalPreviews(fake.renderer, async id => emptyRoom(id), { idle: () => slot.closed });
+    const home = await RoomInstance.mount(emptyRoom(at(3)), fake.renderer);
+    const outerReady = previews.prepare(at(5))!;
+    await previews.syncPinnedForRoom(home, 1, true);
+    const outer = await outerReady;
+    const near = home.portals.find(p => p.portal.id === 'exit')!;
+    near.group.updateMatrixWorld(true);
+    const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 450);
+    camera.position.set(0, 3, -20);
+    camera.lookAt(0, 3, -40);
+    fake.renders.length = 0;
+    try {
+      previews.render([near], camera, 1 / 60, 1);
+      expect(fake.renders.some(scene => scene === outer.scene)).toBe(true);
+    } finally {
+      await previews.clear();
+      slot.open();
+      home.dispose();
+    }
+  });
+
   it('starts the outer rooms only after both neighbours are ready', async () => {
     const { previews, loads, holds, home } = loop();
     const neighbour = gate();

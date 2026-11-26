@@ -669,7 +669,8 @@ export class PortalPreviews {
 
   /** A destination a portal wants to show. Queued rooms wait their turn. */
   private request(id: string, elapsed: number): Destination | undefined {
-    return this.queue.includes(id) ? undefined : this.destination(id, elapsed);
+    if (this.queue.includes(id) && !this.destinations.get(id)?.room) return;
+    return this.destination(id, elapsed);
   }
 
   /** Synchronously take ownership of an already-mounted preview room (zero-frame-delay promotion). */
