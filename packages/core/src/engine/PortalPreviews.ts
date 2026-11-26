@@ -65,7 +65,8 @@ function wakeup() {
 }
 
 interface Destination {
-  expedite?: () => void;
+  urgent?: boolean;
+  wakeIdle?: () => void;
   discarded?: boolean;
   ready: Promise<RoomInstance>;
   room?: RoomInstance;
@@ -447,23 +448,18 @@ export class PortalPreviews {
     }
     const module = this.load(id);
     if (!module) return;
-    const priority = wakeup();
     const generation = this.generation;
     const current = () => generation === this.generation && !entry.discarded;
     const ready = module
       .then(mod => RoomInstance.mount(mod, this.renderer))
-      .then(room => this.prepareRoom(room, id, current, () =>
-        entry.expedite ? Promise.race([this.idle(), priority.promise]) : Promise.resolve(),
-      ));
+      .then(room => this.prepareRoom(room, id, entry, current));
     const entry: Destination = {
-      ready, lastSeen: elapsed, pinned: this.windowIds.has(id) || existing?.pinned,
-      expedite: priority.wake,
+      ready, lastSeen: elapsed, pinned: this.windowIds.has(id),
     };
     this.destinations.set(id, entry);
     void ready.then(room => {
       if (!current()) return;
       entry.room = room;
-      entry.expedite = undefined;
       this.applySnapshotsToRoom(room);
     }).catch(error => {
       entry.retryAfter = performance.now() + 5000;
@@ -477,17 +473,21 @@ export class PortalPreviews {
    * photograph both ends, a step per idle slot. A failed step leaves the room usable.
    */
   private async prepareRoom(
-    room: RoomInstance, id: string, current: () => boolean, waitForSlot: () => Promise<void>,
+    room: RoomInstance, id: string, entry: Destination, current: () => boolean,
   ): Promise<RoomInstance> {
     if (!current()) return room;
-    this.applySnapshotsToRoom(room);
     const steps = [
       () => this.compile(room, id, current),
       () => this.captureSnapshot(room, 'entrance'),
       () => this.captureSnapshot(room, 'exit'),
     ];
     for (const step of steps) {
-      await waitForSlot();
+      if (!entry.urgent) {
+        const slot = wakeup();
+        entry.wakeIdle = slot.wake;
+        await Promise.race([this.idle(), slot.promise]);
+        entry.wakeIdle = undefined;
+      }
       // Give a selected destination the next available GPU work slot.
       while (current() && this.trip && this.trip.id !== id) await this.trip.done.promise;
       if (!current()) return room;
@@ -520,6 +520,7 @@ export class PortalPreviews {
   }
 
   private async compileScene(room: RoomInstance): Promise<void> {
+    this.applySnapshotsToRoom(room);
     // Compile everything, not just what one camera happens to see.
     const culled: THREE.Object3D[] = [];
     room.scene.traverse(object => {
@@ -550,8 +551,8 @@ export class PortalPreviews {
     if (dest) {
       dest.pinned = true;
       if (urgent) {
-        dest.expedite?.();
-        dest.expedite = undefined;
+        dest.urgent = true;
+        dest.wakeIdle?.();
       }
     }
     return dest?.ready;
@@ -579,18 +580,30 @@ export class PortalPreviews {
 
   /** Prepare the room the player is travelling to, ahead of anything still queued. */
   travelTo(id: string): Promise<RoomInstance> | undefined {
+    this.finishTrip();
     const ready = this.prepare(id);
     if (!ready) return;
-    this.trip?.done.wake();
     const trip = { id, done: wakeup() };
     this.trip = trip;
     const finish = () => {
-      if (this.trip === trip) this.trip = undefined;
-      trip.done.wake();
+      if (this.trip === trip) this.finishTrip();
     };
     void ready.then(finish, finish);
-    void this.loadQueued(ready.catch(() => {}));
+    void this.loadQueued(trip.done.promise);
     return ready;
+  }
+
+  private finishTrip(): void {
+    const trip = this.trip;
+    if (!trip) return;
+    this.trip = undefined;
+    const dest = this.destinations.get(trip.id);
+    if (dest) {
+      dest.urgent = false;
+      dest.pinned = this.windowIds.has(trip.id);
+      dest.lastSeen = this.lastElapsed;
+    }
+    trip.done.wake();
   }
 
   /**
@@ -600,8 +613,7 @@ export class PortalPreviews {
    * Resolves when the neighbours are ready.
    */
   syncPinnedForRoom(room: RoomInstance, heading: Heading = 1, startup = false): Promise<void> {
-    this.trip?.done.wake();
-    this.trip = undefined;
+    this.finishTrip();
     this.activeRoom = room;
     const center = room.module.manifest.id;
     const window = roomWindow(this.order, center, heading);
@@ -619,6 +631,7 @@ export class PortalPreviews {
         dest.pinned = true;
       } else if (dest.pinned) {
         dest.pinned = false;
+        dest.urgent = false;
         dest.lastSeen = this.lastElapsed;
       }
     }
@@ -688,6 +701,7 @@ export class PortalPreviews {
 
   /** Capture a 512x512 POV-aligned reference snapshot of a room from its entrance or exit sightline. */
   private captureSnapshot(room: RoomInstance, spawnId: 'entrance' | 'exit'): void {
+    this.applySnapshotsToRoom(room);
     const key = snapshotKey(room.module.manifest.id, spawnId);
     let snap = this.snapshots.get(key);
     if (!snap) {
@@ -813,7 +827,7 @@ export class PortalPreviews {
 
   private discard(dest: Destination): void {
     dest.discarded = true;
-    dest.expedite?.();
+    dest.wakeIdle?.();
     void dest.ready.then(room => {
       this.releaseRoomSnapshotMaterials(room);
       room.dispose();
@@ -1160,11 +1174,10 @@ export class PortalPreviews {
     this.renderRoom(farRoom, this.farCamera, far.portal.targetSpawnId, effectivePortalDistance(farDistance));
   }
 
-  clear(): Promise<void> {
+  async clear(): Promise<void> {
     this.queueVersion++;
     this.generation++;
-    this.trip?.done.wake();
-    this.trip = undefined;
+    this.finishTrip();
     this.windowIds.clear();
     this.queue = [];
     this.activeRoom = undefined;
@@ -1174,17 +1187,23 @@ export class PortalPreviews {
     this.releaseViews();
     this.seenWithoutLive.clear();
     this.nextSeenWithoutLive.clear();
-    for (const slot of this.viewPool) {
+    // Detach this generation now. GPU resources that a compile may still be
+    // reading stay alive until that compile releases the renderer.
+    const slots = this.viewPool.splice(0);
+    const materials = [...this.snapshotMaterials.values()];
+    const snapshots = [...this.snapshots.values()];
+    this.snapshotMaterials.clear();
+    this.snapshots.clear();
+    for (const dest of this.destinations.values()) this.discard(dest);
+    this.destinations.clear();
+
+    await compileFinished;
+    for (const slot of slots) {
       slot.target.dispose();
       slot.material.dispose();
     }
-    this.viewPool.length = 0;
-    for (const mat of this.snapshotMaterials.values()) mat.dispose();
-    this.snapshotMaterials.clear();
-    for (const dest of this.destinations.values()) this.discard(dest);
-    this.destinations.clear();
-    for (const snap of this.snapshots.values()) snap.target.dispose();
-    this.snapshots.clear();
-    return compileFinished.then(() => target?.dispose());
+    for (const mat of materials) mat.dispose();
+    for (const snap of snapshots) snap.target.dispose();
+    target?.dispose();
   }
 }

@@ -167,6 +167,28 @@ describe('preparing a room as it loads', () => {
     warn.mockRestore();
   });
 
+  it('uses a neighbour image that becomes available during compilation', async () => {
+    const fake = fakeRenderer();
+    const compiling = gate();
+    const previews = new PortalPreviews(fake.renderer, async id => emptyRoom(id), { idle: now });
+    const neighbour = await RoomInstance.mount(emptyRoom(at(0)), fake.renderer);
+    fake.compileAsync.mockImplementation(() => compiling.closed);
+    const ready = previews.prepare(at(1))!;
+    await flush();
+    await previews.refreshSnapshots(neighbour);
+    let captured: THREE.Material | THREE.Material[] | undefined;
+    fake.renderer.render = (scene, camera) => scene.traverseVisible(object => {
+      if (object.userData.portalId === 'entrance' && object.layers.test(camera.layers)) {
+        captured = (object as THREE.Mesh).material;
+      }
+    });
+    compiling.open();
+    const room = await ready;
+    expect(captured).toBe(room.portals.find(p => p.portal.id === 'entrance')!.aperture.material);
+    await previews.clear();
+    neighbour.dispose();
+  });
+
   it('disposes a room cleared mid-preparation and captures nothing after clear', async () => {
     const fake = fakeRenderer();
     const disposed = vi.fn();
@@ -179,17 +201,26 @@ describe('preparing a room as it loads', () => {
     });
     const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(module), { idle: now });
 
+    const neighbour = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
+    await previews.refreshSnapshots(neighbour);
+    const snapshot = fake.targets.find(target => target !== null)!;
+    const disposedSnapshot = vi.fn();
+    snapshot.addEventListener('dispose', disposedSnapshot);
+    fake.renders.length = 0;
     const ready = previews.prepare('jp-world')!;
     await flush();
     const cleared = previews.clear();
     expect(disposedTarget).not.toHaveBeenCalled();
+    expect(disposedSnapshot).not.toHaveBeenCalled();
     compiling.open();
     await cleared;
     expect(disposedTarget).toHaveBeenCalledTimes(1);
+    expect(disposedSnapshot).toHaveBeenCalledTimes(1);
     await ready;
     await flush();
     expect(disposed).toHaveBeenCalledTimes(1);
     expect(fake.renders).toHaveLength(0);
+    neighbour.dispose();
   });
 });
 
@@ -433,6 +464,22 @@ describe('the room window', () => {
     const results = captured.map(({ aperture, material }) => material === aperture.material);
     previews.clear();
     expect(results).toEqual([true, true]);
+  });
+
+  it('releases the pin on a superseded trip even when the replacement fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { previews, holds, failures, disposed, home, frame } = loop();
+    await previews.syncPinnedForRoom(await home(at(3)));
+    const slow = gate();
+    holds.set(at(7), slow.closed);
+    const abandoned = previews.travelTo(at(7));
+    failures.add(at(8));
+    await expect(previews.travelTo(at(8))).rejects.toThrow('offline');
+    slow.open();
+    await abandoned;
+    await frame(5);
+    expect(disposed).toContain(at(7));
+    await previews.clear();
   });
 
   it('keeps a recovered adjacent room ready after the player looks away', async () => {
