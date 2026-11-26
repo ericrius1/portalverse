@@ -324,6 +324,7 @@ async function boot(): Promise<void> {
       try { localStorage.setItem(STORAGE_MOVEMENT_MODE_KEY, mode); } catch { /* storage unavailable */ }
     },
   });
+  if (import.meta.env.DEV) (window as unknown as { engine: WorldEngine }).engine = engine;
 
   // Walking physics (G), remembered between reloads.
   try {

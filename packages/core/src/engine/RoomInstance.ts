@@ -4,6 +4,7 @@ import * as THREE from 'three/webgpu';
 import type { FallSettings, RegistryFile, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, TerrainHeight, WorldModule } from '../types';
 import { createArchwayPortal } from './PortalMesh';
 import { breathe } from './breathe';
+import { GpuLayerCompositor, rendererDevice } from './gpuLayers';
 
 const noEntry = (): void => {};
 
@@ -26,6 +27,9 @@ export class RoomInstance {
   private activeCleanups: Array<() => void> = [];
   private spawnOverride?: SpawnPoint;
   private readonly updates: Array<(dt: number, elapsed: number) => void> = [];
+  private readonly layers: GpuLayerCompositor[] = [];
+  /** The room's clock as its last update saw it, for GPU layers. */
+  private clock = { time: 0, dt: 0, mode: 'preview' as 'active' | 'preview' };
   private readonly cleanups: Array<() => void> = [];
 
   private constructor(readonly module: WorldModule) {}
@@ -53,10 +57,20 @@ export class RoomInstance {
       }
       return register(handle);
     };
+    const device = rendererDevice(renderer);
+    const gpu = device ? { device } : null;
     try {
       await module.mount({
         scene: room.scene,
         renderer,
+        gpu,
+        addGpuLayer: layer => {
+          if (!device) return false;
+          const compositor = new GpuLayerCompositor(device, layer, room.clock, room.layers.length);
+          room.layers.push(compositor);
+          room.scene.add(compositor.mesh);
+          return true;
+        },
         get mode() { return room.active ? 'active' : 'preview'; },
         get player() { return room.player; },
         onActivate: fn => room.activation.push(fn),
@@ -92,6 +106,7 @@ export class RoomInstance {
     this.player = player;
     if (this.active) return;
     this.active = true;
+    this.clock.mode = 'active';
     for (const fn of this.activation) {
       try {
         const cleanup = fn();
@@ -106,6 +121,7 @@ export class RoomInstance {
   deactivate(): void {
     if (!this.active) return;
     this.active = false;
+    this.clock.mode = 'preview';
     this.player = null;
     this.enter = noEntry;
     const cleanups = this.activeCleanups.reverse();
@@ -122,6 +138,8 @@ export class RoomInstance {
   }
 
   update(dt: number, elapsed: number): void {
+    this.clock.time = elapsed;
+    this.clock.dt = dt;
     for (const fn of this.updates) fn(dt, elapsed);
   }
 
@@ -131,6 +149,8 @@ export class RoomInstance {
       try { fn(); } catch (error) { console.warn('Room cleanup failed', error); }
     }
     for (const portal of this.portals) portal.dispose?.();
+    for (const layer of this.layers) layer.dispose();
+    this.layers.length = 0;
     this.scene.clear();
   }
 }

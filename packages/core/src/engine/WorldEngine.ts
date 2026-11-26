@@ -16,6 +16,7 @@ import {
   livePortalSlots,
 } from '../portal/roomLayout';
 import { RoomInstance } from './RoomInstance';
+import { requestSharedDevice } from './gpuDevice';
 import { PortalPreviews } from './PortalPreviews';
 import { PortalRipplePass } from './PortalRipplePass';
 import type { Heading } from './roomWindow';
@@ -202,6 +203,10 @@ export class WorldEngine {
 
   /** Must be awaited before rendering any frame (Three.js WebGPURenderer requirement). */
   async init(): Promise<void> {
+    // One device for Three.js and every room's own WebGPU code (ctx.gpu, ctx.addGpuLayer).
+    const device = await requestSharedDevice();
+    const backend = (this.renderer as unknown as { backend: { parameters?: { device?: GPUDevice } } }).backend;
+    if (device && backend.parameters) backend.parameters.device = device;
     await this.renderer.init();
     this.running = true;
     this.lastTime = performance.now();

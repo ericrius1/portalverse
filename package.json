@@ -18,6 +18,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ericrius1/weft": "git+https://github.com/ericrius1/weft.git#dist/weft",
     "three": "^0.187.0",
     "ws": "^8.18.0"
   },
@@ -27,6 +28,7 @@
     "@types/react-dom": "^18.3.7",
     "@types/three": "^0.187.0",
     "@types/ws": "^8.18.1",
+    "@webgpu/types": "^0.1.74",
     "concurrently": "^9.1.2",
     "leva": "^0.10.1",
     "react": "^18.3.1",

@@ -2,6 +2,23 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Rooms drawn with any WebGPU code, and the Palace Lagoon — Unreleased (2026-11-26)
+
+### Added
+
+- **Shared GPU device (`packages/core/src/engine/gpuDevice.ts`, `WorldEngine.init`)** — portalverse now requests the WebGPU device itself (every adapter feature, raised buffer/binding limits) and hands it to Three.js. Rooms reach the same device through `ctx.gpu`.
+- **GPU layers (`ctx.addGpuLayer`, `packages/core/src/engine/gpuLayers.ts`)** — a room can draw with its own WebGPU renderer. For every view of the room (main view, live portal windows, the far portal, snapshots) the engine calls the layer with that view's matrices and viewport. The layer returns colour and depth textures. A small WGSL pass turns the layer's depth into Three.js's, and a fullscreen backdrop writes the colour with that depth before anything else in the room's scene, so portals and players occlude and are occluded correctly.
+- **weft adapter (`packages/core/src/rooms/weft.ts`)** — `weftKit` (one weft Kit per device) and `WeftLayer` (maps each view to weft's camera, off-axis lens shift included, sizes the targets, runs the room's passes). weft is a dependency now, with its Vite plugin for typed `.wgsl` imports. It loads only with the rooms that import it (a 45 KB gzipped chunk).
+- **Palace Lagoon (`worlds/eric-palace-lagoon`)** — the first room not drawn by Three.js. Earth's Palace of Fine Arts (Earth's own mesh and stone materials, from github.com/ericrius1/world) across a mirror-still lagoon at golden hour, seen from a wind-blown wildflower meadow. Planar reflection, a sun shadow baked once, GPU-generated terrain and two rings of grass with poppies and lupines. Mid-loop, after Abyss.
+
+### Design & engineering decisions
+
+- **Three.js stays the compositor; other engines plug in as layers.** Everything that makes portals work (off-axis cameras, live windows, crossfades, snapshots, the crossing) already funnels through "draw this room from this camera into this viewport". A layer only ever answers that question, so none of the portal code changed and a weft room can be previewed, snapshotted and walked into like any other. Swapping Three.js out as the compositor stays possible later; the layer contract would carry over.
+- **One device, not two.** Textures can only be shared within a device, so the engine asks for the device and gives it to Three.js (`parameters.device`) rather than letting each engine create its own.
+- **The layer's depth convention is declared, not imposed.** weft uses reversed-Z with an infinite far plane; Three.js doesn't. Each layer says what it uses and the engine linearises and reprojects it, so any engine can plug in unchanged.
+- **The Palace links to Earth's R2 object instead of copying it.** The mesh (5 MB on the wire) is content-addressed and immutable on `sf-assets.ericrius1.workers.dev` with CORS open, so nothing is duplicated and nothing is hosted on Railway. A Web Worker fetches, inflates, moves it into the room's frame and packs it from 36 to 28 bytes a vertex. The main thread only uploads it in 1 MiB slices with `breathe()`, so loading never stalls a frame. The terrain, grass, water and sky are generated on the GPU from the vertex index, with nothing uploaded.
+- **Mid-loop placement.** The loop wraps, so the rooms furthest from the default start are in the middle of the list, not at the end. The Palace Lagoon sits six rooms from `eric-world` either way, so a normal start never loads it.
+- **Measured cost.** weft's GPU timestamps for the whole room at 2048×1536: about 1.4 ms for the reflection and 2.3 ms for the scene.
 ## One key, one song per room, DJ drops at portals — Unreleased (2026-11-26)
 
 ### Fixed

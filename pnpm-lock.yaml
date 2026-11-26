@@ -185,6 +185,9 @@ importers:
 
   .:
     dependencies:
+      '@ericrius1/weft':
+        specifier: github:ericrius1/weft#dist/weft
+        version: https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0(@types/node@22.20.5)(tsx@4.23.15)
       three:
         specifier: ^0.187.0
         version: 0.187.0
@@ -207,6 +210,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.2
+      '@webgpu/types':
+        specifier: ^0.1.74
+        version: 0.1.74
       concurrently:
         specifier: ^9.1.2
         version: 9.2.5
@@ -236,6 +242,10 @@ packages:
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
+
+  '@ericrius1/weft@https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0':
+    resolution: {gitHosted: true, integrity: sha512-wuTta3K3RJMUvYjTH1mJBS1uI72aFjP4A2YHvtQB2eCHsUwmOKnnX97D9grKbO4SlH7sXK/lV3Oj1fF48Qe7og==, tarball: https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0}
+    version: 0.2.17
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -1003,6 +1013,9 @@ packages:
   '@vitest/utils@3.2.7':
     resolution: {integrity: sha512-x6BDOd7dyo3PFLY3I9/HJ25X/6OurhGXk2/B9gOZNPF7XDVjeBK4k01lQE5uvDpbuheErh91qYuE1E2OEjK3Rw==}
 
+  '@webgpu/types@0.1.74':
+    resolution: {integrity: sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==}
+
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
     engines: {node: '>=8'}
@@ -1440,6 +1453,9 @@ packages:
       jsdom:
         optional: true
 
+  wgsl_reflect@1.6.0:
+    resolution: {integrity: sha512-p2bJTZXaS4/2L2NlvRIcnI6ZJJSF1kxvH5RYZzGw958Z2PDAw6Cl13cgbE9CWEqWZOFtnlCLXM9ZYdifnJ0FJg==}
+
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
     engines: {node: '>=8'}
@@ -1485,6 +1501,24 @@ packages:
 snapshots:
 
   '@dimforge/rapier3d-compat@0.12.0': {}
+
+  '@ericrius1/weft@https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0(@types/node@22.20.5)(tsx@4.23.15)':
+    dependencies:
+      wgsl_reflect: 1.6.0
+    optionalDependencies:
+      vite: 6.4.6(@types/node@22.20.5)(tsx@4.23.15)
+    transitivePeerDependencies:
+      - '@types/node'
+      - jiti
+      - less
+      - lightningcss
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
@@ -2018,6 +2052,8 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
+  '@webgpu/types@0.1.74': {}
+
   ansi-regex@5.0.1: {}
 
   ansi-styles@4.3.0:
@@ -2485,6 +2521,8 @@ snapshots:
       - terser
       - tsx
       - yaml
+
+  wgsl_reflect@1.6.0: {}
 
   why-is-node-running@2.3.0:
     dependencies:

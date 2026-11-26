@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite';
 import { roomBuildBudget } from './scripts/roomBuildBudget';
+import { weft } from '@ericrius1/weft/vite';
 import { resolve } from 'node:path';
 
 export default defineConfig({
-  plugins: [roomBuildBudget()],
+  // weft: typed .wgsl imports for rooms drawn with weft (packages/core/src/rooms/weft.ts).
+  plugins: [weft(), roomBuildBudget()],
   // Pre-bundle the on-demand dev panel so its first open doesn't reload the running world.
   optimizeDeps: { include: ['leva', 'react', 'react-dom/client', 'three/addons/controls/TransformControls.js'] },
   resolve: {

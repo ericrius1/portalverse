@@ -58,6 +58,7 @@ export const ROOM_VIBES: Record<string, Vibe> = {
   'jp-loft': { 'lofi-bed': 1, 'soft-beat': 0.6 },
   // The abyss stems lean on A and G naturals for their eerie colour: they only play alone.
   'jp-abyss': { 'abyss-bed': 1, 'abyss-motif': 0.8 },
+  'eric-palace-lagoon': { 'golden-bed': 1, 'lagoon-bed': 0.6, 'shimmer-bells': 0.5 },
   'laser-lab': { 'holo-bed': 0.9, 'soft-beat': 0.7 },
   'alpine-sled': { 'shimmer-bells': 0.9, 'golden-bed': 0.5 },
   'eric-biolum-grove': { 'shimmer-bells': 0.8, 'lagoon-bed': 0.5, 'holo-bed': 0.35 },

@@ -76,6 +76,12 @@ That's plenty of time, but it's all on one thread: the JavaScript thread that al
 
 To check a room, time its `mount`. Also record a trace in the browser's Performance panel while walking toward the room and look for long tasks.
 
+### Rooms drawn with your own WebGPU code
+
+A room doesn't have to be Three.js. Portalverse asks for the WebGPU device itself and shares it: Three.js draws with it, and so can your room (`ctx.gpu.device`). Call `ctx.addGpuLayer({ render(view) })` and the engine calls `render` for every view of your room: the main view, live portal windows (off-axis), the portal at the far end of a room, snapshots. `view` carries the view and projection matrices (Three.js's, WebGPU clip space), the target's size and the viewport to draw in, the time and the mode. Draw however you like, submit your GPU work, and return your colour texture (linear HDR; the engine tone-maps it) and your depth texture with its convention (`{ reversed, near, far }`). The engine turns your depth into Three.js's and composites the colour with it under the room's Three.js scene, so portals and players are hidden behind your geometry and stand in front of it like anywhere else. Light the players with ordinary Three.js lights in `ctx.scene` that match your scene.
+
+For rooms drawn with [weft](https://github.com/ericrius1/weft), `@portalverse/core/rooms/weft` has `WeftLayer`: it points weft's camera at each view (lens shift included), sizes the targets, and runs your passes. Bind `layer.color` / `layer.depth` as targets and pass `viewport: layer.viewport`. `.wgsl` files import typed through weft's Vite plugin. Only rooms that import it load weft. `worlds/eric-palace-lagoon` is the worked example: it fetches Earth's Palace of Fine Arts mesh from Earth's R2 in a worker, uploads it in slices with `breathe`, bakes the sun's shadow once, and draws a planar reflection every view.
+
 ### Your room's music
 
 The soundtrack plays one song per room, mixed from shared stems (Suno Studio loops, all 88 BPM in G-sharp minor / B major, so any of them play together). Pick your room's blend in `ROOM_VIBES` in `packages/core/src/audio/musicMix.ts`: stem ids with levels from 0 to 1. Rooms that aren't listed get `DEFAULT_VIBE`. Crossing a portal sweeps the current song out and drops the next room's song in on the beat. Keep `abyss-bed` and `abyss-motif` to dark rooms on their own: their eerie notes clash with the brighter beds.

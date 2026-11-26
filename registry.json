@@ -123,6 +123,22 @@
       }
     },
     {
+      "id": "eric-palace-lagoon",
+      "name": "Palace Lagoon",
+      "owner": "ericrius1",
+      "author": "Eric (ericrius1)",
+      "description": "Earth's Palace of Fine Arts across a mirror-still lagoon at golden hour, seen from a wind-blown wildflower meadow. The first room drawn with weft instead of Three.js.",
+      "accentColor": "#f2b866",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 12],
+          "yaw": 1.1
+        }
+      }
+    },
+    {
       "id": "laser-lab",
       "name": "Laser Forcefield Arena",
       "owner": "jpwhitaker",

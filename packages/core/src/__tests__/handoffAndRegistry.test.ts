@@ -208,6 +208,7 @@ describe('WorldRegistry', () => {
       'jp-reef',
       'jp-loft',
       'jp-abyss',
+      'eric-palace-lagoon',
       'laser-lab',
       'alpine-sled',
       'eric-biolum-grove',

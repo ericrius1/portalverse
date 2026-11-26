@@ -240,6 +240,60 @@ export interface PlayerView {
   readonly position: THREE.Vector3;
 }
 
+/** The WebGPU device Three.js and every room share (see `WorldContext.gpu`). */
+export interface GpuContext {
+  readonly device: GPUDevice;
+}
+
+/**
+ * One draw of a room by its own renderer. The engine draws each room many times a
+ * frame (the main view, live portal windows, the portal at the far end of a room,
+ * snapshots), each with its own camera, so a layer renders whatever this asks for.
+ */
+export interface GpuLayerView {
+  /** The size of the target this pass draws into, in pixels. */
+  readonly width: number;
+  readonly height: number;
+  /** Where in that target to draw: x, y (top-left origin), width, height, in pixels. */
+  readonly viewport: readonly [number, number, number, number];
+  /** World (room) to view, column-major. The camera looks down -Z. */
+  readonly view: Float32Array;
+  /** View to clip, column-major, WebGPU clip space (z 0 near .. 1 far). May be off-axis. */
+  readonly projection: Float32Array;
+  /** The eye, in room coordinates. */
+  readonly cameraPosition: readonly [number, number, number];
+  /** Seconds since the room was mounted, and since the last frame. */
+  readonly time: number;
+  readonly dt: number;
+  readonly mode: 'active' | 'preview';
+}
+
+/** How a layer's depth texture maps to distance from the eye. */
+export interface GpuLayerDepth {
+  /** Reversed-Z: 1 at the near plane, 0 at the far one (or infinity). */
+  reversed: boolean;
+  near: number;
+  /** Leave out (or Infinity) for an infinite far plane. */
+  far?: number;
+}
+
+/** What a layer drew: textures at least the view's size, the picture inside the view's viewport. */
+export interface GpuLayerResult {
+  /** Linear, scene-referred colour (the engine tone-maps it with the rest). rgba16float or another float format. */
+  color: GPUTexture;
+  /** Depth for the colour, so portals and players are hidden behind the layer's geometry and in front of it. */
+  depth?: GPUTexture;
+  depthMode?: GpuLayerDepth;
+}
+
+/**
+ * A room's own WebGPU renderer, composited into the engine's passes with real depth.
+ * `render` must submit its GPU work before it returns.
+ */
+export interface GpuLayer {
+  render: (view: GpuLayerView) => GpuLayerResult | null;
+}
+
 export interface WorldContext {
   /** Each mount is independent. Preview mounts run scene animation without player input. */
   readonly mode: 'active' | 'preview';
@@ -256,6 +310,14 @@ export interface WorldContext {
   onActivate: (fn: () => void | (() => void)) => void;
   scene: THREE.Scene;
   renderer: THREE.WebGPURenderer;
+  /** The WebGPU device the engine and every room share; null where only WebGL is available. */
+  readonly gpu: GpuContext | null;
+  /**
+   * Draw part of the room with your own WebGPU code (any engine on `gpu.device`).
+   * The engine calls it for every view of the room and composites the result, with
+   * depth, under the room's Three.js scene. Needs `gpu`; returns false without it.
+   */
+  addGpuLayer: (layer: GpuLayer) => boolean;
   /** Place a default archway portal prefab in the current world. */
   addPortal: (portal: PortalDefinition) => PortalVisualHandle;
   /** Register a custom-rendered portal (reserve it with `customPortalSlots` first). */

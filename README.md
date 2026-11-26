@@ -61,7 +61,7 @@ See [COLLAB.md](./COLLAB.md#building-your-room) for the full room authoring cont
 
 ## Community Rooms & Features
 
-- **Seamless Circular Portal Loop (`registry.json`)** — currently 12 community rooms and growing:
+- **Seamless Circular Portal Loop (`registry.json`)** — currently 13 community rooms and growing:
   1. **Eric's Room (`worlds/eric-world`)** — Cyan holographic studio (`ericrius1`).
   2. **JP's Solarpunk Meadow (`worlds/jp-world`)** — Sunlit meadow with 26,000 Bezier-elastica grass blades, California wildflowers, and solar arches (`jpwhitaker`).
   3. **Breezy Plant Garden (`worlds/jp-garden`)** — Giant flat-coloured tropical plants swaying in the breeze and bending away as you pass (`jpwhitaker`).
@@ -69,11 +69,12 @@ See [COLLAB.md](./COLLAB.md#building-your-room) for the full room authoring cont
   5. **Coral Reef Walk (`worlds/jp-reef`)** — A sea-floor path through a coral canyon with caustic light, jellyfish, fish schools, a turtle, and a manta ray (`jpwhitaker`).
   6. **Night Loft (`worlds/jp-loft`)** — An open-plan loft above the night city, with warm lamps and a shiba that follows you around (`jpwhitaker`).
   7. **Abyss Stepping Stones (`worlds/jp-abyss`)** — A crooked path of ancient floating stones high above a chasm of drifting fog, glowing from beneath and trailing smoke, with needle spires rising out of the murk (`jpwhitaker`).
-  8. **Laser Forcefield Arena (`worlds/laser-lab`)** — Pitch-black light-show gallery with sweeping volumetric TSL laser fans, pulsing scanline forcefield walls, and floating prisms (`jpwhitaker`).
-  9. **Alpine Snow Run (`worlds/alpine-sled`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow (`jpwhitaker`).
-  10. **Bioluminescent Redwood Grove (`worlds/eric-biolum-grove`)** — Nocturnal redwood cathedral under TSL aurora curtains, player-reactive glowing mushrooms, and drifting firefly spores (`ericrius1`).
-  11. **Golden Cloud Observatory (`worlds/eric-sun-observatory`)** — Floating marble-and-brass celestial bridge above a sunset TSL cloud sea, crowned by colossal rotating brass armillary rings (`ericrius1`).
-  12. **Honey in da Hood Ya Heard (`worlds/honey-hood`)** — A winding road of light-up tiles through honey-dripping trees, golden plants, and a fire hydrant, under a giant bee in a blue jacket who eats passing birds (`simplesessions`).
+  8. **Palace Lagoon (`worlds/eric-palace-lagoon`)** — Earth's Palace of Fine Arts across a mirror-still lagoon at golden hour, from a wind-blown wildflower meadow. The first room drawn with [weft](https://github.com/ericrius1/weft) instead of Three.js, composited with depth through the engine's GPU layers (`ericrius1`).
+  9. **Laser Forcefield Arena (`worlds/laser-lab`)** — Pitch-black light-show gallery with sweeping volumetric TSL laser fans, pulsing scanline forcefield walls, and floating prisms (`jpwhitaker`).
+  10. **Alpine Snow Run (`worlds/alpine-sled`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow (`jpwhitaker`).
+  11. **Bioluminescent Redwood Grove (`worlds/eric-biolum-grove`)** — Nocturnal redwood cathedral under TSL aurora curtains, player-reactive glowing mushrooms, and drifting firefly spores (`ericrius1`).
+  12. **Golden Cloud Observatory (`worlds/eric-sun-observatory`)** — Floating marble-and-brass celestial bridge above a sunset TSL cloud sea, crowned by colossal rotating brass armillary rings (`ericrius1`).
+  13. **Honey in da Hood Ya Heard (`worlds/honey-hood`)** — A winding road of light-up tiles through honey-dripping trees, golden plants, and a fire hydrant, under a giant bee in a blue jacket who eats passing birds (`simplesessions`).
 - **Seamless Circular Portals & 3rd-Person Traversal**:
   - Perspective-correct live portal windows at screen resolution, two rooms deep along the loop, so the portal at the far end of the next room is already live and stays steady as you walk through. Portals beyond that show snapshots.
   - A distance-compressed lens that keeps distant doors small, zero-dip 3rd-person walk-through crossings (forward or backing in) with mirrored character transit, and an organic liquid-membrane warp that builds as you walk into a portal's warp zone.
