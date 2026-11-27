@@ -26,10 +26,11 @@ describe('room modules', () => {
     for (const id of localIds) {
       const room = await registry.loadWorld(id);
       expect(room.manifest).toEqual(registry.getManifest(id));
-      // Palace Lagoon was added upstream with its own arrival placement; retain it
-      // while checking the entrance-spawn change for the original twelve rooms.
-      const position = id === 'eric-palace-lagoon' ? [0, 0, 35] : threshold('entrance', 0.5).position;
-      expect(room.manifest.spawns.default).toMatchObject({ position, yaw: 0 });
+      // Palace Lagoon enters through its courtyard; other rooms use the standard gate.
+      const arrival = id === 'eric-palace-lagoon'
+        ? { position: [-12.18, 0.02, 60.06], yaw: -0.7191 }
+        : { position: threshold('entrance', 0.5).position, yaw: 0 };
+      expect(room.manifest.spawns.default).toMatchObject(arrival);
     }
   });
 

@@ -8,6 +8,7 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 
 - Set production and development defaults to the user's approved screenshot: **50% room brightness, 55% blood brightness, blood color `#86090b` (approximately 359° hue)**. The same settings drive lights, reflections, pool colors and face trails, retaining the dark patches in the liquid.
 - Visages development controls start hidden and toggle with **H**, matching Abyss's tuning shortcut (Abyss uses I for its island editor). Opening releases pointer lock; leaving the room removes the panel and shortcut. Production builds include neither the panel nor the shortcut.
+- Updated the portal arrival regression test to retain Palace Lagoon's newer courtyard spawn after syncing main, while continuing to check standard entrance alignment for the other rooms.
 
 ### Design & engineering decisions
 
