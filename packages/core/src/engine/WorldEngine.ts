@@ -275,6 +275,11 @@ export class WorldEngine {
     return this.currentManifest?.id ?? null;
   }
 
+  /** True when `worldId` is already mounted and prepared in memory (no download/compile wait). */
+  isRoomReady(worldId: string): boolean {
+    return Boolean(this.previews?.hasReady(worldId));
+  }
+
   getPerformanceProfile(): PerformanceProfile {
     return this.performanceProfile;
   }

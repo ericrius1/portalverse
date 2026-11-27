@@ -785,6 +785,7 @@ kbd {
 
 #warp-overlay.active {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .warp-ring {

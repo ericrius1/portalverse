@@ -10,6 +10,7 @@
  *
  * Pure math shared by the procedural mesh builder (`mesh.ts`), room terrain/collision (`index.ts`), and tests.
  */
+import type { RoomCollider, Vec3Tuple } from '@portalverse/core/types';
 import { PALACE, WATER_Y } from '../layout';
 
 export type V3 = [number, number, number];
@@ -90,9 +91,10 @@ export function boardwalkPos(t: number): V3 {
 export function spiralPos(v: number): V3 {
   const angle = Math.PI / 2 - Math.PI * 2 * (0.9 * v + 0.1 * v * v);
   // Radius glides smoothly inward from 15.5 m at the entry plaza to 7.5 m at the summit balcony.
-  const r = mix(15.5, 7.5, smoothstep(0.04, 0.95, v));
-  // Stay flush across both circular plazas' footprints (v <= 0.045 and v >= 0.955) so neither ramp clips its star medallion.
-  const u = Math.min(1, Math.max(0, (v - 0.045) / 0.91));
+  const r = mix(15.5, 7.5, smoothstep(0.04, 0.92, v));
+  // Stay flush across both circular plazas' full footprints (v <= 0.045 at r = 15.5 -> 3.9 m > ENTRY_PLAZA.r;
+  // v >= 0.925 at r = 7.5 -> 3.9 m > SUMMIT_DECK.r) so neither ramp steps or clips its star medallion.
+  const u = Math.min(1, Math.max(0, (v - 0.045) / 0.88));
   const climb = mix(u, u * u * (3 - 2 * u), 0.35);
   const y = mix(ENTRY_PLAZA.y, SUMMIT_DECK.y, climb);
   return [CX + r * Math.cos(angle), y, CZ + r * Math.sin(angle)];
@@ -200,9 +202,60 @@ const PATH_BOX = (() => {
   return [minX, maxX, minZ, maxZ] as const;
 })();
 
+/** Closest reachable deck point on a single contiguous strip (`start..end`), or null if off-strip. */
+function closestOnStrip(
+  start: number,
+  end: number,
+  x: number,
+  z: number,
+  fromY: number,
+  stepTolerance: number,
+  extraHalfW = 0.12,
+  endMargin = 0.15,
+): { y: number; d2: number; px: number; pz: number; nx: number; nz: number; halfW: number; lat: number } | null {
+  let bestD2 = Infinity;
+  let best: { y: number; d2: number; px: number; pz: number; nx: number; nz: number; halfW: number; lat: number } | null = null;
+  for (let i = start; i < end; i++) {
+    const a = PATH_FRAMES[i];
+    const b = PATH_FRAMES[i + 1];
+    const abx = b.p[0] - a.p[0];
+    const abz = b.p[2] - a.p[2];
+    const l2 = abx * abx + abz * abz;
+    if (l2 < 1e-8) continue;
+    const rawU = ((x - a.p[0]) * abx + (z - a.p[2]) * abz) / l2;
+    const segLen = Math.sqrt(l2);
+    // Avoid giant rounded end-caps projecting past a strip's ends at plaza transitions.
+    if (i === start && rawU * segLen < -endMargin) continue;
+    if (i === end - 1 && (rawU - 1) * segLen > endMargin) continue;
+    const u = Math.min(1, Math.max(0, rawU));
+    const px = a.p[0] + abx * u;
+    const pz = a.p[2] + abz * u;
+    const baseHw = a.halfW + (b.halfW - a.halfW) * u;
+    const hw = baseHw + extraHalfW;
+    const dx = x - px;
+    const dz = z - pz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 <= hw * hw && d2 < bestD2) {
+      const py = a.p[1] + (b.p[1] - a.p[1]) * u;
+      if (fromY >= py - stepTolerance) {
+        const tx = abx / segLen;
+        const tz = abz / segLen;
+        const nx = -tz;
+        const nz = tx;
+        bestD2 = d2;
+        best = { y: py, d2, px, pz, nx, nz, halfW: baseHw, lat: dx * nx + dz * nz };
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * Highest walkable surface on the boardwalk, star plaza, ascending spiral, or summit arch at (x, z)
  * reachable from feet height `fromY`. Returns -Infinity when off the path.
+ *
+ * Each contiguous strip contributes only its single closest centerline point (never an uphill segment
+ * further along the spiral), keeping height strictly continuous and flush with the visual deck.
  */
 export function pathSurface(x: number, z: number, fromY = Infinity): number {
   if (x < PATH_BOX[0] || x > PATH_BOX[1] || z < PATH_BOX[2] || z > PATH_BOX[3]) return -Infinity;
@@ -218,30 +271,58 @@ export function pathSurface(x: number, z: number, fromY = Infinity): number {
     if (Math.hypot(x - d.x, z - d.z) <= d.r + 0.12) consider(d.y);
   }
 
-  // Walkable segments across all three strips (skipping the disconnect between spiral end and summit start)
-  const ranges = [BOARDWALK_RANGE, SPIRAL_RANGE, SUMMIT_RANGE] as const;
-  for (const [start, end] of ranges) {
-    for (let i = start; i < end; i++) {
-      const a = PATH_FRAMES[i];
-      const b = PATH_FRAMES[i + 1];
-      const abx = b.p[0] - a.p[0];
-      const abz = b.p[2] - a.p[2];
-      const l2 = abx * abx + abz * abz;
-      if (l2 < 1e-8) continue;
-      const u = Math.min(1, Math.max(0, ((x - a.p[0]) * abx + (z - a.p[2]) * abz) / l2));
-      const px = a.p[0] + abx * u;
-      const pz = a.p[2] + abz * u;
-      const hw = a.halfW + (b.halfW - a.halfW) * u + 0.12;
-      const dx = x - px;
-      const dz = z - pz;
-      if (dx * dx + dz * dz <= hw * hw) {
-        const py = a.p[1] + (b.p[1] - a.p[1]) * u;
-        consider(py);
-      }
-    }
+  // One closest reachable sample per contiguous strip (never maxing across uphill segments).
+  for (const [start, end] of [BOARDWALK_RANGE, SPIRAL_RANGE, SUMMIT_RANGE] as const) {
+    const hit = closestOnStrip(start, end, x, z, fromY, stepTolerance);
+    if (hit) consider(hit.y);
   }
   return best;
 }
+
+/**
+ * Gentle guardrail collider matching the visible brass handrails along the ascending spiral,
+ * summit arch, and over-water boardwalk. Keeps walkers sliding smoothly around the curve instead
+ * of clipping off the edge, while still letting players jump over the 0.92 m rail or fly freely.
+ */
+export const pathCollider: RoomCollider = {
+  move(from: Readonly<Vec3Tuple>, to: Readonly<Vec3Tuple>, radius: number, _height: number): [number, number] {
+    let x = to[0];
+    let z = to[2];
+    if (x < PATH_BOX[0] - 2 || x > PATH_BOX[1] + 2 || z < PATH_BOX[2] - 2 || z > PATH_BOX[3] + 2) {
+      return [x, z];
+    }
+    const fromY = from[1];
+    // Open seamlessly onto the circular entry & summit plazas.
+    if (
+      Math.hypot(x - ENTRY_PLAZA.x, z - ENTRY_PLAZA.z) < ENTRY_PLAZA.r - 0.1 ||
+      Math.hypot(x - SUMMIT_DECK.x, z - SUMMIT_DECK.z) < SUMMIT_DECK.r - 0.1
+    ) {
+      return [x, z];
+    }
+    const guardedStrips: readonly (readonly [number, number, boolean])[] = [
+      [SPIRAL_RANGE[0], SPIRAL_RANGE[1], false],
+      [SUMMIT_RANGE[0], SUMMIT_RANGE[1], false],
+      [BOARDWALK_RANGE[0], BOARDWALK_RANGE[1], true],
+    ];
+    for (const [start, end, waterOnly] of guardedStrips) {
+      if (waterOnly && (from[2] < 19.3 || from[2] > 32.7 || z < 19.3 || z > 32.7)) continue;
+      // Only engage if the player started on this railed deck and below handrail top (~0.92 m).
+      const fromHit = closestOnStrip(start, end, from[0], from[2], fromY + 0.5, 0.85, 0.1, 0.05);
+      if (!fromHit) continue;
+      if (fromY < fromHit.y - 0.55 || fromY > fromHit.y + 0.78) continue;
+      const toHit = closestOnStrip(start, end, x, z, fromY + 0.8, 0.95, 1.4, 0.05);
+      if (!toHit) continue;
+      const maxLat = Math.max(0.25, toHit.halfW - radius - 0.06);
+      if (Math.abs(toHit.lat) > maxLat) {
+        const clamped = Math.sign(toHit.lat) * maxLat;
+        x = toHit.px + toHit.nx * clamped;
+        z = toHit.pz + toHit.nz * clamped;
+      }
+      break;
+    }
+    return [x, z];
+  },
+};
 
 /** True if (x, z) is on or immediately beside the boardwalk over the water (for pile/lantern placement & tests). */
 export function isOverWater(x: number, z: number, waterAt: (x: number, z: number) => number): boolean {

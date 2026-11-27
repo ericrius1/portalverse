@@ -70,6 +70,7 @@ export function createPathway(env: RoomEnv): RoomFeature {
       count: mesh.count,
       cull: 'none',
       phase: 'opaque',
+      depthLayer: 'detail',
     }));
     if (mesh.lanterns.length > 0) {
       draws.push(pass.draw(pathShader, {

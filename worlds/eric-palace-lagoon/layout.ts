@@ -22,8 +22,8 @@ export const PALACE = {
   turn: 0.1623,
   /** where the rotunda's centre lands in the room: the exit portal (z = -36.25) stands in its south arch, 22.25 m out */
   at: [0, -14] as const,
-  /** Earth's mesh on Earth's R2 (content-addressed, immutable; CORS open) */
-  url: 'https://sf-assets.ericrius1.workers.dev/objects/8112524c5b092f2953325f69669b94d3356e15d0d02cf3544d12dc0ce6b27667/palace.bin',
+  /** Earth's Palace mesh mirrored on Portalverse's R2 Worker (content-addressed, immutable, CORS open) */
+  url: 'https://portalverse-assets.ericrius1.workers.dev/objects/8112524c5b092f2953325f69669b94d3356e15d0d02cf3544d12dc0ce6b27667/palace.bin',
 } as const;
 
 /** The rotunda's heights over the deck (m), Earth's palace.json less `PALACE.floor`. */

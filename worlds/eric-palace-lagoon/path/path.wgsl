@@ -54,7 +54,7 @@ fn octDecode(e: vec2f) -> vec3f {
   o.col = vec3f(f32(cm & 255u), f32((cm >> 8u) & 255u), f32((cm >> 16u) & 255u)) / 255.0;
   o.mat = (cm >> 24u) & 255u;
   o.extra = bitcast<f32>(verts[b + 7u]);
-  o.pos = clipAt(o.world);
+  o.pos = clipAtFacing(o.world, o.n);
   return o;
 }
 

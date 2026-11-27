@@ -186,8 +186,8 @@ importers:
   .:
     dependencies:
       '@ericrius1/weft':
-        specifier: github:ericrius1/weft#dist/weft
-        version: https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0(@types/node@22.20.5)(tsx@4.23.15)
+        specifier: git+https://github.com/ericrius1/weft.git#dist/weft
+        version: https://codeload.github.com/ericrius1/weft/tar.gz/42e91b586c2a2c1ae19e4c40560641606f7e8859(vite@6.4.6(@types/node@22.20.5)(tsx@4.23.15))
       three:
         specifier: ^0.187.0
         version: 0.187.0
@@ -243,9 +243,14 @@ packages:
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
 
-  '@ericrius1/weft@https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0':
-    resolution: {gitHosted: true, integrity: sha512-wuTta3K3RJMUvYjTH1mJBS1uI72aFjP4A2YHvtQB2eCHsUwmOKnnX97D9grKbO4SlH7sXK/lV3Oj1fF48Qe7og==, tarball: https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0}
-    version: 0.2.17
+  '@ericrius1/weft@https://codeload.github.com/ericrius1/weft/tar.gz/42e91b586c2a2c1ae19e4c40560641606f7e8859':
+    resolution: {gitHosted: true, integrity: sha512-qiSTcl0O1c7rD/heUuqyd4dIOsSzsYNDsFYQdvm9KZejTlwZBEnJzbK27cXVFOusnvFoJNyYas2P3xWqAmLgXw==, tarball: https://codeload.github.com/ericrius1/weft/tar.gz/42e91b586c2a2c1ae19e4c40560641606f7e8859}
+    version: 0.2.19
+    peerDependencies:
+      vite: '>=5'
+    peerDependenciesMeta:
+      vite:
+        optional: true
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -1502,23 +1507,11 @@ snapshots:
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 
-  '@ericrius1/weft@https://codeload.github.com/ericrius1/weft/tar.gz/185897a34f8b2ec30317bb5565fc232ddae796e0(@types/node@22.20.5)(tsx@4.23.15)':
+  '@ericrius1/weft@https://codeload.github.com/ericrius1/weft/tar.gz/42e91b586c2a2c1ae19e4c40560641606f7e8859(vite@6.4.6(@types/node@22.20.5)(tsx@4.23.15))':
     dependencies:
       wgsl_reflect: 1.6.0
     optionalDependencies:
       vite: 6.4.6(@types/node@22.20.5)(tsx@4.23.15)
-    transitivePeerDependencies:
-      - '@types/node'
-      - jiti
-      - less
-      - lightningcss
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
-      - terser
-      - tsx
-      - yaml
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true

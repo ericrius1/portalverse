@@ -287,3 +287,25 @@ describe.each(['classic', 'platformer'] as const)('room walls and bounds in %s',
     expect(avatar.position.x).toBe(-95);
   });
 });
+
+describe.each(['classic', 'platformer'] as const)('downhill ramp tracking in %s', mode => {
+  it('stays grounded while sprinting down a steep 26 deg ramp even at 25 fps', () => {
+    const { avatar } = setup();
+    avatar.setMovementMode(mode);
+    // Ramp descending along -Z at slope 0.5 (26.6 deg) from y = 20 at z = 0.
+    const slope = (z: number) => 20 + z * 0.5;
+    avatar.setWorldCollision([], (_x, z) => slope(z));
+    avatar.applySpawn({ position: [0, 20, 0], yaw: 0 });
+    key('keydown', 'KeyW');
+    key('keydown', 'ShiftLeft');
+    const dt = 1 / 25;
+    for (let i = 0; i < 40; i++) {
+      avatar.update(dt, i * dt, false);
+      expect(avatar.getMotionState().grounded).toBe(true);
+      expect(avatar.position.y).toBeCloseTo(slope(avatar.position.z), 4);
+    }
+    key('keyup', 'KeyW');
+    key('keyup', 'ShiftLeft');
+    avatar.dispose();
+  });
+});

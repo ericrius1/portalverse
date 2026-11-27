@@ -5,7 +5,7 @@ import type { RoomCollider, Vec3Tuple } from '@portalverse/core/types';
 import { duskAt, walkHeight } from './layout';
 import { timeOfDay } from './timeOfDay';
 import { palaceCollider, palaceSurface } from './collide';
-import { pathSurface } from './path/curve';
+import { pathCollider, pathSurface } from './path/curve';
 import { createDomePortal, type DomePortalHandle } from './domePortal';
 import { TREE_TRUNKS } from './trees';
 
@@ -46,9 +46,14 @@ export default defineRoom('eric-palace-lagoon', {
       return domePortal;
     });
 
-    // The meadow and the lagoon, the Palace's podium and tops, and the boardwalk + ascending celestial sky-path.
-    ctx.setTerrainHeight((x, z, fromY) => Math.max(walkHeight(x, z), palaceSurface(x, z, fromY), pathSurface(x, z, fromY)));
-    ctx.setCollider(withTrunks(palaceCollider));
+    // The meadow and the lagoon, the Palace's podium and tops (once its mesh is loaded), and the boardwalk + sky-path.
+    let palaceLoaded = () => false;
+    ctx.setTerrainHeight((x, z, fromY) => Math.max(
+      walkHeight(x, z),
+      palaceLoaded() ? palaceSurface(x, z, fromY) : -Infinity,
+      pathSurface(x, z, fromY),
+    ));
+    ctx.setCollider(composeColliders(() => palaceLoaded(), palaceCollider, pathCollider));
     // Room enough to walk round the whole Palace, the lagoon and the hall behind it.
     ctx.setWalkBounds({ minX: -140, maxX: 150, minZ: -165, maxZ: 140 });
 
@@ -71,6 +76,7 @@ export default defineRoom('eric-palace-lagoon', {
     // weft and the room's shaders load with the room, not before.
     const { lagoonRenderer } = await import('./renderer');
     const lagoon = lagoonRenderer(gpu);
+    palaceLoaded = () => lagoon.hasPalace;
     ctx.onUpdate(() => {
       const p = ctx.player?.position ?? null;
       domePortal?.setPlayerPosition(p);
@@ -84,20 +90,22 @@ export default defineRoom('eric-palace-lagoon', {
       lagoon.player = null;
       domePortal?.setPlayerPosition(null);
     });
-    // Wait for the pipelines and the Palace (fetched and unpacked in a worker, uploaded in slices) so the
-    // room is whole when it's first seen; past 15 s it opens without the Palace, which fades in when it comes.
-    const ready = lagoon.ready.catch(error => console.warn('[palace-lagoon] partly loaded', error));
-    await Promise.race([ready, new Promise(resolve => setTimeout(resolve, 15000))]);
+    // Wait for every pipeline and the Palace mesh (no premature timeout, so slow connections still arrive whole).
+    await lagoon.ensureReady().catch(error => console.warn('[palace-lagoon] partly loaded', error));
     ctx.addGpuLayer(lagoon.layer);
   },
 });
 
-/** The Palace's collider, with the trees' trunks to walk round too. */
-function withTrunks(inner: RoomCollider): RoomCollider {
-  if (!TREE_TRUNKS.length) return inner;
+/** Compose the Palace solids (when visible), the path handrails, and the trees' trunks. */
+function composeColliders(
+  palaceReady: () => boolean,
+  palace: RoomCollider,
+  path: RoomCollider,
+): RoomCollider {
   return {
     move(from: Readonly<Vec3Tuple>, to: Readonly<Vec3Tuple>, r: number, height: number): [number, number] {
-      let [x, z] = inner.move(from, to, r, height);
+      let [x, z] = palaceReady() ? palace.move(from, to, r, height) : [to[0], to[2]];
+      [x, z] = path.move(from, [x, to[1], z], r, height);
       // (only the trunks near the step; the trees are tall enough that a flier above them is past them)
       for (const [tx, tz, tr] of TREE_TRUNKS) {
         const dx = x - tx, dz = z - tz;

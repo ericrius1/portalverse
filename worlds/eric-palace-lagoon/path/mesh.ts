@@ -17,6 +17,7 @@
  * Packed to 8 u32 words (32 bytes) per vertex:
  *   [x, y, z, u, v, octNormal(2x16snorm), rgba8(r,g,b,mat), meta(f32)]
  */
+import { separateCoplanar } from '@ericrius1/weft/coplanar';
 import { WATER_Y, lagoonSdf } from '../layout';
 import {
   BOARDWALK_RANGE,
@@ -115,8 +116,11 @@ class Builder {
     this.idx.push(i0, i1, i2, i0, i2, i3);
   }
 
-  /** Solid box-like board from top quad (a,b,c,d) extruded down by `thick`. */
-  board(a: V3, b: V3, c: V3, d: V3, thick: number, col: V3, mat: number, u0 = 0, u1 = 1, v0 = 0, v1 = 1, meta = 0): void {
+  /** Solid box-like board from top quad (a,b,c,d) extruded down by `thick`. `capStart`/`capEnd` control a-b and c-d ends. */
+  board(
+    a: V3, b: V3, c: V3, d: V3, thick: number, col: V3, mat: number,
+    u0 = 0, u1 = 1, v0 = 0, v1 = 1, meta = 0, capStart = true, capEnd = true,
+  ): void {
     const e1: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     const e2: V3 = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
     let nt = norm3(cross3(e1, e2));
@@ -130,14 +134,14 @@ class Builder {
       const nSide = norm3([ez, 0, -ex]);
       this.quad(p, q, q2, p2, nSide, col, mat, 0, 1, 0, 1, meta);
     };
-    side(a, b, a2, b2);
+    if (capStart) side(a, b, a2, b2);
     side(b, c, b2, c2);
-    side(c, d, c2, d2);
+    if (capEnd) side(c, d, c2, d2);
     side(d, a, d2, a2);
   }
 
-  /** Tapered cylinder between a and b. */
-  cyl(a: V3, b: V3, r0: number, r1: number, seg: number, col: V3, mat: number, caps = true, meta = 0): void {
+  /** Tapered cylinder between a and b (`caps`: true = both, false = none, 'top' = top cap only). */
+  cyl(a: V3, b: V3, r0: number, r1: number, seg: number, col: V3, mat: number, caps: boolean | 'top' = true, meta = 0): void {
     const axis: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     const len = Math.hypot(axis[0], axis[1], axis[2]);
     if (len < 1e-5) return;
@@ -160,12 +164,17 @@ class Builder {
       const j = (i + 1) % seg;
       this.idx.push(ringA[i], ringA[j], ringB[j], ringA[i], ringB[j], ringB[i]);
     }
-    if (caps) {
+    if (caps === true) {
       const ca = this.pushVert(a, [-d[0], -d[1], -d[2]], 0.5, 0.5, col, mat, meta);
-      const cb = this.pushVert(b, d, 0.5, 0.5, col, mat, meta);
       for (let i = 0; i < seg; i++) {
         const j = (i + 1) % seg;
         this.idx.push(ca, ringA[j], ringA[i]);
+      }
+    }
+    if (caps === true || caps === 'top') {
+      const cb = this.pushVert(b, d, 0.5, 0.5, col, mat, meta);
+      for (let i = 0; i < seg; i++) {
+        const j = (i + 1) % seg;
         this.idx.push(cb, ringB[i], ringB[j]);
       }
     }
@@ -221,7 +230,10 @@ class Builder {
       u[b + 6] = this.vWords[wo + 1];
       f[b + 7] = this.vWords[wo + 2];
     }
-    return { verts: out, indices: new Uint32Array(this.idx), count: this.idx.length, lanterns };
+    const indices = new Uint32Array(this.idx);
+    // Guarantee zero coplanar z-fighting across inlays, planks, moldings, and rims via weft's coplanar solver.
+    separateCoplanar(f, indices, { stride: 8, offset: 0, eps: 0.003 });
+    return { verts: out, indices, count: indices.length, lanterns };
   }
 }
 
@@ -345,20 +357,20 @@ function buildStarDeck(m: Builder, R: () => number, deck: RoundDeck, lanterns: P
 
   // Main circular/octagonal deck body
   m.cyl([x, y - 0.22, z], [x, y, z], r, r, seg, celestial > 0.5 ? LAPIS : TEAK, deckMat, true, celestial);
-  // Outer bevelled rim
+  // Outer bevelled rim (closed ring: omit radial interior end-caps between consecutive rim boards)
   for (let k = 0; k < seg; k++) {
     const a0 = (k / seg) * Math.PI * 2 + (celestial > 0.5 ? Math.PI / 8 : 0);
     const a1 = ((k + 1) / seg) * Math.PI * 2 + (celestial > 0.5 ? Math.PI / 8 : 0);
     const P = (a: number, rad: number, dy: number): V3 => [x + Math.cos(a) * rad, y + dy, z + Math.sin(a) * rad];
-    m.board(P(a0, r - 0.24, 0.006), P(a1, r - 0.24, 0.006), P(a1, r + 0.04, 0.006), P(a0, r + 0.04, 0.006), 0.14, rimCol, rimMat);
+    m.board(P(a0, r - 0.24, 0.008), P(a1, r - 0.24, 0.008), P(a1, r + 0.04, 0.008), P(a0, r + 0.04, 0.008), 0.14, rimCol, rimMat, 0, 1, 0, 1, 0, false, false);
     // Luminous ring under lip
     m.cyl(P(a0, r - 0.06, -0.22), P(a1, r - 0.06, -0.22), 0.022, 0.022, 5, celestial > 0.5 ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, false, k * 0.4);
   }
 
-  // Travertine & turquoise Arabic 8-point Rub el Hizb star rosette inlaid at center
+  // Travertine & turquoise Arabic 8-point Rub el Hizb star rosette inlaid at center (top caps only: no coplanar undersides)
   const my = y + 0.014;
-  m.cyl([x, y, z], [x, my, z], r * 0.52, r * 0.52, 32, TRAVERTINE, PATH_MAT.INLAY);
-  m.cyl([x, my, z], [x, my + 0.008, z], r * 0.44, r * 0.44, 16, TURQUOISE, PATH_MAT.INLAY);
+  m.cyl([x, y, z], [x, my, z], r * 0.52, r * 0.52, 32, TRAVERTINE, PATH_MAT.INLAY, 'top');
+  m.cyl([x, my, z], [x, my + 0.008, z], r * 0.44, r * 0.44, 16, TURQUOISE, PATH_MAT.INLAY, 'top');
   // Two rotated gilt squares forming an 8-point Islamic star
   const sr = r * 0.42;
   for (const rot of [0, Math.PI / 4]) {
@@ -377,7 +389,7 @@ function buildStarDeck(m: Builder, R: () => number, deck: RoundDeck, lanterns: P
     const ax = Math.cos(a), az = Math.sin(a);
     m.cyl([x + ax * 0.22, my + 0.016, z + az * 0.22], [x + ax * len, my + 0.016, z + az * len], 0.022, 0.008, 4, k % 2 === 0 ? GILT : BRASS, PATH_MAT.BRASS, false);
   }
-  m.cyl([x, my + 0.008, z], [x, my + 0.022, z], 0.26, 0.22, 16, GILT, PATH_MAT.BRASS);
+  m.cyl([x, my + 0.008, z], [x, my + 0.022, z], 0.26, 0.22, 16, GILT, PATH_MAT.BRASS, 'top');
   m.ellipsoid([x, my + 0.026, z], 0.14, 0.03, 0.14, 12, 4, celestial > 0.5 ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, 1.0);
 
   // Corner glowing orb posts on the summit celestial balcony
@@ -484,13 +496,15 @@ export function buildPathMesh(): PathMeshData {
       );
     }
 
-    // Dark teak side fascia boards & water-crossing piles/beams
+    // Dark teak side fascia boards & water-crossing piles/beams (omit interior cross-section end-caps)
     if (fa.p[2] > 18.6) {
+      const prevHasFascia = i > bw0 && PATH_FRAMES[i - 1].p[2] > 18.6;
+      const nextHasFascia = i + 1 < bw1 && fb.p[2] > 18.6;
       for (const sd of [-1, 1] as const) {
         m.board(
           ptAt(fa, sd * (fa.halfW - 0.01), -0.025), ptAt(fa, sd * (fa.halfW + 0.03), -0.025),
           ptAt(fb, sd * (fb.halfW + 0.03), -0.025), ptAt(fb, sd * (fb.halfW - 0.01), -0.025),
-          0.19, DARK_TEAK, PATH_MAT.WOOD,
+          0.19, DARK_TEAK, PATH_MAT.WOOD, 0, 1, 0, 1, 0, !prevHasFascia, !nextHasFascia,
         );
       }
     }
@@ -587,8 +601,21 @@ export function buildPathMesh(): PathMeshData {
   // ====================================================================
   // 3. TRIPPY ASCENDING CELESTIAL SKY-PATH (SPIRAL + FINAL DOME ARCH)
   // ====================================================================
+  const insidePlaza = (p: V3): boolean =>
+    (Math.abs(p[1] - ENTRY_PLAZA.y) < 0.25 && Math.hypot(p[0] - ENTRY_PLAZA.x, p[2] - ENTRY_PLAZA.z) < ENTRY_PLAZA.r - 0.22) ||
+    (Math.abs(p[1] - SUMMIT_DECK.y) < 0.25 && Math.hypot(p[0] - SUMMIT_DECK.x, p[2] - SUMMIT_DECK.z) < SUMMIT_DECK.r - 0.22);
+
   const buildCelestialStrip = (startIdx: number, endIdx: number, withArches: boolean) => {
-    const stripFrames = PATH_FRAMES.slice(startIdx, endIdx + 1);
+    // Trim frames lying strictly inside the inlaid circular/octagonal plazas so slabs never coplanar-overlap them.
+    const allStrip = PATH_FRAMES.slice(startIdx, endIdx + 1);
+    let firstOut = 0;
+    while (firstOut < allStrip.length - 1 && insidePlaza(allStrip[firstOut].p)) firstOut++;
+    if (firstOut > 0) firstOut--; // keep one connecting boundary frame at the rim
+    let lastOut = allStrip.length - 1;
+    while (lastOut > firstOut + 1 && insidePlaza(allStrip[lastOut].p)) lastOut--;
+    if (lastOut < allStrip.length - 1) lastOut++;
+    const stripFrames = allStrip.slice(firstOut, lastOut + 1);
+
     const lRailTop: V3[] = [];
     const rRailTop: V3[] = [];
     const lRailMid: V3[] = [];
@@ -603,12 +630,14 @@ export function buildPathMesh(): PathMeshData {
       const uA = fa.s * 0.25;
       const uB = fb.s * 0.25;
       const cel = 0.5 * (fa.celestial + fb.celestial);
+      const capStart = i === 0;
+      const capEnd = i + 2 === stripFrames.length;
 
-      // Main celestial walkway slab (procedural iridescent girih pattern shaded in path.wgsl)
+      // Main celestial walkway slab (omit interior cross-section end-caps to prevent segment seam z-fighting)
       m.board(
         ptAt(fa, -fa.halfW), ptAt(fa, fa.halfW),
         ptAt(fb, fb.halfW), ptAt(fb, -fb.halfW),
-        0.13, LAPIS, PATH_MAT.CELESTIAL, 0, 1, uA, uB, cel,
+        0.13, LAPIS, PATH_MAT.CELESTIAL, 0, 1, uA, uB, cel, capStart, capEnd,
       );
 
       // Burnished gold side edge moldings
@@ -616,7 +645,7 @@ export function buildPathMesh(): PathMeshData {
         m.board(
           ptAt(fa, sd * (fa.halfW - 0.04), 0.015), ptAt(fa, sd * (fa.halfW + 0.09), 0.015),
           ptAt(fb, sd * (fb.halfW + 0.09), 0.015), ptAt(fb, sd * (fb.halfW - 0.04), 0.015),
-          0.18, GILT, PATH_MAT.BRASS,
+          0.18, GILT, PATH_MAT.BRASS, 0, 1, 0, 1, 0, capStart, capEnd,
         );
       }
 

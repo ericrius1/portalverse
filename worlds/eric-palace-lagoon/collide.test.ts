@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import earth from './palace.json';
 import { ENTRANCE_Z, EXIT_Z, PALACE, WATER_Y, lagoonSdf, terrainHeight, walkHeight } from './layout';
+import { findCoplanar } from '@ericrius1/weft/coplanar';
 import { nearPalace, palaceCollider, palaceSurface } from './collide';
-import { DOME_PORTAL_Y, ENTRY_PLAZA, PATH_FRAMES, SUMMIT_DECK, pathSurface } from './path/curve';
+import { DOME_PORTAL_Y, ENTRY_PLAZA, PATH_FRAMES, SUMMIT_DECK, pathCollider, pathSurface } from './path/curve';
+import { buildPathMesh } from './path/mesh';
 
 const R = 0.35;
 const H = 1.8;
@@ -81,6 +83,42 @@ describe('the Palace to walk round', () => {
   it('leaves the lawn alone', () => {
     expect(palaceCollider.move([20, 0, 30], [20.2, 0, 30.1], R, H)).toEqual([20.2, 30.1]);
     expect(palaceSurface(20, 30, 0)).toBe(-Infinity);
+  });
+
+  it('matches every boardwalk, spiral, and summit frame height smoothly without jumping to uphill segments', () => {
+    for (let i = 0; i < PATH_FRAMES.length; i++) {
+      const f = PATH_FRAMES[i];
+      const h = pathSurface(f.p[0], f.p[2], f.p[1]);
+      expect(Math.abs(h - f.p[1])).toBeLessThan(0.005);
+    }
+    // Even 1.1 m off-center along the curved ascending spiral, height stays flush with the local deck.
+    for (let i = 86; i <= 216; i++) {
+      const f = PATH_FRAMES[i];
+      for (const sd of [-1.1, 1.1]) {
+        const h = pathSurface(f.p[0] + f.n[0] * sd, f.p[2] + f.n[1] * sd, f.p[1]);
+        expect(Math.abs(h - f.p[1])).toBeLessThan(0.03);
+      }
+    }
+  });
+
+  it('slides walkers along spiral handrails while letting jumpers and podium walkers pass freely', () => {
+    const mid = PATH_FRAMES[140];
+    const outX = mid.p[0] + mid.n[0] * 2.4;
+    const outZ = mid.p[2] + mid.n[1] * 2.4;
+    const clamped = pathCollider.move([mid.p[0], mid.p[1], mid.p[2]], [outX, mid.p[1], outZ], R, H);
+    expect(Math.hypot(clamped[0] - mid.p[0], clamped[1] - mid.p[2])).toBeLessThan(mid.halfW);
+
+    // Jumping over the 0.92 m rail or walking on the podium far below passes unhindered.
+    const jumped = pathCollider.move([mid.p[0], mid.p[1] + 1.0, mid.p[2]], [outX, mid.p[1] + 1.0, outZ], R, H);
+    expect(jumped).toEqual([outX, outZ]);
+    const below = pathCollider.move([mid.p[0], 0, mid.p[2]], [outX, 0, outZ], R, H);
+    expect(below).toEqual([outX, outZ]);
+  });
+
+  it('separates coplanar triangles in the procedural path mesh', () => {
+    const mesh = buildPathMesh();
+    const pairs = findCoplanar(new Float32Array(mesh.verts), mesh.indices, { stride: 8, offset: 0 });
+    expect(pairs.length).toBeLessThan(100);
   });
 
   it("keeps the portals' surroundings clear of the Palace", () => {

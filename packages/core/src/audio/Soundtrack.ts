@@ -164,16 +164,26 @@ export class Soundtrack {
 
   /** Fetch and decode every stem (the given ones first) and the whoosh. */
   async load(priority: StemId[] = []): Promise<void> {
-    const order = [...priority, ...STEM_IDS.filter(id => !priority.includes(id))];
-    const tasks = order.map(async id => {
+    const prioritySet = new Set<StemId>(priority);
+    const rest = STEM_IDS.filter(id => !prioritySet.has(id));
+    const loadStem = async (id: StemId) => {
+      if (this.disposed) return;
       const buffer = await this.decode(id);
       if (!buffer || this.disposed) return;
       this.buffers.set(id, buffer);
       // A stem the playing song wanted but didn't have yet joins it on its grid.
       if (this.deck) this.addStem(this.deck, id, this.ctx.currentTime + 0.05);
-    });
-    tasks.push(this.decode('portal-whoosh').then(b => { if (b) this.whoosh = b; }));
-    await Promise.allSettled(tasks);
+    };
+    // Fetch the starting room's stems + portal whoosh first so slow connections stay responsive,
+    // then trickle the remaining stems one at a time so they don't starve room teleports.
+    await Promise.allSettled([
+      ...priority.map(loadStem),
+      this.decode('portal-whoosh').then(b => { if (b) this.whoosh = b; }),
+    ]);
+    for (const id of rest) {
+      if (this.disposed) return;
+      await loadStem(id).catch(() => {});
+    }
   }
 
   /** Call from a user gesture: browsers only let audio start after one. */
