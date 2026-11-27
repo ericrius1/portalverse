@@ -2,6 +2,17 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Visages approved lighting and hidden development controls — Unreleased (2026-11-26)
+
+### Changed
+
+- Set production and development defaults to the user's approved screenshot: **50% room brightness, 55% blood brightness, blood color `#86090b` (approximately 359° hue)**. The same settings drive lights, reflections, pool colors and face trails, retaining the dark patches in the liquid.
+- Visages development controls start hidden and toggle with **H**, matching Abyss's tuning shortcut (Abyss uses I for its island editor). Opening releases pointer lock; leaving the room removes the panel and shortcut. Production builds include neither the panel nor the shortcut.
+
+### Design & engineering decisions
+
+- Apply approved settings outside the development guard so the deployed room matches the chosen local appearance. Keep optional browser overrides separate and reset their storage version to the newly approved baseline; panel visibility is never persisted.
+
 ## Final Avenue of Visages, winning eyes and local tuning — Unreleased (2026-11-26)
 
 ### Changed

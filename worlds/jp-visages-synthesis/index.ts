@@ -59,6 +59,7 @@ import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { breathe } from '@portalverse/core/rooms/kit';
 import headUrl from './assets/female_human_head_game.glb?url';
 import { createWinningEyes } from './eyes';
+import { DEFAULT_TUNING, type VisagesTuning } from './tuning';
 import {
   EYE_STUDY_HEADS, EYE_STUDY_KEY, EYE_STUDY_LABELS,
   eyeStudyCollider, studyEyeMaterial, studyReflectionMap,
@@ -966,37 +967,41 @@ export default defineRoom('jp-visages-synthesis', {
         material.emissiveNode = (material.emissiveNode as Vec3Node).mul(roomBrightness);
       }
     }
+    const lights: Array<{ light: THREE.Light; base: number }> = [];
+    root.traverse(object => {
+      if (object instanceof THREE.Light) lights.push({ light: object, base: object.intensity });
+    });
+    const reflective = materials.filter((m): m is THREE.MeshStandardNodeMaterial =>
+      m instanceof THREE.MeshStandardNodeMaterial && m.envMap !== null,
+    ).map(material => ({ material, base: material.envMapIntensity }));
+    const baseHue = new THREE.Color('#961018').getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
+    const tinted = [
+      { node: bloodDeep, base: new THREE.Color('#340206') },
+      { node: bloodGlow, base: new THREE.Color('#52060c') },
+      { node: bloodTrail, base: new THREE.Color('#5c0407') },
+    ];
+    let tuning: VisagesTuning = { ...DEFAULT_TUNING };
+    const apply = (next: typeof tuning) => {
+      tuning = { ...next };
+      roomBrightness.value = next.roomBrightness;
+      bloodBrightness.value = next.bloodBrightness;
+      for (const { light, base } of lights) light.intensity = base * next.roomBrightness;
+      for (const { material, base } of reflective) material.envMapIntensity = base * next.roomBrightness;
+      bloodShallow.value.set(next.bloodColor);
+      const hue = bloodShallow.value.getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
+      for (const { node, base } of tinted) {
+        const hsl = base.getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
+        node.value.setHSL(hsl.h + hue.h - baseHue.h, hsl.s + hue.s - baseHue.s, hsl.l, THREE.SRGBColorSpace);
+      }
+    };
+    // Approved defaults must apply before any dev-only browser overrides.
+    apply(DEFAULT_TUNING);
     if (import.meta.env.DEV) {
-      const { readTuning, mountDevControls } = await import('./devControls');
-      const lights: Array<{ light: THREE.Light; base: number }> = [];
-      root.traverse(object => {
-        if (object instanceof THREE.Light) lights.push({ light: object, base: object.intensity });
-      });
-      const reflective = materials.filter((m): m is THREE.MeshStandardNodeMaterial =>
-        m instanceof THREE.MeshStandardNodeMaterial && m.envMap !== null,
-      ).map(material => ({ material, base: material.envMapIntensity }));
-      const baseHue = new THREE.Color('#961018').getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
-      const tinted = [
-        { node: bloodDeep, base: new THREE.Color('#340206') },
-        { node: bloodGlow, base: new THREE.Color('#52060c') },
-        { node: bloodTrail, base: new THREE.Color('#5c0407') },
-      ];
-      let tuning = readTuning();
-      const apply = (next: typeof tuning) => {
-        tuning = { ...next };
-        roomBrightness.value = next.roomBrightness;
-        bloodBrightness.value = next.bloodBrightness;
-        for (const { light, base } of lights) light.intensity = base * next.roomBrightness;
-        for (const { material, base } of reflective) material.envMapIntensity = base * next.roomBrightness;
-        bloodShallow.value.set(next.bloodColor);
-        const hue = bloodShallow.value.getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
-        for (const { node, base } of tinted) {
-          const hsl = base.getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
-          node.value.setHSL(hsl.h + hue.h - baseHue.h, hsl.s + hue.s - baseHue.s, hsl.l, THREE.SRGBColorSpace);
-        }
-      };
-      apply(tuning);
-      ctx.onActivate(() => mountDevControls(tuning, apply));
+      const [{ readTuning, mountDevControls }, { enableTuningShortcut }] = await Promise.all([
+        import('./devControls'), import('./tuningShortcut'),
+      ]);
+      apply(readTuning());
+      ctx.onActivate(() => enableTuningShortcut(() => mountDevControls(tuning, apply)));
     }
 
     let lastX = 0;

@@ -1,22 +1,13 @@
 import { Color, SRGBColorSpace } from 'three/webgpu';
-
-export interface VisagesTuning {
-  roomBrightness: number;
-  bloodBrightness: number;
-  bloodColor: string;
-}
-
-export const DEFAULT_TUNING: VisagesTuning = {
-  roomBrightness: 1, bloodBrightness: 1, bloodColor: '#961018',
-};
-const STORAGE_KEY = 'portalverse.dev.visages-lighting.v1';
+import { DEFAULT_TUNING, type VisagesTuning } from './tuning';
+const STORAGE_KEY = 'portalverse.dev.visages-lighting.v2';
 
 export function normalizeTuning(value: unknown): VisagesTuning {
   const v = (value && typeof value === 'object' ? value : {}) as Partial<VisagesTuning>;
-  const brightness = (n: unknown) => typeof n === 'number' && Number.isFinite(n) ? Math.max(0.2, Math.min(2, n)) : 1;
+  const brightness = (n: unknown, fallback: number) => typeof n === 'number' && Number.isFinite(n) ? Math.max(0.2, Math.min(2, n)) : fallback;
   return {
-    roomBrightness: brightness(v.roomBrightness),
-    bloodBrightness: brightness(v.bloodBrightness),
+    roomBrightness: brightness(v.roomBrightness, DEFAULT_TUNING.roomBrightness),
+    bloodBrightness: brightness(v.bloodBrightness, DEFAULT_TUNING.bloodBrightness),
     bloodColor: typeof v.bloodColor === 'string' && /^#[0-9a-f]{6}$/i.test(v.bloodColor) ? v.bloodColor.toLowerCase() : DEFAULT_TUNING.bloodColor,
   };
 }
@@ -38,7 +29,7 @@ export function mountDevControls(initial: VisagesTuning, apply: (value: VisagesT
   heading.style.cssText = 'cursor:pointer;font-weight:600';
   panel.append(heading);
   const hint = document.createElement('p');
-  hint.textContent = 'Press Esc to use controls. Saved in this browser only.';
+  hint.textContent = 'H hides these controls. Changes save in this browser only.';
   hint.style.cssText = 'color:#abb8c4;margin:8px 0 12px';
   panel.append(hint);
 
