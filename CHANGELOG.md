@@ -2,6 +2,16 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Avenue of Visages prayer — Unreleased (2026-11-27)
+
+### Added
+
+- A pentagram is carved into the cobbles halfway between the portals. Six seconds of grounded contact light the grooves bright violet. Patches of light flicker upward around the rim. At seven seconds, “Press E to pray” turns the camera toward the nearest visage and calls twin shafts of light from its irises.
+
+### Design & engineering decisions
+
+- The darker, 3.1 cm grooves catch the avenue’s moonlight. The ring uses the same vertical falloff as Honey Hood’s stepping tiles. Beam origins follow the exposed eye openings. The camera turns along the shortest yaw arc, with duration proportional to the angle and immediate manual override. Jumping or leaving interrupts the invitation. Once invoked, the gaze follows the player until they move nine metres from the carving, then releases over 0.35 seconds.
+
 ## Sector 9 Rain Corner — Neo-Tokyo Blade Runner Evolution (`doug-cassette-station`) — Unreleased (2026-11-27)
 
 ### Changed

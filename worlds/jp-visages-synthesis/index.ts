@@ -59,6 +59,9 @@ import {
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { breathe } from '@portalverse/core/rooms/kit';
 import headUrl from './assets/female_human_head_game.glb?url';
+import reliefUrl from './assets/pentagram-relief.png?url';
+import { RING_RADIUS } from './prayer';
+import { mountPrayer } from './prayerEffects';
 import { createWinningEyes } from './eyes';
 import { loadHeadLods } from './headLods';
 import { RippleTrail, poolCoverage, RIPPLE_CAPACITY, RIPPLE_LIFETIME } from './ripples';
@@ -338,11 +341,27 @@ export default defineRoom('jp-visages-synthesis', {
     if (eyeStudy) ctx.configureSpawn({ position: [0, 0, 34], yaw: 0, pitch: 0.12 });
 
     const moonTuple = [MOON_DIR.x, MOON_DIR.y, MOON_DIR.z] as const;
-    const [cobbleData, stoneNoiseData, envSkyData] = await Promise.all([
+    const [cobbleData, stoneNoiseData, envSkyData, relief] = await Promise.all([
       cobbleMapPixels(),
       stoneNoisePixels(),
       reflectionSkyPixels(moonTuple),
+      new THREE.TextureLoader().loadAsync(reliefUrl),
     ]);
+    ownTex(relief);
+    // The black strokes of the supplied SVG, inverted and softly bevelled into a metric height profile.
+    relief.colorSpace = THREE.NoColorSpace;
+    const headIndex = layout.plan.heads.reduce((best, h, i, heads) =>
+      h.x * h.x + h.z * h.z < heads[best].x ** 2 + heads[best].z ** 2 ? i : best, 0);
+    const headMatrix = layout.allHeadMatrices[headIndex];
+    const sockets = [layout.headAssets.leftEyeCenter, layout.headAssets.rightEyeCenter]
+      .map(center => center.clone().applyMatrix4(headMatrix));
+    const eyeSize = layout.headAssets.eyeRadius * layout.plan.heads[headIndex].scale;
+    // Surface hits at the projected centres of the exposed eyeballs, measured through
+    // the lids from the pentagram. These landmarks are in the normalized head mesh.
+    const irises = [new THREE.Vector3(0.8814, 3.3508, 2.1897), new THREE.Vector3(-0.8580, 3.3523, 2.1878)]
+      .map(iris => iris.applyMatrix4(headMatrix));
+    const prayer = mountPrayer(ctx, root, irises, eyeSize);
+    const socketDistance = min(positionWorld.distance(vec3(sockets[0])), positionWorld.distance(vec3(sockets[1])));
 
     const cobbleTex = ownTex(
       new THREE.DataTexture(
@@ -589,18 +608,21 @@ export default defineRoom('jp-visages-synthesis', {
       const groundHeight = mix(dirtHeight, cobbleHeight, onPath);
       const finalHeight = mix(groundHeight, liquidHeight, poolMask);
 
-      groundMat.normalNode = bumpNormal(finalHeight as FloatNode);
+      const engravingUv = p.xz.mul(vec2(1, -1)).div(RING_RADIUS * 2).add(0.5);
+      const engraving = texture(relief, engravingUv).r.mul(float(1).sub(poolMask));
+      groundMat.normalNode = bumpNormal(finalHeight.sub(engraving.mul(0.031)) as FloatNode);
 
       // Mirror sky/moon reflection & subtle arterial depth luminance on the wet red liquid.
       const poolFresnel = schlickFresnel(normalView as Vec3Node, 0.045);
       const poolMirror = mirroredSky(reflectVector as Vec3Node).mul(poolFresnel).mul(0.6);
       const arterialGlow = bloodGlow.mul(float(0.07).add(float(1).sub(poolDepth).mul(0.045))).mul(bloodBrightness);
 
-      groundMat.colorNode = mix(dampGround, liquidBase, poolMask).mul(keepVis);
+      groundMat.colorNode = mix(dampGround, liquidBase, poolMask).mul(float(1).sub(engraving.mul(0.25))).mul(keepVis);
       // Ultra-matte cobbles (0.95) & dirt (0.98), damp wet rims (0.42), mirror-glossy crimson pools (0.05).
       const dryRough = mix(float(0.98), float(0.95), onPath);
       groundMat.roughnessNode = mix(mix(dryRough, float(0.42), wetHalo), float(0.05), poolMask);
-      groundMat.emissiveNode = poolMirror.add(arterialGlow).mul(poolMask).mul(keepVis);
+      groundMat.emissiveNode = poolMirror.add(arterialGlow).mul(poolMask).mul(keepVis)
+        .add(color('#ae63de').mul(engraving).mul(prayer.glow).mul(1.65));
 
       const groundMesh = new THREE.Mesh(ownGeo(copyOfGeometry(layout.groundGeometry)), groundMat);
       groundMesh.frustumCulled = false;
@@ -740,7 +762,8 @@ export default defineRoom('jp-visages-synthesis', {
       skinMat.colorNode = skinColor.mul(keepVis);
       skinMat.roughnessNode = mix(float(0.94), float(0.22), bloodTrails);
       skinMat.normalNode = bumpNormal(skinHeight as FloatNode);
-      skinMat.emissiveNode = coldRim.mul(keepVis);
+      skinMat.emissiveNode = coldRim.mul(keepVis).add(color('#83afff')
+        .mul(float(1).sub(smoothstep(eyeSize * 0.85, eyeSize * 1.85, socketDistance))).mul(prayer.light).mul(0.56));
 
       const addHeadBatch = (
         templateGeo: THREE.BufferGeometry,
@@ -770,6 +793,8 @@ export default defineRoom('jp-visages-synthesis', {
       };
 
       const eyeMat = ownMat(createWinningEyes(MOON_DIR));
+      eyeMat.emissiveNode = (eyeMat.emissiveNode as Vec3Node).add(vec3(6, 7, 8)
+        .mul(float(1).sub(smoothstep(eyeSize * 1.4, eyeSize * 2, socketDistance))).mul(prayer.light));
       const visibleHeads = createVisibleHeads(
         layout.plan.heads, layout.allHeadMatrices,
         [skin, ...headLods.map(lod => lod.skin)],

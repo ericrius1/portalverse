@@ -28,8 +28,9 @@ function key(type: 'keydown' | 'keyup', code: string, extra: { repeat?: boolean;
 
 function setup() {
   const onMode = vi.fn();
+  const camera = new THREE.PerspectiveCamera();
   const avatar = new AvatarController(
-    new THREE.Scene(), new THREE.PerspectiveCamera(), new EventTarget() as unknown as HTMLElement,
+    new THREE.Scene(), camera, new EventTarget() as unknown as HTMLElement,
     '#ffffff', undefined, undefined, undefined, undefined, onMode,
   );
   avatar.applySpawn({ position: [0, 0, 0], yaw: 0 });
@@ -49,8 +50,49 @@ function setup() {
     run(30);
     key('keyup', 'KeyW');
   };
-  return { avatar, onMode, run, drift, coasting };
+  return { avatar, camera, onMode, run, drift, coasting };
 }
+
+describe('room-directed camera turns', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('uses the short arc across north and releases small turns sooner', () => {
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const { avatar, run } = setup();
+    const across = (yaw: number) => new THREE.Vector3(-Math.sin(yaw) * 10, 1.65, -Math.cos(yaw) * 10);
+    avatar.yaw = Math.PI - 0.05;
+    avatar.turnToFace(across(-Math.PI + 0.05));
+    now = 25;
+    run(1);
+    expect(avatar.yaw).toBeCloseTo(Math.PI + 0.05);
+    avatar.turnToFace(across(0));
+    now += 25;
+    run(1);
+    expect(avatar.yaw).toBeGreaterThan(3);
+    avatar.applyLookDelta(20, -5);
+    const manualHeading = avatar.yaw;
+    now += 900;
+    run(1);
+    expect(avatar.yaw).toBe(manualHeading);
+  });
+
+  it.each([true, false])('frames an elevated target with firstPerson=%s and leaves look free', firstPerson => {
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const { avatar, camera, run } = setup();
+    avatar.setFirstPerson(firstPerson);
+    const target = new THREE.Vector3(13.3, 15.2, 0);
+    avatar.turnToFace(target);
+    now = 700;
+    run(120);
+    const direction = camera.getWorldDirection(new THREE.Vector3());
+    expect(direction.angleTo(target.clone().sub(camera.position))).toBeLessThan(0.002);
+    avatar.applyLookDelta(12, -4);
+    const manualHeading = avatar.yaw;
+    run(10);
+    expect(avatar.yaw).toBe(manualHeading);
+  });
+});
 
 describe.each(['classic', 'platformer'] as const)('one-way landing in %s', mode => {
   it('catches a fast descent and allows passing beneath the same surface', () => {
