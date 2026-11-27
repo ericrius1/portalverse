@@ -46,10 +46,10 @@ describe('preparing a room as it loads', () => {
     });
     const previews = new PortalPreviews(fake.renderer, id => Promise.resolve(emptyRoom(id)), { idle: now });
 
-    const ready = previews.prepare('jp-world')!;
+    const ready = previews.prepare(at(1))!;
     await flush();
     expect(fake.compileAsync).toHaveBeenCalledTimes(1);
-    expect(previews.takeReady('jp-world')).toBeUndefined();
+    expect(previews.takeReady(at(1))).toBeUndefined();
     expect(during!.texture.type).toBe(THREE.HalfFloatType);
     expect(during!.samples).toBe(0);
     expect(fake.target()).toBe(screen);
@@ -69,7 +69,7 @@ describe('preparing a room as it loads', () => {
       fake.renderer.setRenderTarget(compileTarget);
     });
     const previews = new PortalPreviews(fake.renderer, id => Promise.resolve(emptyRoom(id)), { idle: now });
-    await previews.prepare('jp-world');
+    await previews.prepare(at(1));
     expect(fake.target()).toBeNull();
     previews.clear();
   });
@@ -87,12 +87,12 @@ describe('preparing a room as it loads', () => {
   it('compiles objects outside the camera view, then restores culling', async () => {
     const fake = fakeRenderer();
     const mesh = new THREE.Mesh();
-    const module = defineRoom('jp-world', { mount: ctx => { ctx.scene.add(mesh); } });
+    const module = defineRoom(at(1), { mount: ctx => { ctx.scene.add(mesh); } });
     let during: boolean | undefined;
     fake.compileAsync.mockImplementation(async () => { during = mesh.frustumCulled; });
     const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(module), { idle: now });
 
-    await previews.prepare('jp-world');
+    await previews.prepare(at(1));
     expect(during).toBe(false);
     expect(mesh.frustumCulled).toBe(true);
     previews.clear();
@@ -107,7 +107,7 @@ describe('preparing a room as it loads', () => {
     const placeholder = exit.aperture.material;
 
     fake.renders.length = 0;
-    const jp = (await previews.prepare('jp-world'))!;
+    const jp = (await previews.prepare(at(1)))!;
     expect(fake.renders.filter(scene => scene === jp.scene)).toHaveLength(2);
     expect(exit.aperture.material).not.toBe(placeholder);
     previews.disposeRoom(active);
@@ -119,10 +119,10 @@ describe('preparing a room as it loads', () => {
     const slot = gate();
     const load = vi.fn(async (id: string) => emptyRoom(id));
     const previews = new PortalPreviews(fake.renderer, load, { idle: () => slot.closed });
-    const background = previews.prepare('jp-world', false);
+    const background = previews.prepare(at(1), false);
     await flush();
     expect(fake.compileAsync).not.toHaveBeenCalled();
-    const trip = previews.travelTo('jp-world');
+    const trip = previews.travelTo(at(1));
     expect(trip).toBe(background);
     await flush();
     expect(fake.compileAsync).toHaveBeenCalledTimes(1);
@@ -143,15 +143,15 @@ describe('preparing a room as it loads', () => {
     });
     const previews = new PortalPreviews(fake.renderer, async id =>
       defineRoom(id, { mount: ctx => { ctx.scene.name = id; } }), { idle: now });
-    const running = previews.prepare('jp-world', false);
+    const running = previews.prepare(at(1), false);
     const waiting = previews.prepare('eric-world', false);
     await flush();
     const selected = previews.travelTo('jp-loft');
     await flush();
-    expect(order).toEqual(['jp-world']);
+    expect(order).toEqual([at(1)]);
     first.open();
     await Promise.all([running, waiting, selected]);
-    expect(order).toEqual(['jp-world', 'jp-loft', 'eric-world']);
+    expect(order).toEqual([at(1), 'jp-loft', 'eric-world']);
     await previews.clear();
   });
 
@@ -160,9 +160,9 @@ describe('preparing a room as it loads', () => {
     const fake = fakeRenderer();
     fake.compileAsync.mockRejectedValue(new Error('no pipeline'));
     const previews = new PortalPreviews(fake.renderer, id => Promise.resolve(emptyRoom(id)), { idle: now });
-    const room = await previews.prepare('jp-world');
+    const room = await previews.prepare(at(1));
     expect(room).toBeInstanceOf(RoomInstance);
-    expect(previews.takeReady('jp-world')).toBe(room);
+    expect(previews.takeReady(at(1))).toBe(room);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -192,7 +192,7 @@ describe('preparing a room as it loads', () => {
   it('disposes a room cleared mid-preparation and captures nothing after clear', async () => {
     const fake = fakeRenderer();
     const disposed = vi.fn();
-    const module = defineRoom('jp-world', { mount: ctx => ctx.onDispose(disposed) });
+    const module = defineRoom(at(1), { mount: ctx => ctx.onDispose(disposed) });
     const compiling = gate();
     const disposedTarget = vi.fn();
     fake.compileAsync.mockImplementation(() => {
@@ -207,7 +207,7 @@ describe('preparing a room as it loads', () => {
     const disposedSnapshot = vi.fn();
     snapshot.addEventListener('dispose', disposedSnapshot);
     fake.renders.length = 0;
-    const ready = previews.prepare('jp-world')!;
+    const ready = previews.prepare(at(1))!;
     await flush();
     const cleared = previews.clear();
     expect(disposedTarget).not.toHaveBeenCalled();

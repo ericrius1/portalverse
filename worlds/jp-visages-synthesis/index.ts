@@ -617,7 +617,9 @@ export default defineRoom('jp-visages-synthesis', {
       const poolMirror = mirroredSky(reflectVector as Vec3Node).mul(poolFresnel).mul(0.6);
       const arterialGlow = bloodGlow.mul(float(0.07).add(float(1).sub(poolDepth).mul(0.045))).mul(bloodBrightness);
 
-      groundMat.colorNode = mix(dampGround, liquidBase, poolMask).mul(float(1).sub(engraving.mul(0.25))).mul(keepVis);
+      // Darken the existing carving by another 15%, leaving the surrounding ground unchanged.
+      groundMat.colorNode = mix(dampGround, liquidBase, poolMask).mul(float(1).sub(engraving.mul(0.25)))
+        .mul(float(1).sub(engraving.mul(0.15))).mul(keepVis);
       // Ultra-matte cobbles (0.95) & dirt (0.98), damp wet rims (0.42), mirror-glossy crimson pools (0.05).
       const dryRough = mix(float(0.98), float(0.95), onPath);
       groundMat.roughnessNode = mix(mix(dryRough, float(0.42), wetHalo), float(0.05), poolMask);

@@ -24,6 +24,7 @@
     },
     {
       "id": "jp-world",
+      "inRotation": false,
       "name": "JP's Solarpunk Meadow",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
@@ -44,6 +45,7 @@
     },
     {
       "id": "jp-garden",
+      "inRotation": false,
       "name": "Breezy Plant Garden",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
@@ -60,6 +62,7 @@
     },
     {
       "id": "fishpond",
+      "inRotation": false,
       "name": "Kāneʻohe Fishpond",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",

@@ -19,6 +19,7 @@ import {
 } from '../engine/portalCrossing';
 
 const rooms = sessionCatalog.worlds.filter(room => room.kind === 'local');
+const nextRoomId = routeGates('eric-world', rooms)[1].targetWorldId;
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 function gate(roomId: string, end: 'entrance' | 'exit'): PortalVisualHandle {
@@ -30,7 +31,7 @@ function gate(roomId: string, end: 'entrance' | 'exit'): PortalVisualHandle {
 
 function sidePortal(overrides: Partial<PortalDefinition> = {}): PortalVisualHandle {
   const handle = createArchwayPortal(
-    { id: 'side', label: 'Side', position: [10, 0, 5], yaw: Math.PI / 2, targetWorldId: 'fishpond', ...overrides },
+    { id: 'side', label: 'Side', position: [10, 0, 5], yaw: Math.PI / 2, targetWorldId: nextRoomId, ...overrides },
     { passage: true },
   );
   handle.group.updateMatrixWorld(true);
@@ -211,7 +212,7 @@ describe('room lifecycle across crossings', () => {
   function trackedRoom() {
     const counts = { starts: 0, stops: 0 };
     let ctx!: WorldContext;
-    const module = defineRoom('fishpond', {
+    const module = defineRoom(nextRoomId, {
       mount(context) {
         ctx = context;
         context.onActivate(() => {
@@ -259,14 +260,14 @@ describe('room lifecycle across crossings', () => {
     const { renderer } = fakeRenderer();
     const previews = new PortalPreviews(renderer, () => Promise.resolve(module));
 
-    await previews.prepare('fishpond');
-    const room = previews.takeReady('fishpond')!;
+    await previews.prepare(nextRoomId);
+    const room = previews.takeReady(nextRoomId)!;
     room.activate(() => {});
-    previews.retain('fishpond', room);
+    previews.retain(nextRoomId, room);
     expect(ctx().mode).toBe('preview');
     expect(counts).toEqual({ starts: 1, stops: 1 });
 
-    expect(previews.takeReady('fishpond')).toBe(room);
+    expect(previews.takeReady(nextRoomId)).toBe(room);
     room.activate(() => {});
     expect(ctx().mode).toBe('active');
     expect(counts).toEqual({ starts: 2, stops: 1 });
@@ -277,7 +278,7 @@ describe('room lifecycle across crossings', () => {
     const { renderer } = fakeRenderer();
     const previews = new PortalPreviews(renderer, loadEmptyRoom);
     const active = await RoomInstance.mount(emptyRoom('eric-world'), renderer);
-    await previews.prepare('jp-world');
+    await previews.prepare(nextRoomId);
     await previews.refreshSnapshots(active);
 
     const exit = active.portals.find(p => p.portal.id === 'exit')!;
@@ -296,7 +297,7 @@ describe('live portal windows', () => {
     const fake = fakeRenderer(width, height);
     const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
     const active = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
-    const jp = (await previews.prepare('jp-world'))!;
+    const jp = (await previews.prepare(nextRoomId))!;
     const viewer = new THREE.PerspectiveCamera(62, width / height, 0.1, 450);
     viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
     const exit = active.portals.find(p => p.portal.id === 'exit')!;
@@ -399,7 +400,7 @@ describe('backing through a portal', () => {
 
   it('completes once the player backs fully in, or switches back if they walk away', () => {
     // After switching on the camera, the feet are still behind JP's entrance, the portal back.
-    const back = gate('jp-world', 'entrance');
+    const back = gate(nextRoomId, 'entrance');
     const state = { walkingThrough: false, firstPerson: false };
     const shift = ROUTE_LENGTH;
     const decisions = (to: number, facing: 1 | -1) => {
@@ -421,7 +422,7 @@ describe('backing through a portal', () => {
     const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
     const eric = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
     eric.activate(() => {});
-    const jp = (await previews.prepare('jp-world'))!;
+    const jp = (await previews.prepare(nextRoomId))!;
     const viewer = new THREE.PerspectiveCamera(62, W / H, 0.1, 450);
     viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
     const place = (z: number) => {
@@ -439,7 +440,7 @@ describe('backing through a portal', () => {
     // Camera passes through: JP becomes the room, and Eric's is seen back through JP's entrance.
     eric.deactivate();
     previews.retain('eric-world', eric);
-    expect(previews.takeReady('jp-world')).toBe(jp);
+    expect(previews.takeReady(nextRoomId)).toBe(jp);
     jp.activate(() => {});
     place(-ROUTE_LENGTH / 2 - 0.001 + ROUTE_LENGTH);
     fake.renders.length = 0;
@@ -546,9 +547,9 @@ describe('the portal two rooms ahead', () => {
 
   it('keeps snapshot materials un-fogged like live windows so depth-3 previews do not pop in saturation', async () => {
     const fake = fakeRenderer();
-    const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(emptyRoom('jp-world')));
+    const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(emptyRoom(nextRoomId)));
     const room = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
-    await previews.prepare('jp-world');
+    await previews.prepare(nextRoomId);
     await previews.refreshSnapshots(room);
     const exit = room.portals.find(p => p.portal.id === 'exit')!;
     expect((exit.aperture.material as THREE.MeshBasicNodeMaterial).fog).toBe(false);

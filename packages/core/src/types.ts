@@ -49,6 +49,8 @@ export interface WorldManifest {
   description: string;
   accentColor: string;
   kind: 'local' | 'remote';
+  /** Set false to retain a room in the catalog without including it in the normal play rotation. */
+  inRotation?: boolean;
   /** Archived study available through an explicit comparison tour, outside the normal loop. */
   comparisonOnly?: boolean;
   remoteUrl?: string;

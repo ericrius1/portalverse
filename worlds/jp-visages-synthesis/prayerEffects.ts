@@ -10,6 +10,7 @@ import './prayer.css';
 export function mountPrayer(ctx: WorldContext, root: THREE.Group, irises: THREE.Vector3[], eyeRadius: number) {
   const prayer = new Prayer();
   const glow = uniform(0);
+  const ringGlow = uniform(0);
   const light = uniform(0);
   const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false };
   const eyeEffects = new THREE.Group();
@@ -52,7 +53,7 @@ export function mountPrayer(ctx: WorldContext, root: THREE.Group, irises: THREE.
   const sparks = mx_noise_float(vec3(rim.mul(5.2), rise.mul(4.5).sub(time.mul(3.1))));
   const flicker = smoothstep(-0.48, 0.52, folds.add(sparks.mul(0.36)));
   ringMat.colorNode = mix(color('#ae68f2'), color('#cb91ff'), flicker);
-  ringMat.opacityNode = glow.mul(rise.oneMinus().pow(1.6)).mul(mix(0.48, 1.0, flicker));
+  ringMat.opacityNode = ringGlow.mul(rise.oneMinus().pow(1.6)).mul(mix(0.48, 1.0, flicker));
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.position.y = height / 2 + 0.008;
   ring.visible = false;
@@ -68,8 +69,9 @@ export function mountPrayer(ctx: WorldContext, root: THREE.Group, irises: THREE.
     const feet = player.position;
     prayer.update(clock(), feet.x, feet.y, feet.z, player.grounded && player.inputEnabled);
     glow.value = prayer.glow;
+    ringGlow.value = prayer.ringGlow;
     light.value = prayer.light;
-    ring.visible = glow.value > 0;
+    ring.visible = ringGlow.value > 0;
     if (prompt) prompt.hidden = !prayer.ready;
     eyeEffects.visible = light.value > 0;
     if (!eyeEffects.visible) return;
@@ -118,7 +120,7 @@ export function mountPrayer(ctx: WorldContext, root: THREE.Group, irises: THREE.
       button.remove();
       prompt = undefined;
       prayer.reset();
-      glow.value = light.value = 0;
+      glow.value = ringGlow.value = light.value = 0;
       ring.visible = eyeEffects.visible = false;
     };
   });

@@ -211,7 +211,7 @@ describe('WorldRegistry', () => {
       expect(world.spawns.default).toBeDefined();
     }
     expect(reg.getManifest('eric-world')?.name).toBe("Eric's Room");
-    expect(reg.getManifest('jp-world')?.name).toBe("JP's Solarpunk Meadow");
+    expect(reg.getManifest('jp-world')).toBeUndefined();
   });
 
   it('caches loaded modules and dedupes concurrent loads', async () => {

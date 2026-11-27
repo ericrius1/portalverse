@@ -7,7 +7,6 @@ import { applyPose, readPose, type EncounterPlacement } from './placement';
 
 // Stable index in buildStrayStones(seed 8). This is the broad slab beyond JP's final jump.
 export const TREASURE_STRAY = 30;
-const FADE_SECONDS = 1.15;
 
 export async function loadEncounter(stone: Stone, placement: EncounterPlacement) {
   return new ChestEncounter(stone, placement, await loadGLB(shadowUrl));
@@ -100,7 +99,8 @@ export class ChestEncounter {
     if (this.age === undefined) return;
     this.age += dt;
     this.mixer.update(dt);
-    const fade = THREE.MathUtils.smoothstep(this.age - this.action.getClip().duration, 0, FADE_SECONDS);
+    const duration = this.action.getClip().duration;
+    const fade = THREE.MathUtils.smoothstep(this.action.time, duration * 0.75, duration);
     for (const m of this.materials) m.opacity = 1 - fade;
     if (fade >= 1) {
       this.shadow.visible = false;

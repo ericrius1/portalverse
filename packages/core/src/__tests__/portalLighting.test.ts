@@ -65,7 +65,7 @@ describe('room lighting stays the same between preview and active', () => {
 
   it('in the snapshots taken while loading', async () => {
     const { previews, home, seen } = await renderPreviews();
-    await previews.prepare('jp-world');
+    await previews.prepare(home.portals.find(handle => handle.portal.id === 'exit')!.portal.targetWorldId);
     await previews.refreshSnapshots(home);
     expectPreviewVisibility(seen);
   });
