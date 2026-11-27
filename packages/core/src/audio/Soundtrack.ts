@@ -40,7 +40,6 @@ export interface SoundtrackFrame {
 }
 
 const MUSIC_LEVEL = 0.5;
-const STORAGE_KEY = 'portalverse:music-muted';
 /** Where the whoosh's bloom peaks, in seconds into the file. */
 const WHOOSH_PEAK = 2.22;
 /** The deck filter: wide open, and where a sweep bottoms out. */
@@ -92,14 +91,11 @@ export class Soundtrack {
   private readonly format: keyof AssetEntry;
 
   /**
-   * `silent` runs everything at zero output (for automated tests), without touching the
-   * player's saved mute preference.
+   * Music is opt-in for each page visit. `silent` forces zero output for automated tests.
    */
   constructor(opts: { muted?: boolean; silent?: boolean } = {}) {
     this.ctx = new AudioContext({ latencyHint: 'playback' });
-    let stored = false;
-    try { stored = localStorage.getItem(STORAGE_KEY) === '1'; } catch { /* storage unavailable */ }
-    this.muted = opts.muted ?? stored;
+    this.muted = opts.muted ?? true;
     const probe = typeof Audio !== 'undefined' ? new Audio() : null;
     this.format = probe?.canPlayType('audio/webm; codecs="opus"') ? 'webm' : 'm4a';
 
@@ -197,7 +193,6 @@ export class Soundtrack {
 
   setMuted(muted: boolean): void {
     this.muted = muted;
-    try { localStorage.setItem(STORAGE_KEY, muted ? '1' : '0'); } catch { /* storage unavailable */ }
     if (!muted && this.started && document.visibilityState === 'visible') void this.ctx.resume();
     this.applyMasterLevel(muted ? 0.4 : 1.5);
     if (muted) window.setTimeout(() => { if (this.muted) void this.ctx.suspend(); }, 600);

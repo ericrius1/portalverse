@@ -32,13 +32,20 @@ export function weftKit(gpu: GpuContext): Kit {
 }
 
 /** A Three.js projection (WebGPU clip space) as weft's camera numbers: field of view, aspect and lens shift. */
-export function projectionToLens(projection: ArrayLike<number>): { fovY: number; aspect: number; shift: [number, number] } {
+export function projectionToLens(projection: ArrayLike<number>): { fovY: number; aspect: number; shift: [number, number]; near?: number } {
   const p0 = projection[0], p5 = projection[5];
+  // A standard WebGPU projection reaches z_clip = 0 at z_view = -near.
+  // Snapshot cameras put that plane at the doorway, metres ahead of the eye.
+  // Oblique live-portal planes cannot be represented by a scalar cam.near;
+  // retain the room's existing near value for those projections.
+  const parallel = Math.abs(projection[2]) < 1e-7 && Math.abs(projection[6]) < 1e-7;
+  const near = projection[14] / projection[10];
   return {
     fovY: 2 * Math.atan(1 / p5),
     aspect: p5 / p0,
     // Three's off-axis terms move NDC by -m[8], -m[9]; weft's shift moves it by +shift.
     shift: [-projection[8], -projection[9]],
+    near: parallel && Number.isFinite(near) && near > 0 ? near : undefined,
   };
 }
 
@@ -120,10 +127,11 @@ export class WeftLayer implements GpuLayer {
 
     const cam = kit.camera;
     const lens = projectionToLens(view.projection);
+    const near = lens.near ?? this.near;
     cam.viewOverride = view.view;
     cam.fovY = lens.fovY;
     cam.shift = lens.shift;
-    cam.near = this.near;
+    cam.near = near;
     cam.far = Infinity;
     kit.mainView.size = [w, h];
     const items = this.options.frame(view, this);
@@ -132,14 +140,14 @@ export class WeftLayer implements GpuLayer {
       v.size = [w, h];
       v.camera.fovY = lens.fovY;
       v.camera.shift = lens.shift;
-      v.camera.near = this.near;
+      v.camera.near = near;
       v.update(true);
     }
     kit.run(items);
     return {
       color: this.colorTex!.gpu,
       depth: this.depthTex!.gpu,
-      depthMode: { reversed: true, near: this.near },
+      depthMode: { reversed: true, near },
     };
   }
 }

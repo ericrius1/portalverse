@@ -2,6 +2,26 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Palace portal snapshot clipping — Unreleased (2026-11-26)
+
+### Fixed
+
+- Preserve a standard preview camera's near clipping distance through the shared weft adapter, including its reflection cameras and depth conversion. Palace Lagoon snapshots now clip geometry between the capture camera and the entrance instead of photographing the back of nearby walls.
+
+### Design & engineering decisions
+
+- The snapshot camera already placed its near plane at the doorway (15.5 m ahead), but the adapter reset it to 0.1 m. Recover the near plane from the WebGPU projection so clipping happens before geometry can occlude the room. Keep existing behavior for oblique live views, whose tilted planes cannot be represented by a scalar near distance. No Palace geometry or material-facing settings changed. Verified the cached snapshot with live portal rendering temporarily disabled.
+
+## Music opt-in on arrival — Unreleased (2026-11-26)
+
+### Changed
+
+- Music starts muted on every page visit, including browsers that previously saved music as enabled. The Music button or N enables it for the current visit, and the initial button markup reflects the muted state.
+
+### Design & engineering decisions
+
+- Keep entering the world separate from consenting to music. Stop restoring the old saved mute preference so a previous visit cannot cause unexpected playback; music remains enabled across room changes until muted or the page is reloaded.
+
 ## Visages performance, persistent liquid footsteps and custom portal alignment — Unreleased (2026-11-26)
 
 ### Changed

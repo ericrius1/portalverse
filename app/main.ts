@@ -331,7 +331,7 @@ async function boot(): Promise<void> {
   };
 
   // Adaptive soundtrack: Suno Studio stems blended by room and by distance to each gate.
-  // ?mute=1 runs it at zero volume (automated tests) without touching the saved preference.
+  // Music starts muted each visit. ?mute=1 forces zero output for automated tests.
   const soundtrack = new Soundtrack({ silent: new URLSearchParams(window.location.search).get('mute') === '1' });
   if (import.meta.env.DEV) (window as unknown as { soundtrack: Soundtrack }).soundtrack = soundtrack;
   const initialVibe = vibeFor(initialWorldId);
@@ -900,6 +900,7 @@ async function boot(): Promise<void> {
   const syncMusicUi = () => {
     musicButton.setAttribute('aria-pressed', String(!soundtrack.isMuted));
     musicButton.classList.toggle('muted', soundtrack.isMuted);
+    musicButton.title = soundtrack.isMuted ? 'Enable music (N)' : 'Mute music (N)';
     musicLabel.textContent = soundtrack.isMuted ? 'Muted' : 'Music';
   };
   syncMusicUi();
