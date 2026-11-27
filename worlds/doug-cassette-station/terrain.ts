@@ -3,20 +3,28 @@ import type { RoomCollider, Vec3Tuple } from '@portalverse/core/types';
 export const ENTRANCE_Z = 36.25;
 export const EXIT_Z = -36.25;
 
-/** Wet asphalt road corridor runs along X in [-4.8, +4.8], completely level at Y = 0 from portal to portal. */
-export const ROAD_HALF_WIDTH = 4.8;
+/**
+ * Perpendicular Neo-Tokyo Intersection Layout:
+ * - Main Player Pedestrian Avenue / Crosswalk runs North-South along Z (X in [-4.5, +4.5]), level at Y = 0.
+ * - Perpendicular Neo-Tokyo Vehicle Boulevard & Sunken Trolley Rails run East-West along X (Z in [-5.8, +5.8]), level at Y = 0.
+ * - Raised Neo-Tokyo Sidewalks (+0.14 m) occupy the four corner quadrants outside both corridors!
+ */
+export const PEDESTRIAN_HALF_WIDTH = 4.5;
+export const CROSS_ROAD_HALF_WIDTH = 5.8;
 
-/** Key Neo-Tokyo Street Corner landmark coordinates. */
-export const NOODLE_BAR_POS = { x: -8.6, z: 6.2 } as const;
-export const OPTICS_SHOP_POS = { x: 8.8, z: 8.2 } as const;
-export const ANALOG_SHOP_POS = { x: -8.8, z: -10.8 } as const;
-export const CONBINI_POS = { x: 8.8, z: -10.2 } as const;
-export const BUS_STOP_POS = { x: 6.2, z: -1.0 } as const;
-export const TROLLEY_TRACK_X = 2.6;
-export const SCOOTER_LANE_NORTH_X = -1.6;
-export const SCOOTER_LANE_SOUTH_X = 0.8;
+/** Perpendicular East-West traffic & trolley lanes (all perpendicular to the player's Z path!). */
+export const TROLLEY_TRACK_Z = -3.2;
+export const SCOOTER_LANE_WEST_Z = 0.5;   // cruising East -> West (-X)
+export const SCOOTER_LANE_EAST_Z = 3.5;   // cruising West -> East (+X)
 
-/** 5 Hidden Blade Runner / Neo-Tokyo Easter Eggs around the street corner. */
+/** Four Iconic Street-Corner Shops + NE Bus Stop framing the perpendicular boulevard! */
+export const NOODLE_BAR_POS = { x: -10.2, z: -11.4 } as const;  // NW corner (faces right out toward player & crosswalk!)
+export const OPTICS_SHOP_POS = { x: 10.6, z: -14.8 } as const;  // NE corner behind bus stop
+export const BUS_STOP_POS = { x: 7.4, z: -7.5 } as const;       // NE curb right beside the East-West trolley tracks!
+export const ANALOG_SHOP_POS = { x: -10.2, z: 12.2 } as const;  // SW corner
+export const CONBINI_POS = { x: 10.2, z: 12.2 } as const;       // SE corner
+
+/** 5 Hidden Blade Runner / Neo-Tokyo Easter Eggs around the 4 street corners. */
 export const EASTER_EGGS: ReadonlyArray<{
   id: string;
   name: string;
@@ -31,8 +39,8 @@ export const EASTER_EGGS: ReadonlyArray<{
     name: 'Foil Origami Unicorn',
     location: 'by the White Dragon Noodle counter',
     lore: '"Too bad she won\'t live... but then again, who does?"',
-    x: -5.5,
-    z: 9.6,
+    x: -6.4,
+    z: -7.6,
     color: '#e2e8f0',
   },
   {
@@ -40,8 +48,8 @@ export const EASTER_EGGS: ReadonlyArray<{
     name: 'Cassette: DEAD CHANNEL 88',
     location: 'behind Analog Ghost\'s CRT shrine',
     lore: 'Labelled: "When the rain parts, look up. The sky is tuned to a dead channel."',
-    x: -5.7,
-    z: -7.6,
+    x: -6.8,
+    z: 15.2,
     color: '#22d3ee',
   },
   {
@@ -49,8 +57,8 @@ export const EASTER_EGGS: ReadonlyArray<{
     name: 'Voight-Class Iris Scanner',
     location: 'outside Kuro\'s Bio-Mod Clinic',
     lore: 'Frozen screen reads: "BASELINE: TORTOISE IN DESERT — EMOTIONAL RESPONSE DETECTED."',
-    x: 5.9,
-    z: 11.4,
+    x: 7.0,
+    z: -12.4,
     color: '#34d399',
   },
   {
@@ -58,8 +66,8 @@ export const EASTER_EGGS: ReadonlyArray<{
     name: 'Trolley Pass #404',
     location: 'on the Sector 9 Tram Stop bench',
     lore: 'Stamped: "DESTINATION: BEYOND BLOCK 32 — PASSENGERS DISSOLVE INTO POLYGONS."',
-    x: 6.6,
-    z: 1.4,
+    x: 9.8,
+    z: -7.4,
     color: '#f472b6',
   },
   {
@@ -67,23 +75,30 @@ export const EASTER_EGGS: ReadonlyArray<{
     name: 'Stray Bio-Cat Mochi-X',
     location: 'sheltering under Gekko Mart\'s awning',
     lore: 'Its tiny glowing ear-tag blinks: "PROPERTY OF NO ONE • 9 LIVES LEFT."',
-    x: 6.0,
-    z: -13.6,
+    x: 6.8,
+    z: 15.6,
     color: '#fbbf24',
   },
 ];
 
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
 /**
  * Walkable street height:
- * - Strictly Y = 0 across the entire road corridor and within both portals (|z| > 26).
- * - Smooth 0.14 m curb step up onto the tiled Neo-Tokyo sidewalks outside |x| > ROAD_HALF_WIDTH.
+ * - Strictly Y = 0 across the entire North-South pedestrian corridor, both portals (|z| > 26),
+ *   AND the entire perpendicular East-West boulevard (|z| <= CROSS_ROAD_HALF_WIDTH).
+ * - Smooth 0.14 m curb step up onto the 4 raised corner sidewalks in the quadrants!
  */
 export function stationHeight(x: number, z: number): number {
   if (Math.abs(z) > 26.5) return 0;
   const ax = Math.abs(x);
-  if (ax <= ROAD_HALF_WIDTH) return 0;
-  const t = Math.max(0, Math.min(1, (ax - ROAD_HALF_WIDTH) / 0.55));
-  return 0.14 * t * t * (3 - 2 * t);
+  const az = Math.abs(z);
+  const outX = smoothstep(PEDESTRIAN_HALF_WIDTH, PEDESTRIAN_HALF_WIDTH + 0.55, ax);
+  const outZ = smoothstep(CROSS_ROAD_HALF_WIDTH, CROSS_ROAD_HALF_WIDTH + 0.55, az);
+  return 0.14 * outX * outZ;
 }
 
 export interface SolidBox {
@@ -101,10 +116,6 @@ export interface SolidCylinder {
   maxY: number;
 }
 
-/**
- * Smooth sliding collider for buildings, shop counters, bus stop posts, and street props.
- * Keeps the central street and sidewalks freely walkable.
- */
 export function createStationCollider(boxes: SolidBox[], cylinders: SolidCylinder[]): RoomCollider {
   return {
     move(_from: Readonly<Vec3Tuple>, to: Readonly<Vec3Tuple>, radius: number, _height: number): [number, number] {

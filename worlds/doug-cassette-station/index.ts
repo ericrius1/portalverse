@@ -14,7 +14,7 @@ import {
   CONBINI_POS,
   EASTER_EGGS,
   NOODLE_BAR_POS,
-  TROLLEY_TRACK_X,
+  TROLLEY_TRACK_Z,
   createStationCollider,
   stationHeight,
 } from './terrain';
@@ -229,14 +229,14 @@ export default defineRoom('doug-cassette-station', {
         city.shopSignMats[sid].color.setRGB(lum, lum, lum);
       }
 
-      // 2. Step Rare Electro-Punk Trolley + Polygon-Mesh Distance Dissolve!
+      // 2. Step Rare Electro-Punk Trolley running PERPENDICULAR (East -> West along X) + Polygon Dissolve!
       stepTrolley(trolleyState, safeDt);
-      city.trolley.group.position.set(TROLLEY_TRACK_X, 0, trolleyState.z);
-      city.trolley.doorLeft.position.z = -0.62 - trolleyState.doorOpen * 0.72;
-      city.trolley.doorRight.position.z = 0.62 + trolleyState.doorOpen * 0.72;
+      city.trolley.group.position.set(trolleyState.x, 0, TROLLEY_TRACK_Z);
+      city.trolley.doorLeft.position.x = -0.45 - trolleyState.doorOpen * 0.62;
+      city.trolley.doorRight.position.x = 0.45 + trolleyState.doorOpen * 0.62;
       const trolleyDissolve = trolleyState.phase === 'OFFSCREEN'
         ? { solidOpacity: 0, wireOpacity: 0, visible: false }
-        : computeDissolveFactors(trolleyState.z);
+        : computeDissolveFactors(trolleyState.x);
       city.trolley.applyDissolve(trolleyDissolve);
 
       // Electric pantograph crackle sparks while trolley is moving!
