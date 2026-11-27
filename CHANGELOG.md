@@ -2,7 +2,17 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
-## Palace Lagoon Alhambra Granada tile dome, warm cedar spiral, colonnade entrance & obvious portal threshold — Unreleased (2026-11-26)
+## Palace Lagoon: confine exit portal inside the circular ring & keep Alhambra tiled dome solid — Unreleased (2026-11-26)
+
+### Fixed
+
+- **Exit portal aperture confined strictly to the summit ring (`worlds/eric-palace-lagoon/domePortal.ts`)** — moved the live destination portal aperture off the 34 m dome vault onto a circular `CircleGeometry` strictly inside the `2.55 m` glowing summit portal ring, and made the Alhambra / Granada Spanish ceramic tile dome a solid, opaque inner vault (`depthWrite: true`, no radial dissolve) so everything outside the circular portal stays tiled Granada ceramic work instead of being taken over by the next room.
+
+### Design & engineering decisions
+
+- **Standard upright portal frame at the spiral summit** — placing the portal root upright at `PORTAL_THRESHOLD_FRAME` (`useFullOrientation` omitted) gives the summit portal exact 1:1 perspective-correct projection, seamless mirrored 3rd-person walk-through crossings, and 2-room-deep live previews, while depth-testing cleanly in front of the opaque Alhambra dome and behind the weft-drawn cedar handrails.
+
+## Palace Lagoon Alhambra Granada tile dome, warm cedar spiral, colonnade entrance & obvious portal threshold — `4b02527` (2026-11-26)
 
 ### Changed
 
