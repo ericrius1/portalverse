@@ -34,14 +34,15 @@ const SHADOW_SIZE = 2048;
 const REVEAL_SECONDS = 1.6;
 /** 1 MiB slices with a breath between them: the upload never holds a frame up. */
 const UPLOAD_SLICE = 1 << 20;
-/** the key light's shadow is baked again once it's turned this far (radians) */
-const SHADOW_REBAKE = 0.004;
+/** the key light's shadow is baked again whenever it turns at all (smooth every-frame shadows while walking, zero cost while still) */
+const SHADOW_REBAKE = 1e-5;
 const PHASES = ['opaque', 'water', 'sky', 'glow'];
 const ADD = { color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } as const;
 
 class LagoonRenderer {
   readonly layer: WeftLayer;
-  readonly ready: Promise<void>;
+  private readonly baseReady: Promise<void>;
+  private meshPromise: Promise<boolean> | null = null;
   /** the player's feet while this room is the active one (index.ts sets it), for the time of day and the creatures */
   player: V3 | null = null;
   private readonly kit: Kit;
@@ -51,6 +52,7 @@ class LagoonRenderer {
   private ib: StorageBuffer | null = null;
   private count = 0;
   private revealStart = -1;
+  private drewWithoutPalace = false;
   private readonly reflCam = new Camera();
   private readonly reflView: View;
   private readonly mirror = new Float32Array(16);
@@ -69,6 +71,11 @@ class LagoonRenderer {
   /** the Palace's mesh has come in, or won't: the key light's shadow can be baked */
   private meshSettled = false;
 
+  /** True once the Palace of Fine Arts geometry is uploaded on the GPU. */
+  get hasPalace(): boolean {
+    return this.count > 0;
+  }
+
   constructor(gpu: GpuContext) {
     this.layer = new WeftLayer(gpu, { near: 0.1, frame: view => this.frame(view) });
     const kit = (this.kit = this.layer.kit);
@@ -83,7 +90,7 @@ class LagoonRenderer {
 
     // ---- the key light's shadow: an orthographic view from it over the Palace, the grounds and the lagoon
     const shadowTex = kit.texture({ label: 'lagoon.shadow', format: 'depth32float', size: [SHADOW_SIZE, SHADOW_SIZE], usage: ['render', 'sample'] });
-    this.sunCam.ortho = { halfWidth: 200, halfHeight: 200 };
+    this.sunCam.ortho = { halfWidth: 155, halfHeight: 155 };
     this.sunCam.near = 1;
     this.sunCam.far = 1600;
     this.sunView = kit.view(this.sunCam, [SHADOW_SIZE, SHADOW_SIZE], 'lagoon.sun');
@@ -135,9 +142,9 @@ class LagoonRenderer {
 
     const groundCount = (384 - 1) * (384 - 1) * 6;
     for (const [pass, tag] of [[reflPass, 'refl'], [scene, 'main']] as const) {
-      pass.draw(palaceShader, { label: `lagoon.palace.${tag}`, indices, bind: { ...lit, pv }, count: palaceCount, cull: 'none', enabled: palaceOn, phase: 'opaque' });
-      pass.draw(groundShader, { label: `lagoon.ground.${tag}`, vertex: 'vsGround', fragment: 'fsGround', bind: lit, count: groundCount, cull: 'none', phase: 'opaque' });
-      pass.draw(lanternShader, { label: `lagoon.lanterns.${tag}`, bind: world, count: 396, instances: 18, cull: 'none', phase: 'opaque' });
+      pass.draw(palaceShader, { label: `lagoon.palace.${tag}`, indices, bind: { ...lit, pv }, count: palaceCount, cull: 'none', enabled: palaceOn, phase: 'opaque', depthLayer: 'base' });
+      pass.draw(groundShader, { label: `lagoon.ground.${tag}`, vertex: 'vsGround', fragment: 'fsGround', bind: lit, count: groundCount, cull: 'none', phase: 'opaque', depthLayer: 'terrain' });
+      pass.draw(lanternShader, { label: `lagoon.lanterns.${tag}`, bind: world, count: 396, instances: 18, cull: 'none', phase: 'opaque', depthLayer: 'detail' });
       if (pass === scene) {
         // two rings of grass: fine close by, sparser out to about 50 m
         pass.draw(grassShader, { label: 'lagoon.grass.near', bind: world, count: 7, instances: 320 * 320, topology: 'triangle-strip', cull: 'none', phase: 'opaque', constants: { CELL: 0.12, SIDE: 320, HOLE: 0, WIDTH: 0.016, HEIGHT: 0.5, FADES: 0 } });
@@ -155,22 +162,46 @@ class LagoonRenderer {
     const features = (this.features = [createPathway(env), createGrove(env), createLife(env)]);
     this.items = [reflPass, scene, beams];
 
-    this.ready = (async () => {
-      // the room's pipelines compile off the main thread while the mesh comes in
-      const [mesh] = await Promise.all([
-        loadPalaceMesh(),
-        kit.ready([reflPass, scene, beams, shadowPass, ...rig.depthPasses]),
-        rig.ready,
-        ...features.map(f => f.ready.catch(error => console.warn('[palace-lagoon] a part of the room failed to load', error))),
-      ]);
+    this.baseReady = Promise.all([
+      kit.ready([reflPass, scene, beams, shadowPass, ...rig.depthPasses]),
+      rig.ready,
+      ...features.map(f => f.ready.catch(error => console.warn('[palace-lagoon] a part of the room failed to load', error))),
+    ]).then(() => {
+      // Rebake once trees & path meshes have finished uploading so their shadows appear immediately on frame 1.
+      this.bakeWanted = true;
+    });
+    // Start fetching & unpacking the Palace mesh immediately in parallel with pipeline compilation.
+    void this.ensurePalaceMesh();
+  }
+
+  /** Wait for every pipeline, room feature, and the Palace mesh (retrying if a prior fetch failed). */
+  async ensureReady(): Promise<void> {
+    await Promise.all([this.baseReady, this.ensurePalaceMesh()]);
+  }
+
+  private ensurePalaceMesh(): Promise<boolean> {
+    if (this.count > 0) return Promise.resolve(true);
+    if (this.meshPromise) return this.meshPromise;
+    const pending = (async () => {
+      const mesh = await loadPalaceMesh();
       if (mesh) {
         await this.upload(mesh);
         // (the projectors' depth maps drawn before the Palace was up saw nothing: draw them again)
-        rig.invalidateDepth();
+        this.rig.invalidateDepth();
+        this.meshSettled = true;
+        this.bakeWanted = true;
+        return true;
       }
       this.meshSettled = true;
       this.bakeWanted = true;
+      return false;
     })();
+    this.meshPromise = pending;
+    void pending.then(ok => {
+      // Never cache a failed load permanently: a subsequent teleport/visit retries cleanly.
+      if (!ok && this.meshPromise === pending) this.meshPromise = null;
+    });
+    return pending;
   }
 
   private async upload(mesh: PalaceMeshData): Promise<void> {
@@ -213,8 +244,17 @@ class LagoonRenderer {
     mat4Mul(view.view, m, this.reflMatrix);
     this.reflCam.viewOverride = this.reflMatrix;
 
-    if (this.count > 0 && this.revealStart < 0) this.revealStart = performance.now();
-    const reveal = this.revealStart < 0 ? 0 : Math.min(1, (performance.now() - this.revealStart) / (REVEAL_SECONDS * 1000));
+    if (this.count === 0) {
+      this.drewWithoutPalace = true;
+    } else if (this.revealStart < 0) {
+      // If the Palace finished loading before any frame rendered (normal load/teleport), show it solid right away.
+      this.revealStart = this.drewWithoutPalace ? performance.now() : 0;
+    }
+    const reveal = this.count === 0
+      ? 0
+      : this.revealStart === 0
+        ? 1
+        : Math.min(1, (performance.now() - this.revealStart) / (REVEAL_SECONDS * 1000));
     // (the show comes up as the dark does: the drones' light, their beams, their nav lights)
     const show = smooth01((dusk - 0.12) / 0.4);
     this.globals.set(skyGlobals(tod) as never);
@@ -229,7 +269,7 @@ class LagoonRenderer {
     // they're in, whichever view comes first; else the first view's
     const work: RunEntry[] = [];
     if (firstView) {
-      const frameDusk = this.player ? duskAt(this.player[2]) : dusk;
+      const frameDusk = this.player ? duskAt(this.player[2], this.player[1]) : dusk;
       const frameState: FrameState = frameDusk === dusk ? state : { ...state, dusk: frameDusk, tod: timeOfDay(frameDusk) };
       stageShow(this.rig, view.time);
       // (no view saw the show last frame: no images painted, no depth maps drawn)
@@ -238,8 +278,10 @@ class LagoonRenderer {
       for (const f of this.features) if (f.items) work.push(...f.items(frameState));
       if (this.meshSettled) {
         const k = frameState.tod.keyDir, b = this.bakedKey;
+        const kc = frameState.tod.keyColor;
+        const keyLit = kc[0] + kc[1] + kc[2] > 1e-4;
         const turned = Math.acos(Math.min(1, Math.max(-1, k[0] * b[0] + k[1] * b[1] + k[2] * b[2])));
-        if (this.bakeWanted || turned > SHADOW_REBAKE) {
+        if (this.bakeWanted || (keyLit && turned > SHADOW_REBAKE)) {
           this.aimShadow(k);
           work.push(this.shadowPass);
           this.bakeWanted = false;
@@ -263,9 +305,9 @@ const smooth01 = (x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-/** Earth's Palace mesh, fetched and packed off the main thread (null if it can't be had: the room goes on without it). */
-function loadPalaceMesh(): Promise<PalaceMeshData | null> {
-  return new Promise(resolve => {
+/** Earth's Palace mesh, fetched and packed off the main thread with automatic retries on transient errors. */
+async function loadPalaceMesh(): Promise<PalaceMeshData | null> {
+  const fetchOnce = () => new Promise<PalaceMeshData | null>(resolve => {
     const worker = new Worker(new URL('./palaceMesh.worker.ts', import.meta.url), { type: 'module' });
     const done = (mesh: PalaceMeshData | null) => { worker.terminate(); resolve(mesh); };
     worker.onmessage = (event: MessageEvent<{ mesh?: PalaceMeshData; error?: string }>) => {
@@ -275,6 +317,12 @@ function loadPalaceMesh(): Promise<PalaceMeshData | null> {
     worker.onerror = event => { console.warn('[palace-lagoon] mesh worker failed', event.message); done(null); };
     worker.postMessage({ url: PALACE.url });
   });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const mesh = await fetchOnce();
+    if (mesh) return mesh;
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 600 * (attempt + 1)));
+  }
+  return null;
 }
 
 const renderers = new WeakMap<GPUDevice, LagoonRenderer>();

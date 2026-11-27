@@ -1,11 +1,21 @@
 import * as THREE from 'three/webgpu';
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
+import { createArchwayPortal } from '@portalverse/core/engine/PortalMesh';
 import { createFloatingLabel } from '@portalverse/core/engine/signage';
 import type { RoomCollider, Vec3Tuple } from '@portalverse/core/types';
-import { duskAt, walkHeight } from './layout';
+import alhambraDomeUrl from './assets/alhambra-dome.jpg?url';
+import {
+  DEFAULT_SPAWN_POS,
+  ENTRANCE_ARRIVAL_YAW,
+  ENTRANCE_POS,
+  ENTRANCE_PORTAL_YAW,
+  ENTRANCE_Z,
+  duskAt,
+  walkHeight,
+} from './layout';
 import { timeOfDay } from './timeOfDay';
 import { palaceCollider, palaceSurface } from './collide';
-import { pathSurface } from './path/curve';
+import { pathCollider, pathSurface } from './path/curve';
 import { createDomePortal, type DomePortalHandle } from './domePortal';
 import { TREE_TRUNKS } from './trees';
 
@@ -13,12 +23,9 @@ import { TREE_TRUNKS } from './trees';
  * PALACE LAGOON (`ericrius1`): a magical Palace of Fine Arts, drawn with weft (Eric's WebGPU engine) on the device
  * portalverse shares (`ctx.gpu`), composited with depth under the room's Three.js scene (`ctx.addGpuLayer`).
  *
- * Earth's Palace (github.com/ericrius1/world) stands across the portal path: you arrive on the lawn at sunset, walk up
- * onto the rotunda's podium, in through its north arch, under the dome, and out through the exit portal standing in
- * its south arch, the light going from sunset to night as you walk (the moon up, the aurora over everything). A fleet
- * of drones projects light onto the stone as the dark comes (packages/core/src/rooms/projection: real projectors, a
- * module for projection mapping anywhere). Trees, creatures, lanterns. See renderer.ts for the drawing, layout.ts for
- * where things are, timeOfDay.ts for the walk's light, show.ts for the drones.
+ * You arrive in the sunlit courtyard behind the monumental north colonnade portico, stroll through the classical
+ * arches across the wildflower meadow and over the reflecting lagoon boardwalk, enter the rotunda's north arch,
+ * and glide up a single fluid handcrafted Spanish-cedar spiral right into a Granada Alhambra ceramic dome portal.
  */
 export default defineRoom('eric-palace-lagoon', {
   async mount(ctx) {
@@ -37,23 +44,74 @@ export default defineRoom('eric-palace-lagoon', {
       sky.groundColor.setRGB(tod.ambGround[0] * 3 + 0.02, tod.ambGround[1] * 3 + 0.02, tod.ambGround[2] * 3 + 0.02);
       lamp.intensity = tod.night * 6;
     };
-    lightFor(36, 0);
+    lightFor(ENTRANCE_Z, 0);
 
-    // Replace the default exit ring with the giant Arabic-mosaic dome-roof portal spanning the rotunda's inner dome.
+    // Spawn just inside the sunlit courtyard behind the north colonnade portico looking straight through the arches.
+    ctx.configureSpawn({
+      position: [DEFAULT_SPAWN_POS[0], DEFAULT_SPAWN_POS[1], DEFAULT_SPAWN_POS[2]],
+      yaw: ENTRANCE_ARRIVAL_YAW,
+      pitch: 0,
+    });
+
+    // Place the entrance portal back behind the monumental 4-column north colonnade portico for a grand ground walk.
+    ctx.customizeRouteGate?.('entrance', gate => {
+      const handle = createArchwayPortal(
+        {
+          ...gate,
+          position: [ENTRANCE_POS[0], ENTRANCE_POS[1], ENTRANCE_POS[2]],
+          yaw: ENTRANCE_PORTAL_YAW,
+          oneWay: true,
+        },
+        { passage: true, routeGate: true },
+      );
+      handle.arrivalSpawn = {
+        position: [ENTRANCE_POS[0], ENTRANCE_POS[1], ENTRANCE_POS[2]],
+        yaw: ENTRANCE_ARRIVAL_YAW,
+        pitch: 0,
+      };
+      return handle;
+    });
+
+    // Load the Granada / Alhambra Spanish ceramic dome texture in parallel with the room's WebGPU assets.
+    let mosaicTexture: THREE.Texture | null = null;
+    const mosaicReady = new THREE.TextureLoader()
+      .loadAsync(alhambraDomeUrl)
+      .then(tex => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+        tex.needsUpdate = true;
+        mosaicTexture = tex;
+      })
+      .catch(error => {
+        console.warn('[palace-lagoon] Alhambra dome texture failed to load', error);
+      });
+    ctx.onDispose(() => {
+      mosaicTexture?.dispose();
+      mosaicTexture = null;
+    });
+
+    // Replace the default exit ring with the giant Alhambra Spanish-tile dome portal + summit threshold ring.
+    // (RoomInstance runs routeGateBuilders right after mount() resolves, so mosaicTexture is already loaded.)
     let domePortal: DomePortalHandle | null = null;
     ctx.customizeRouteGate?.('exit', gate => {
-      domePortal = createDomePortal(gate);
+      domePortal = createDomePortal(gate, mosaicTexture);
       return domePortal;
     });
 
-    // The meadow and the lagoon, the Palace's podium and tops, and the boardwalk + ascending celestial sky-path.
-    ctx.setTerrainHeight((x, z, fromY) => Math.max(walkHeight(x, z), palaceSurface(x, z, fromY), pathSurface(x, z, fromY)));
-    ctx.setCollider(withTrunks(palaceCollider));
+    // The meadow and the lagoon, the Palace's podium and tops (once its mesh is loaded), and the boardwalk + wooden spiral.
+    let palaceLoaded = () => false;
+    ctx.setTerrainHeight((x, z, fromY) => Math.max(
+      walkHeight(x, z),
+      palaceLoaded() ? palaceSurface(x, z, fromY) : -Infinity,
+      pathSurface(x, z, fromY),
+    ));
+    ctx.setCollider(composeColliders(() => palaceLoaded(), palaceCollider, pathCollider));
     // Room enough to walk round the whole Palace, the lagoon and the hall behind it.
     ctx.setWalkBounds({ minX: -140, maxX: 150, minZ: -165, maxZ: 140 });
 
     const gpu = ctx.gpu;
     if (!gpu) {
+      await mosaicReady;
       // No WebGPU here (Three.js is on WebGL): a plain meadow and a note, so the loop still walks through.
       ctx.scene.background = new THREE.Color('#e9c79a');
       const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#4b6a24' }));
@@ -71,6 +129,7 @@ export default defineRoom('eric-palace-lagoon', {
     // weft and the room's shaders load with the room, not before.
     const { lagoonRenderer } = await import('./renderer');
     const lagoon = lagoonRenderer(gpu);
+    palaceLoaded = () => lagoon.hasPalace;
     ctx.onUpdate(() => {
       const p = ctx.player?.position ?? null;
       domePortal?.setPlayerPosition(p);
@@ -84,20 +143,25 @@ export default defineRoom('eric-palace-lagoon', {
       lagoon.player = null;
       domePortal?.setPlayerPosition(null);
     });
-    // Wait for the pipelines and the Palace (fetched and unpacked in a worker, uploaded in slices) so the
-    // room is whole when it's first seen; past 15 s it opens without the Palace, which fades in when it comes.
-    const ready = lagoon.ready.catch(error => console.warn('[palace-lagoon] partly loaded', error));
-    await Promise.race([ready, new Promise(resolve => setTimeout(resolve, 15000))]);
+    // Wait for every pipeline, the Palace mesh, and the Alhambra dome mosaic so slow connections arrive whole.
+    await Promise.all([
+      lagoon.ensureReady().catch(error => console.warn('[palace-lagoon] partly loaded', error)),
+      mosaicReady,
+    ]);
     ctx.addGpuLayer(lagoon.layer);
   },
 });
 
-/** The Palace's collider, with the trees' trunks to walk round too. */
-function withTrunks(inner: RoomCollider): RoomCollider {
-  if (!TREE_TRUNKS.length) return inner;
+/** Compose the Palace solids (when visible), the path handrails, and the trees' trunks. */
+function composeColliders(
+  palaceReady: () => boolean,
+  palace: RoomCollider,
+  path: RoomCollider,
+): RoomCollider {
   return {
     move(from: Readonly<Vec3Tuple>, to: Readonly<Vec3Tuple>, r: number, height: number): [number, number] {
-      let [x, z] = inner.move(from, to, r, height);
+      let [x, z] = palaceReady() ? palace.move(from, to, r, height) : [to[0], to[2]];
+      [x, z] = path.move(from, [x, to[1], z], r, height);
       // (only the trunks near the step; the trees are tall enough that a flier above them is past them)
       for (const [tx, tz, tr] of TREE_TRUNKS) {
         const dx = x - tx, dz = z - tz;

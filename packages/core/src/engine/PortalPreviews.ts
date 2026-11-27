@@ -557,9 +557,9 @@ export class PortalPreviews {
     }
   }
 
-  private destination(id: string, elapsed: number): Destination | undefined {
+  private destination(id: string, elapsed: number, forceRetry = false): Destination | undefined {
     const existing = this.destinations.get(id);
-    if (existing && !(existing.retryAfter && performance.now() >= existing.retryAfter)) {
+    if (existing && !(existing.retryAfter && (forceRetry || performance.now() >= existing.retryAfter))) {
       existing.lastSeen = elapsed;
       return existing;
     }
@@ -664,7 +664,7 @@ export class PortalPreviews {
   }
 
   prepare(id: string, urgent = true): Promise<RoomInstance> | undefined {
-    const dest = this.destination(id, this.lastElapsed);
+    const dest = this.destination(id, this.lastElapsed, urgent);
     if (dest) {
       dest.pinned = true;
       if (urgent) {
@@ -673,6 +673,11 @@ export class PortalPreviews {
       }
     }
     return dest?.ready;
+  }
+
+  /** True when `id` is already mounted and prepared in the preview cache. */
+  hasReady(id: string): boolean {
+    return Boolean(this.destinations.get(id)?.room);
   }
 
   /**

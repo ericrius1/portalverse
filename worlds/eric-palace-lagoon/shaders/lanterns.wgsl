@@ -17,8 +17,8 @@ fn lanternFoot(i: u32) -> vec3f {
   var k: f32;
   if (slot < 1u) { k = 42.0; } else if (slot < 4u) { k = 49.0 + 7.0 * f32(slot); } else { k = -(42.0 + 7.0 * f32(slot - 4u)); }
   let xz = vec2f(side, G.palace.y + k);
-  // Skip any ground lantern submerged in the north reflecting cove (the boardwalk has its own hanging washi lanterns)
-  if (lagoonSdf(xz) < 1.5) { return vec3f(xz.x, -50.0, xz.y); }
+  // Skip any ground lantern submerged in the north reflecting cove or standing on the wooden approach boardwalk
+  if (lagoonSdf(xz) < 1.5 || onWalk(xz) > 0.1) { return vec3f(xz.x, -50.0, xz.y); }
   return vec3f(xz.x, terrainHeight(xz), xz.y);
 }
 

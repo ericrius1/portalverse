@@ -326,7 +326,7 @@ async function boot(): Promise<void> {
     mouseLockLabel.textContent = locked ? 'FPS Locked (Esc)' : 'Click to Lock';
     pointerLockBanner.classList.toggle(
       'hidden',
-      touchActive || !gateExited || locked || isAnyModalOpen() || fallOverlay.classList.contains('active'),
+      touchActive || !gateExited || isTransitioning || locked || isAnyModalOpen() || fallOverlay.classList.contains('active'),
     );
   };
 
@@ -556,6 +556,15 @@ async function boot(): Promise<void> {
   ): Promise<void> {
     if (isTransitioning) return;
     isTransitioning = true;
+    const needsOverlay = !engine.isRoomReady(worldId);
+    const targetName = registry.getManifest(worldId)?.name ?? worldId;
+    if (needsOverlay) {
+      warpLabel.textContent = `Loading ${targetName}...`;
+      warpOverlay.classList.add('active');
+      warpOverlay.setAttribute('aria-hidden', 'false');
+      syncInputLocks();
+      syncPointerUi(false);
+    }
     if (!opts?.fromPortal) soundtrack.playPortalWhoosh();
 
     try {
@@ -571,10 +580,20 @@ async function boot(): Promise<void> {
         engine.avatar.yaw,
       );
       renderPresenceRoster();
+      if (needsOverlay) {
+        // Let the newly installed room paint its first frame before lifting the loading overlay.
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      }
     } catch (err) {
       showToast(`Failed to enter world: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       isTransitioning = false;
+      if (needsOverlay) {
+        warpOverlay.classList.remove('active');
+        warpOverlay.setAttribute('aria-hidden', 'true');
+        syncInputLocks();
+        syncPointerUi(engine.avatar.pointerLocked);
+      }
     }
   }
 
@@ -685,17 +704,17 @@ async function boot(): Promise<void> {
     engine.triggerNearestPortal();
   });
 
-  // Keep engine UI lock (gate/modals) separate from engine.hasFallen so closing modals
+  // Keep engine UI lock (gate/modals/teleport loading) separate from engine.hasFallen so closing modals
   // on a fall never leaves engine.inputLocked stuck true after respawn().
   function syncInputLocks(): void {
-    const uiLocked = !gateExited || isAnyModalOpen();
+    const uiLocked = !gateExited || isTransitioning || isAnyModalOpen();
     engine.setInputLocked(uiLocked);
     mobileControls?.setInputLocked(uiLocked || engine.hasFallen);
   }
 
   // Modal helpers
   function openModal(modal: HTMLElement): void {
-    if (!gateExited || engine.hasFallen) return;
+    if (!gateExited || engine.hasFallen || isTransitioning) return;
     closeAllModals();
     modal.classList.remove('hidden');
     if (modal === modalCharacters) {

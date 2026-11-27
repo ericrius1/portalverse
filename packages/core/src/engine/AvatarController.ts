@@ -818,8 +818,10 @@ export class AvatarController {
         }
         const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
         this.position.y += this.velocityY * clampedDt;
-        // Walking (not jumping) follows ground that falls away a little, instead of hopping off it each frame.
-        const follows = this.onGround && this.velocityY <= 0 && this.position.y - floorY <= GROUND_SNAP;
+        // Walking (not jumping) follows ground that falls away a little (scaled slightly for steep slopes at low FPS).
+        const stepHoriz = Math.hypot(this.position.x - fromX, this.position.z - fromZ);
+        const snap = Math.min(0.55, Math.max(GROUND_SNAP, stepHoriz * 0.75));
+        const follows = this.onGround && this.velocityY <= 0 && this.position.y - floorY <= snap;
         if (this.position.y <= floorY || follows) {
           this.position.y = floorY;
           this.velocityY = 0;
@@ -988,7 +990,9 @@ export class AvatarController {
     this.position.z += move.z;
     this.collide(fromX, this.position.y, fromZ);
     const floorY = this.sampleSurfaceHeight(this.position.x, this.position.z);
-    this.position.y = resolveGround(state, this.position.y + move.y, floorY, PLATFORMER_TUNING.groundSnap);
+    const stepHoriz = Math.hypot(this.position.x - fromX, this.position.z - fromZ);
+    const snap = Math.min(0.55, Math.max(PLATFORMER_TUNING.groundSnap, stepHoriz * 0.75));
+    this.position.y = resolveGround(state, this.position.y + move.y, floorY, snap);
 
     this.stride.set(state.velocity.x, state.velocity.z);
     this.velocityY = state.velocity.y;

@@ -10,6 +10,7 @@
  * to 7 words a vertex (position, uv, the normal octahedron-encoded in two snorm16s,
  * the tag): 28 bytes instead of 36.
  */
+import { separateCoplanar } from '@ericrius1/weft/coplanar';
 import { PALACE } from './layout';
 import earth from './palace.json';
 
@@ -97,6 +98,8 @@ async function load(url: string): Promise<PalaceMeshData> {
   for (let i = 0; i < nv; i++) {
     if (lift[i]) f[i * 7 + 1] += CLUSTER_PAD_LIFT;
   }
+  // Separate coplanar overlapping faces across the rotunda, piers, colonnade & hall using weft's coplanar solver.
+  separateCoplanar(f, idx, { stride: 7, offset: 0, eps: 0.004 });
   return { verts: out, indices, count: ni };
 }
 

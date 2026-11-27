@@ -46,7 +46,7 @@ fn vertexAt(vi: u32) -> VOut {
   let tag = pv[b + 6u];
   o.mat = tag & 255u;
   o.ls = vec3f(f32((tag >> 8u) & 255u), f32((tag >> 16u) & 255u), f32(tag >> 24u)) / 255.0;
-  o.pos = clipAt(o.world);
+  o.pos = clipAtFacing(o.world, o.n);
   return o;
 }
 

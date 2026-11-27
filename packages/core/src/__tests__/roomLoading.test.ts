@@ -527,4 +527,26 @@ describe('the room window', () => {
     previews.clear();
     expect(dropped).not.toContain(at(4));
   });
+
+  it('reports readiness via hasReady and retries a failed room immediately on urgent travelTo', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { previews, loads, failures, home } = loop();
+    failures.add(at(7));
+    await previews.syncPinnedForRoom(await home(at(3)));
+    expect(previews.hasReady(at(4))).toBe(true);
+    expect(previews.hasReady(at(7))).toBe(false);
+
+    // Background prepare fails and sets a 5s retry backoff.
+    await expect(previews.prepare(at(7), false)).rejects.toThrow('offline');
+    expect(previews.hasReady(at(7))).toBe(false);
+
+    // An explicit teleport (urgent travelTo) bypasses the 5s backoff and succeeds immediately.
+    clock.mockReturnValue(1200);
+    const room = await previews.travelTo(at(7));
+    expect(room).toBeInstanceOf(RoomInstance);
+    expect(previews.hasReady(at(7))).toBe(true);
+    expect(loads.filter(id => id === at(7))).toHaveLength(2);
+    await previews.clear();
+  });
 });
