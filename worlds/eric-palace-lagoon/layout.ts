@@ -43,8 +43,18 @@ export const LAGOON = { x: 76, z: -14, rx: 38, rz: 96 } as const;
 /** Reflecting lagoon cove curving across the north approach between the entrance and the rotunda's north arch. */
 export const NORTH_COVE = { x: 14, z: 25.6, rx: 32, rz: 6.2 } as const;
 
-/** The portals (the engine's: x = 0, z = ±36.25) and the walk between them, from sunset to night. */
-export const ENTRANCE_Z = 36.25;
+/** The portals and the walk between them, from golden-hour sunset behind the north colonnade to night in the dome. */
+/** Entrance portal sits in the sunlit courtyard behind the monumental 4-column north colonnade portico (-6.27, 53.30). */
+export const ENTRANCE_POS: readonly [number, number, number] = [-13.05, 0, 61.05];
+/** Unit forward direction passing dead-center through the north colonnade portico toward the meadow & lagoon. */
+export const ENTRANCE_DIR: readonly [number, number] = [0.6587, -0.7524];
+/** Player arrival yaw facing straight through the monumental colonnade arches (-sin(yaw)=ux, -cos(yaw)=uz). */
+export const ENTRANCE_ARRIVAL_YAW = Math.atan2(-ENTRANCE_DIR[0], -ENTRANCE_DIR[1]);
+/** Entrance portal ring yaw so its one-way +Z front face opens into the room (facing back toward the arches). */
+export const ENTRANCE_PORTAL_YAW = ENTRANCE_ARRIVAL_YAW + Math.PI;
+/** Default spawn just in front of the entrance portal on the wooden garden walk. */
+export const DEFAULT_SPAWN_POS: readonly [number, number, number] = [-12.18, 0.02, 60.06];
+export const ENTRANCE_Z = ENTRANCE_POS[2];
 export const EXIT_Z = -36.25;
 
 const smoothstep = (a: number, b: number, x: number): number => {

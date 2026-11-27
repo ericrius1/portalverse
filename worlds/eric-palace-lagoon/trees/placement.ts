@@ -9,7 +9,7 @@
  * lagoon (willows on its bank excepted), and the setting sun's corridor across the lagoon seen from the walk (only
  * low things there, so the sun goes down in a clear notch between the far shore's trees).
  */
-import { LAGOON, lagoonSdf, terrainHeight, PALACE } from '../layout';
+import { ENTRANCE_POS, LAGOON, lagoonSdf, terrainHeight, PALACE } from '../layout';
 import { nearPalace } from '../collide';
 import { SPECIES, speciesIndex } from './species';
 
@@ -73,7 +73,8 @@ export function blocked(sp: string, x: number, z: number, r: number): string | n
   const low = S.h < 3;
   // the walk, from the approach lawn through the rotunda and on (a low plant's leaves kept off it too)
   if (z > -90 && z < 62 && Math.abs(x) < 4 + (low ? r : S.trunk + 0.5)) return 'walk';
-  // the portals and their previews
+  // the portals and their previews (including the north colonnade courtyard entrance)
+  if (Math.hypot(x - ENTRANCE_POS[0], z - ENTRANCE_POS[2]) < 7) return 'portal';
   if (Math.abs(x) < 8 + (low ? 0 : Math.min(r, 3)) && (Math.abs(z - 36.25) < 9 || Math.abs(z + 36.25) < 9)) return 'portal';
   // the podium
   if (Math.hypot(x - PALACE.at[0], z - PALACE.at[1]) < 37 + (low ? 0 : 1)) return 'podium';

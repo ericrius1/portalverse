@@ -2,7 +2,20 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
-## Palace Lagoon R2 mirror, full-load teleport overlay, spiral walking fix & weft 0.2.19 anti-z-fighting — Unreleased (2026-11-26)
+## Palace Lagoon Alhambra Granada tile dome, warm cedar spiral, colonnade entrance & obvious portal threshold — Unreleased (2026-11-26)
+
+### Changed
+
+- **Longer ground approach starting behind the north colonnade arches (`worlds/eric-palace-lagoon/layout.ts`, `index.ts`, `path/curve.ts`, `path/mesh.ts`, `shaders/common.wgsl`, `shaders/lanterns.wgsl`, `trees/placement.ts`, `registry.json`)** — moved Palace Lagoon's entrance portal and default spawn back into the sunlit courtyard behind the monumental 4-column garlanded north colonnade portico (`(-13.05, 0, 61.05)`, facing through `(-6.27, 53.30)`), nearly doubling the ground walk to ~63 m through the classical arches, golden meadow, reflecting lagoon cove boardwalk, and rotunda north arch before ascending. Extended `onWalk` in `common.wgsl` so meadow grass and ground bronze lanterns stay clear of the new wooden approach.
+- **Single fluid wooden ascending spiral with zero 90° turn (`worlds/eric-palace-lagoon/path/curve.ts`, `path/mesh.ts`, `path/path.wgsl`)** — removed `SUMMIT_DECK` and the sharp 90° turn into `SUMMIT_RANGE`, replacing them with a single C1-continuous analytical spiral (270° outer nave sweep smoothly joining a constant `7.0 m`-radius inner sweep) climbing at a steady ~17° grade straight across `(0, 26.2, -14)` heading `-Z`. Rebuilt the spiral deck and structure as handcrafted warm Spanish cedar planks, carved dark-walnut timber beam stringers, solid walnut box-girder underside & knee-brackets, wood-and-brass railings with hanging Moroccan lanterns, carved walnut/brass Moorish horseshoe arches (transitioning to glowing cyan-gold portal-beacon arches near the top), and a subtle anti-aliased Granada *azulejo* ceramic center runner — eliminating the noisy black-and-white procedural pattern.
+- **Granada / Alhambra Spanish ceramic tile dome & unmistakable portal threshold (`worlds/eric-palace-lagoon/domePortal.ts`, `index.ts`, `assets/alhambra-dome.jpg`)** — replaced the polar-stretched procedural dome shader with a high-detail circular Granada Alhambra Nasrid ceramic zellige dome texture (1024×1024 JPEG, 566 KB, preloaded inside `mount()` so teleports wait for it too) mapped with seamless azimuthal equidistant projection (zero polar pinching or UV seam), kiln-fired Fresnel ceramic luster, and a 16-petal molten-gold radial dissolve blooming earlier (`24 m → 9 m`). Mounted an unmistakable glowing Portalverse energy ring, spinning halo, glowing threshold sill bar, translucent shimmer rim, and floating destination room sign (`createFloatingLabel`) right across the wooden spiral at `(0, 26.2, -14)`.
+
+### Design & engineering decisions
+
+- **Analytical piecewise-C1 outer + `R = 7.0 m` inner circular spiral.** Spline approximations tended to tighten turn radius near the dome zenith or dip vertically off `ENTRY_PLAZA`; joining the 270° outer nave sweep tangentially onto an exact `R = 7.0 m` arc centered at `(-7, 0)` guarantees `minTurnR = 7.0 m` everywhere, zero dips, zero pier hits, and dead-straight `-Z` crossing at `(0, 26.2, -14)` aligned with the dome portal's live preview orientation.
+- **Azimuthal equidistant UV projection for the Alhambra dome.** Mapping a circular Nasrid ceiling artwork directly from zenith angle `rho = acos(-nz)/(pi/2)` avoids spherical-UV pole pinching and eliminates the 2π seam while putting the 16-pointed zenith rosette cleanly at the crown and the gilded cornice band cleanly along the dome springline.
+
+## Palace Lagoon R2 mirror, full-load teleport overlay, spiral walking fix & weft 0.2.19 anti-z-fighting — `0e9f0ba` (2026-11-26)
 
 ### Fixed
 

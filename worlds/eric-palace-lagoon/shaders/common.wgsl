@@ -192,11 +192,19 @@ fn inReflection() -> bool { return frame.user.x > 0.5; }
 fn viewUV(pos: vec4f) -> vec2f { return (pos.xy - G.vp.xy) / max(G.vp.zw, vec2f(1.0)); }
 
 // ---------------------------------------------------------------- the Palace's plan on the ground
-/** the gravel walk along the portals' line (x = 0), from wing to wing, broken by the podium */
+/** the gravel walk along the south portals' line (x = 0) and the north colonnade-to-lagoon garden boardwalk */
 fn onWalk(xz: vec2f) -> f32 {
   let edge = 1.6 + 0.25 * noise2(vec2f(xz.y * 0.8, 3.0));
   let along = abs(xz.y - G.palace.y);
-  return (1.0 - smoothstep(edge - 0.25, edge, abs(xz.x))) * (1.0 - smoothstep(70.0, 73.0, along));
+  let straight = (1.0 - smoothstep(edge - 0.25, edge, abs(xz.x))) * (1.0 - smoothstep(70.0, 73.0, along)) * smoothstep(32.0, 36.0, -xz.y + 70.0);
+  // Clear grass & lay warm garden gravel cleanly underneath the wooden colonnade approach walkway
+  var dApp = segDist(xz, vec2f(-13.2, 61.2), vec2f(-6.27, 53.30));
+  dApp = min(dApp, segDist(xz, vec2f(-6.27, 53.30), vec2f(-3.1, 49.7)));
+  dApp = min(dApp, segDist(xz, vec2f(-3.1, 49.7), vec2f(0.2, 44.0)));
+  dApp = min(dApp, segDist(xz, vec2f(0.2, 44.0), vec2f(0.65, 37.0)));
+  dApp = min(dApp, segDist(xz, vec2f(0.65, 37.0), vec2f(1.45, 30.2)));
+  let approach = 1.0 - smoothstep(1.65, 2.05, dApp);
+  return max(straight, approach);
 }
 /** the walk's lanterns: one every LANTERN_STEP m along each side of it (x = ±LANTERN_X), off the podium */
 const LANTERN_STEP = 7.0;

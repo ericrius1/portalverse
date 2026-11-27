@@ -1,18 +1,23 @@
 /**
- * Procedural WebGPU geometry for the Palace Lagoon's boardwalk-over-water and trippy ascending celestial sky-path.
+ * Procedural WebGPU geometry for the Palace Lagoon's extended colonnade-to-lagoon teak boardwalk
+ * and handcrafted warm Spanish-cedar & Granada azulejo ascending spiral inside the rotunda.
  *
- * Earth-style boardwalk (`robolab/jamwalk.ts` craft):
- *   - Individual weathered teak planks with subtle per-board grain/silver tone variation
+ * Earth-style colonnade & lagoon boardwalk (`robolab/jamwalk.ts` craft):
+ *   - Individual weathered teak planks with subtle per-board grain/silver tone variation launching behind
+ *     the monumental north colonnade portico, gliding through the 4-column arches, across the sunlit meadow,
+ *     over the reflecting lagoon cove, and straight through the rotunda north arch
  *   - Dark teak side fascia, transverse cross-beams, and slim timber piles into the lagoon with brass waterline collars
- *   - Brass handrails, twin bronze tension cables, dark teak posts with gilt finial caps
- *   - Hanging washi paper lanterns on curved brass crooks with tiny solar tiles atop the posts
- *   - Moss cushions at post feet, curling ivy vines along the rails, and terracotta entry pots with greenery & reeds
+ *   - Brass handrails, twin bronze tension cables, dark teak posts with gilt finial caps, hanging washi lanterns
+ *   - Moss cushions, curling ivy vines along the rails, and terracotta Andalusian entry pots with greenery & reeds
  *
- * Trippy celestial ascent inside the rotunda:
- *   - Inlaid 8-point Arabic star compass medallion at the entry plaza and octagonal celestial sky balcony at the summit
- *   - Luminous beveled celestial walkway slabs with burnished gold trim and procedural girih light-veins
- *   - 11 floating pointed Moorish/Islamic ogee rib-arches soaring overhead along the spiral with floating star finials
- *   - Openwork brass filigree side railings with glowing turquoise-gold orb finials & suspended glowing keel spine
+ * Handcrafted Alhambra Spanish-cedar & azulejo spiral inside the rotunda:
+ *   - Inlaid Spanish cedar & Granada 8-point star compass medallion at the entry plaza
+ *   - Individual warm honey-cedar timber planks climbing smoothly in one fluid spiral (zero 90° turns)
+ *   - Subtle recessed Granada azulejo ceramic center runner framed by flush burnished brass strips
+ *   - Solid carved dark-walnut side beam stringers, warm timber soffit box-girder underside & timber knee-brackets
+ *   - Turned dark-walnut balusters, smooth cedar-and-brass handrails, bronze mid-rails & warm Moroccan hanging lanterns
+ *   - Carved dark-walnut & brass Moorish horseshoe arches along the climb, transitioning on the final 3 arches
+ *     into glowing cyan-and-gold portal-beacon arches framing the unmistakable threshold gateway
  *
  * Packed to 8 u32 words (32 bytes) per vertex:
  *   [x, y, z, u, v, octNormal(2x16snorm), rgba8(r,g,b,mat), meta(f32)]
@@ -24,8 +29,6 @@ import {
   ENTRY_PLAZA,
   PATH_FRAMES,
   SPIRAL_RANGE,
-  SUMMIT_DECK,
-  SUMMIT_RANGE,
   type PathFrame,
   type RoundDeck,
   type V3,
@@ -37,7 +40,7 @@ export const PATH_MAT = {
   WASHI: 2,
   FOLIAGE: 3,
   TERRACOTTA: 4,
-  CELESTIAL: 5,
+  AZULEJO: 5,
   GLOW: 6,
   INLAY: 7,
 } as const;
@@ -237,11 +240,13 @@ class Builder {
   }
 }
 
-// ---- Palette (matching Earth's jamwalk.ts + gilded Arabic celadon/lapis/gold)
+// ---- Warm Earth teak + Alhambra Spanish cedar, walnut, brass & Granada azulejo palette
 const TEAK: V3 = [0.36, 0.25, 0.16];
+const CEDAR: V3 = [0.46, 0.27, 0.14];
+const WALNUT: V3 = [0.22, 0.13, 0.08];
 const DARK_TEAK: V3 = [0.19, 0.13, 0.09];
 const PILE_WOOD: V3 = [0.17, 0.13, 0.10];
-const BRASS: V3 = [0.76, 0.56, 0.24];
+const BRASS: V3 = [0.78, 0.58, 0.25];
 const GILT: V3 = [0.92, 0.72, 0.30];
 const BRONZE: V3 = [0.34, 0.24, 0.15];
 const WASHI_COL: V3 = [1.0, 0.80, 0.48];
@@ -251,12 +256,12 @@ const IVY: V3 = [0.08, 0.20, 0.06];
 const LEAF: V3 = [0.14, 0.30, 0.08];
 const BLOOM_A: V3 = [0.95, 0.44, 0.12];
 const BLOOM_B: V3 = [0.58, 0.35, 0.92];
-const TERRACOTTA: V3 = [0.56, 0.24, 0.13];
-const TRAVERTINE: V3 = [0.78, 0.68, 0.54];
-const TURQUOISE: V3 = [0.10, 0.68, 0.72];
-const LAPIS: V3 = [0.07, 0.15, 0.46];
-const GOLD_GLOW: V3 = [1.0, 0.80, 0.36];
-const CYAN_GLOW: V3 = [0.22, 0.92, 0.95];
+const TERRACOTTA: V3 = [0.60, 0.26, 0.14];
+const TRAVERTINE: V3 = [0.84, 0.76, 0.62];
+const TURQUOISE: V3 = [0.10, 0.56, 0.60];
+const COBALT: V3 = [0.09, 0.22, 0.54];
+const GOLD_GLOW: V3 = [1.0, 0.78, 0.34];
+const CYAN_GLOW: V3 = [0.22, 0.90, 0.94];
 
 function plankColor(R: () => number): V3 {
   const k = 0.84 + 0.28 * R();
@@ -266,6 +271,17 @@ function plankColor(R: () => number): V3 {
     c = [c[0] + (0.42 - c[0]) * s, c[1] + (0.39 - c[1]) * s, c[2] + (0.35 - c[2]) * s];
   }
   return c;
+}
+
+/** Rich handcrafted Spanish cedar / warm honey-chestnut plank variation for the rotunda spiral stairway. */
+function cedarPlankColor(R: () => number): V3 {
+  const k = 0.86 + 0.28 * R();
+  const warm = (R() - 0.5) * 0.08;
+  return [
+    Math.min(1, CEDAR[0] * k * (1 + warm)),
+    Math.min(1, CEDAR[1] * k * (1 + warm * 0.5)),
+    Math.min(1, CEDAR[2] * k * (1 - warm * 0.4)),
+  ];
 }
 
 const ptAt = (f: PathFrame, sideOffset: number, dy = 0): V3 => [
@@ -313,12 +329,17 @@ function addReeds(m: Builder, R: () => number, p: V3, n = 5): void {
   }
 }
 
+function addTerracottaPot(m: Builder, R: () => number, pp: V3): void {
+  m.cyl([pp[0], pp[1] - 0.05, pp[2]], [pp[0], pp[1] + 0.52, pp[2]], 0.25, 0.34, 12, TERRACOTTA, PATH_MAT.TERRACOTTA);
+  m.cyl([pp[0], pp[1] + 0.52, pp[2]], [pp[0], pp[1] + 0.57, pp[2]], 0.36, 0.36, 12, TERRACOTTA, PATH_MAT.TERRACOTTA);
+  addShrub(m, R, [pp[0], pp[1] + 0.54, pp[2]], 1.55);
+  addReeds(m, R, [pp[0], pp[1] + 0.54, pp[2]], 6);
+}
+
 function addWashiLantern(m: Builder, lanterns: PathLantern[], base: V3, out: [number, number], phase: number): void {
   const [x, y, z] = base;
   const [ox, oz] = out;
-  // Teak post
   m.cyl([x, y - 0.04, z], [x, y + 1.56, z], 0.036, 0.030, 6, DARK_TEAK, PATH_MAT.WOOD);
-  // Curved brass crook hanging out over the water
   const crook: V3[] = [
     [x, y + 1.46, z],
     [x + ox * 0.12, y + 1.64, z + oz * 0.12],
@@ -328,11 +349,9 @@ function addWashiLantern(m: Builder, lanterns: PathLantern[], base: V3, out: [nu
   m.tube(crook, 0.012, 5, BRASS, PATH_MAT.BRASS);
   const lc: V3 = [x + ox * 0.36, y + 1.24, z + oz * 0.36];
   m.cyl([lc[0], y + 1.54, lc[2]], [lc[0], lc[1] + 0.18, lc[2]], 0.004, 0.004, 4, BRASS, PATH_MAT.BRASS, false);
-  // Washi paper lantern globe + brass top/bottom rings
   m.ellipsoid(lc, 0.14, 0.19, 0.14, 10, 6, WASHI_COL, PATH_MAT.WASHI, phase);
   m.cyl([lc[0], lc[1] + 0.17, lc[2]], [lc[0], lc[1] + 0.20, lc[2]], 0.075, 0.055, 8, BRASS, PATH_MAT.BRASS);
   m.cyl([lc[0], lc[1] - 0.20, lc[2]], [lc[0], lc[1] - 0.17, lc[2]], 0.055, 0.075, 8, BRASS, PATH_MAT.BRASS);
-  // Miniature solar tile atop post in gilt frame (signature Earth jamwalk touch!)
   const ty = y + 1.60;
   m.board(
     [x - 0.11, ty, z - 0.08], [x + 0.11, ty, z - 0.08],
@@ -347,81 +366,61 @@ function addWashiLantern(m: Builder, lanterns: PathLantern[], base: V3, out: [nu
   lanterns.push({ pos: lc, phase, scale: 1.0, tint: [1.0, 0.68, 0.34] });
 }
 
-/** Circular/octagonal inlaid Arabic 8-point star medallion plaza. */
-function buildStarDeck(m: Builder, R: () => number, deck: RoundDeck, lanterns: PathLantern[]): void {
-  const { x, y, z, r, celestial } = deck;
-  const seg = celestial > 0.5 ? 8 : 36;
-  const deckMat = celestial > 0.5 ? PATH_MAT.CELESTIAL : PATH_MAT.WOOD;
-  const rimCol = celestial > 0.5 ? GILT : DARK_TEAK;
-  const rimMat = celestial > 0.5 ? PATH_MAT.BRASS : PATH_MAT.WOOD;
+/** Circular inlaid Spanish-cedar & Granada 8-point star medallion plaza at the rotunda north arch. */
+function buildStarDeck(m: Builder, deck: RoundDeck): void {
+  const { x, y, z, r } = deck;
+  const seg = 36;
 
-  // Main circular/octagonal deck body
-  m.cyl([x, y - 0.22, z], [x, y, z], r, r, seg, celestial > 0.5 ? LAPIS : TEAK, deckMat, true, celestial);
-  // Outer bevelled rim (closed ring: omit radial interior end-caps between consecutive rim boards)
+  // Main warm cedar circular deck body
+  m.cyl([x, y - 0.22, z], [x, y, z], r, r, seg, CEDAR, PATH_MAT.WOOD, true, 0);
+  // Outer carved dark-walnut rim (closed ring: omit radial interior end-caps)
   for (let k = 0; k < seg; k++) {
-    const a0 = (k / seg) * Math.PI * 2 + (celestial > 0.5 ? Math.PI / 8 : 0);
-    const a1 = ((k + 1) / seg) * Math.PI * 2 + (celestial > 0.5 ? Math.PI / 8 : 0);
+    const a0 = (k / seg) * Math.PI * 2;
+    const a1 = ((k + 1) / seg) * Math.PI * 2;
     const P = (a: number, rad: number, dy: number): V3 => [x + Math.cos(a) * rad, y + dy, z + Math.sin(a) * rad];
-    m.board(P(a0, r - 0.24, 0.008), P(a1, r - 0.24, 0.008), P(a1, r + 0.04, 0.008), P(a0, r + 0.04, 0.008), 0.14, rimCol, rimMat, 0, 1, 0, 1, 0, false, false);
-    // Luminous ring under lip
-    m.cyl(P(a0, r - 0.06, -0.22), P(a1, r - 0.06, -0.22), 0.022, 0.022, 5, celestial > 0.5 ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, false, k * 0.4);
+    m.board(P(a0, r - 0.24, 0.008), P(a1, r - 0.24, 0.008), P(a1, r + 0.04, 0.008), P(a0, r + 0.04, 0.008), 0.14, WALNUT, PATH_MAT.WOOD, 0, 1, 0, 1, 0, false, false);
+    m.cyl(P(a0, r - 0.06, -0.22), P(a1, r - 0.06, -0.22), 0.022, 0.022, 5, GOLD_GLOW, PATH_MAT.GLOW, false, k * 0.4);
   }
 
-  // Travertine & turquoise Arabic 8-point Rub el Hizb star rosette inlaid at center (top caps only: no coplanar undersides)
+  // Granada travertine, terracotta, cobalt & turquoise 8-point Alhambra star rosette inlaid at center
   const my = y + 0.014;
-  m.cyl([x, y, z], [x, my, z], r * 0.52, r * 0.52, 32, TRAVERTINE, PATH_MAT.INLAY, 'top');
-  m.cyl([x, my, z], [x, my + 0.008, z], r * 0.44, r * 0.44, 16, TURQUOISE, PATH_MAT.INLAY, 'top');
-  // Two rotated gilt squares forming an 8-point Islamic star
-  const sr = r * 0.42;
+  m.cyl([x, y, z], [x, my, z], r * 0.56, r * 0.56, 32, TRAVERTINE, PATH_MAT.INLAY, 'top');
+  m.cyl([x, my, z], [x, my + 0.007, z], r * 0.46, r * 0.46, 16, COBALT, PATH_MAT.INLAY, 'top');
+  m.cyl([x, my + 0.007, z], [x, my + 0.013, z], r * 0.34, r * 0.34, 16, TURQUOISE, PATH_MAT.INLAY, 'top');
+  const sr = r * 0.44;
   for (const rot of [0, Math.PI / 4]) {
     const pts: V3[] = [0, 1, 2, 3].map(k => {
       const a = rot + (k * Math.PI) / 2;
-      return [x + Math.cos(a) * sr, my + 0.014, z + Math.sin(a) * sr];
+      return [x + Math.cos(a) * sr, my + 0.018, z + Math.sin(a) * sr];
     });
     for (let k = 0; k < 4; k++) {
       m.cyl(pts[k], pts[(k + 1) % 4], 0.028, 0.028, 5, GILT, PATH_MAT.BRASS, false);
     }
   }
-  // 16 gilded star rays + glowing heart
   for (let k = 0; k < 16; k++) {
     const a = (k / 16) * Math.PI * 2;
-    const len = k % 2 === 0 ? r * 0.48 : r * 0.34;
+    const len = k % 2 === 0 ? r * 0.50 : r * 0.35;
     const ax = Math.cos(a), az = Math.sin(a);
-    m.cyl([x + ax * 0.22, my + 0.016, z + az * 0.22], [x + ax * len, my + 0.016, z + az * len], 0.022, 0.008, 4, k % 2 === 0 ? GILT : BRASS, PATH_MAT.BRASS, false);
+    m.cyl([x + ax * 0.22, my + 0.020, z + az * 0.22], [x + ax * len, my + 0.020, z + az * len], 0.022, 0.008, 4, k % 2 === 0 ? GILT : BRASS, PATH_MAT.BRASS, false);
   }
-  m.cyl([x, my + 0.008, z], [x, my + 0.022, z], 0.26, 0.22, 16, GILT, PATH_MAT.BRASS, 'top');
-  m.ellipsoid([x, my + 0.026, z], 0.14, 0.03, 0.14, 12, 4, celestial > 0.5 ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, 1.0);
+  m.cyl([x, my + 0.013, z], [x, my + 0.026, z], 0.26, 0.22, 16, GILT, PATH_MAT.BRASS, 'top');
+  m.ellipsoid([x, my + 0.030, z], 0.14, 0.03, 0.14, 12, 4, GOLD_GLOW, PATH_MAT.GLOW, 1.0);
 
-  // Corner glowing orb posts on the summit celestial balcony
-  if (celestial > 0.5) {
-    for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
-      // Leave the south opening (-Z, heading into the final arch) and east/west spiral entry open
-      if (Math.sin(a) < -0.55) continue;
-      if (Math.cos(a) > 0.72 && Math.sin(a) > -0.25) continue;
-      const px = x + Math.cos(a) * (r - 0.14);
-      const pz = z + Math.sin(a) * (r - 0.14);
-      m.cyl([px, y, pz], [px, y + 1.05, pz], 0.032, 0.024, 6, BRASS, PATH_MAT.BRASS);
-      m.ellipsoid([px, y + 1.12, pz], 0.075, 0.075, 0.075, 8, 5, k % 2 === 0 ? GOLD_GLOW : CYAN_GLOW, PATH_MAT.GLOW, k * 0.7);
-      if (k % 2 === 0) {
-        lanterns.push({ pos: [px, y + 1.12, pz], phase: k * 1.1, scale: 0.75, tint: [0.35, 0.92, 1.0] });
-      }
-    }
-  } else {
-    // Low moss accents around the entry plaza's rim
-    for (let k = 0; k < 6; k++) {
-      const a = (k / 6) * Math.PI * 2 + 0.4;
-      if (Math.abs(Math.cos(a)) < 0.45) continue;
-      m.ellipsoid([x + Math.cos(a) * (r - 0.25), y + 0.04, z + Math.sin(a) * (r - 0.25)], 0.16, 0.06, 0.14, 6, 3, MOSS, PATH_MAT.FOLIAGE);
-    }
+  // Subtle moss cushions around the rim
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + 0.4;
+    if (Math.abs(Math.cos(a)) < 0.45) continue;
+    m.ellipsoid([x + Math.cos(a) * (r - 0.25), y + 0.04, z + Math.sin(a) * (r - 0.25)], 0.16, 0.06, 0.14, 6, 3, MOSS, PATH_MAT.FOLIAGE);
   }
-  void R;
 }
 
-/** Floating pointed Moorish / Islamic ogee golden rib-arch spanning over the ascending celestial sky-path. */
-function buildCelestialArch(m: Builder, f: PathFrame, lanterns: PathLantern[], archIdx: number): void {
+/**
+ * Carved Spanish-cedar & burnished-brass Moorish horseshoe arch spanning overhead along the wooden spiral.
+ * The final 3 arches (`portalBeacon = true`) glow with radiant cyan-and-gold light guiding walkers into the dome portal.
+ */
+function buildAlhambraArch(m: Builder, f: PathFrame, lanterns: PathLantern[], archIdx: number, portalBeacon: boolean): void {
   const hw = f.halfW + 0.16;
-  const h = 4.55;
+  const h = 4.45;
   const steps = 16;
   const leftPts: V3[] = [];
   const rightPts: V3[] = [];
@@ -430,42 +429,60 @@ function buildCelestialArch(m: Builder, f: PathFrame, lanterns: PathLantern[], a
 
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    // Pointed Moorish horseshoe-ogee profile: bows subtly outward near mid-height, curves cleanly to a pointed apex
-    const sway = Math.sin(t * Math.PI) * 0.26 * (1 - t);
+    // Classic Nasrid horseshoe-ogee arch silhouette
+    const sway = Math.sin(t * Math.PI) * 0.28 * (1 - t);
     const xOff = hw * (1 - Math.pow(t, 1.55)) + sway;
-    const yOff = h * Math.sin(t * Math.PI * 0.5) + 0.35 * Math.pow(t, 3);
+    const yOff = h * Math.sin(t * Math.PI * 0.5) + 0.34 * Math.pow(t, 3);
     leftPts.push(ptAt(f, -xOff, yOff));
     rightPts.push(ptAt(f, xOff, yOff));
-    // Secondary inner luminous rib slightly inset
-    innerLeft.push(ptAt(f, -Math.max(0, xOff - 0.14), Math.max(0.2, yOff - 0.14)));
-    innerRight.push(ptAt(f, Math.max(0, xOff - 0.14), Math.max(0.2, yOff - 0.14)));
+    innerLeft.push(ptAt(f, -Math.max(0, xOff - 0.15), Math.max(0.2, yOff - 0.15)));
+    innerRight.push(ptAt(f, Math.max(0, xOff - 0.15), Math.max(0.2, yOff - 0.15)));
   }
 
-  m.tube(leftPts, 0.055, 6, GILT, PATH_MAT.BRASS);
-  m.tube(rightPts, 0.055, 6, GILT, PATH_MAT.BRASS);
-  m.tube(innerLeft, 0.022, 4, archIdx % 2 === 0 ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, archIdx * 0.9);
-  m.tube(innerRight, 0.022, 4, archIdx % 2 === 0 ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, archIdx * 0.9 + 0.3);
+  // Outer carved dark-walnut timber rib (or gilded brass on final portal beacons)
+  m.tube(leftPts, 0.072, 6, portalBeacon ? GILT : WALNUT, portalBeacon ? PATH_MAT.BRASS : PATH_MAT.WOOD);
+  m.tube(rightPts, 0.072, 6, portalBeacon ? GILT : WALNUT, portalBeacon ? PATH_MAT.BRASS : PATH_MAT.WOOD);
 
-  // Delicate radial filigree struts connecting outer & inner arch ribs
+  // Inner brass inlay rib (glowing cyan/gold on the 3 portal-beacon approach arches!)
+  const innerCol = portalBeacon ? CYAN_GLOW : GILT;
+  const innerMat = portalBeacon ? PATH_MAT.GLOW : PATH_MAT.BRASS;
+  m.tube(innerLeft, portalBeacon ? 0.032 : 0.024, 5, innerCol, innerMat, archIdx * 0.9);
+  m.tube(innerRight, portalBeacon ? 0.032 : 0.024, 5, innerCol, innerMat, archIdx * 0.9 + 0.3);
+
+  // Delicate brass filigree struts connecting outer & inner arch ribs
   for (let i = 3; i < steps; i += 3) {
-    m.cyl(leftPts[i], innerLeft[i], 0.014, 0.014, 4, BRASS, PATH_MAT.BRASS, false);
-    m.cyl(rightPts[i], innerRight[i], 0.014, 0.014, 4, BRASS, PATH_MAT.BRASS, false);
+    m.cyl(leftPts[i], innerLeft[i], 0.015, 0.015, 4, BRASS, PATH_MAT.BRASS, false);
+    m.cyl(rightPts[i], innerRight[i], 0.015, 0.015, 4, BRASS, PATH_MAT.BRASS, false);
   }
 
-  // Crown jewel finial orb at the ogee apex
-  const apex = ptAt(f, 0, h + 0.42);
-  m.ellipsoid(apex, 0.11, 0.16, 0.11, 8, 5, archIdx % 2 === 0 ? GOLD_GLOW : CYAN_GLOW, PATH_MAT.GLOW, archIdx * 1.3);
+  // Suspended Moroccan brass lantern hanging gracefully from the ogee crown apex
+  const apex = ptAt(f, 0, h + 0.24);
+  const hang = ptAt(f, 0, h - 0.22);
+  m.cyl(apex, [hang[0], hang[1] + 0.18, hang[2]], 0.008, 0.008, 4, BRASS, PATH_MAT.BRASS, false);
+  m.ellipsoid(
+    hang,
+    0.13,
+    0.18,
+    0.13,
+    8,
+    5,
+    portalBeacon ? CYAN_GLOW : WASHI_COL,
+    portalBeacon ? PATH_MAT.GLOW : PATH_MAT.WASHI,
+    archIdx * 1.3,
+  );
+  m.cyl([hang[0], hang[1] + 0.16, hang[2]], [hang[0], hang[1] + 0.21, hang[2]], 0.075, 0.04, 8, GILT, PATH_MAT.BRASS);
+  m.cyl([hang[0], hang[1] - 0.21, hang[2]], [hang[0], hang[1] - 0.16, hang[2]], 0.04, 0.075, 8, GILT, PATH_MAT.BRASS);
   lanterns.push({
-    pos: apex,
+    pos: hang,
     phase: archIdx * 1.3,
-    scale: 0.9,
-    tint: archIdx % 2 === 0 ? [1.0, 0.78, 0.35] : [0.25, 0.92, 0.95],
+    scale: portalBeacon ? 1.15 : 0.95,
+    tint: portalBeacon ? [0.28, 0.92, 0.96] : [1.0, 0.72, 0.34],
   });
 }
 
 let cached: PathMeshData | null = null;
 
-/** Build the complete boardwalk + celestial sky-path mesh once per session. */
+/** Build the complete colonnade boardwalk + handcrafted Spanish-cedar Alhambra spiral mesh once per session. */
 export function buildPathMesh(): PathMeshData {
   if (cached) return cached;
   const R = rng(20261126);
@@ -473,7 +490,7 @@ export function buildPathMesh(): PathMeshData {
   const lanterns: PathLantern[] = [];
 
   // ====================================================================
-  // 1. EARTH-STYLE TEAK BOARDWALK OVER THE WATER + THROUGH NORTH ARCH
+  // 1. EXTENDED TEAK COLONNADE + MEADOW + LAGOON COVE + NORTH ARCH WALK
   // ====================================================================
   const [bw0, bw1] = BOARDWALK_RANGE;
   const plankStep = 0.20;
@@ -487,7 +504,6 @@ export function buildPathMesh(): PathMeshData {
       const u1 = (k + 0.92) / nPlanks;
       const a = lerpFrame(fa, fb, u0);
       const b = lerpFrame(fa, fb, u1);
-      // Stop planks cleanly at entry plaza's rim
       if (Math.hypot(b.p[0] - ENTRY_PLAZA.x, b.p[2] - ENTRY_PLAZA.z) < ENTRY_PLAZA.r - 0.15) continue;
       m.board(
         ptAt(a, -a.halfW), ptAt(a, a.halfW),
@@ -496,25 +512,27 @@ export function buildPathMesh(): PathMeshData {
       );
     }
 
-    // Dark teak side fascia boards & water-crossing piles/beams (omit interior cross-section end-caps)
+    // Dark teak side fascia along the colonnade approach, meadow walk, and lagoon cove bridge
     if (fa.p[2] > 18.6) {
       const prevHasFascia = i > bw0 && PATH_FRAMES[i - 1].p[2] > 18.6;
       const nextHasFascia = i + 1 < bw1 && fb.p[2] > 18.6;
+      const overWater = fa.p[2] < 33.8;
       for (const sd of [-1, 1] as const) {
         m.board(
           ptAt(fa, sd * (fa.halfW - 0.01), -0.025), ptAt(fa, sd * (fa.halfW + 0.03), -0.025),
           ptAt(fb, sd * (fb.halfW + 0.03), -0.025), ptAt(fb, sd * (fb.halfW - 0.01), -0.025),
-          0.19, DARK_TEAK, PATH_MAT.WOOD, 0, 1, 0, 1, 0, !prevHasFascia, !nextHasFascia,
+          overWater ? 0.19 : 0.11, DARK_TEAK, PATH_MAT.WOOD, 0, 1, 0, 1, 0, !prevHasFascia, !nextHasFascia,
         );
       }
     }
   }
 
-  // Piles with brass waterline collars & cross-beams across the reflecting cove
-  let nextPileS = 2.6;
+  // Timber piles with brass waterline collars & cross-beams across the reflecting lagoon cove
+  let nextPileS = 0;
   for (let i = bw0; i < bw1; i++) {
     const f = PATH_FRAMES[i];
     if (f.p[2] < 19.3 || f.p[2] > 32.8) continue;
+    if (nextPileS === 0) nextPileS = f.s;
     if (f.s < nextPileS) continue;
     nextPileS = f.s + 2.35;
     const beamY = f.p[1] - 0.055;
@@ -537,12 +555,11 @@ export function buildPathMesh(): PathMeshData {
     }
   }
 
-  // Boardwalk railings (brass handrail + 2 bronze cables + teak posts with gilt finials + moss + ivy + washi lanterns)
+  // Boardwalk railings over the reflecting cove (brass handrail + 2 bronze cables + teak posts + moss + ivy + washi lanterns)
   const railFrames = PATH_FRAMES.slice(bw0, bw1 + 1).filter(f => f.p[2] >= 19.2 && f.p[2] <= 32.8);
   for (const sd of [-1, 1] as const) {
     const rOff = sd * (railFrames[0].halfW - 0.08);
-    const topPts = railFrames.map(f => ptAt(f, rOff, 0.94));
-    m.tube(topPts, 0.028, 6, BRASS, PATH_MAT.BRASS);
+    m.tube(railFrames.map(f => ptAt(f, rOff, 0.94)), 0.028, 6, BRASS, PATH_MAT.BRASS);
     for (const h of [0.35, 0.65]) {
       m.tube(railFrames.map(f => ptAt(f, rOff, h)), 0.008, 4, BRONZE, PATH_MAT.BRASS);
     }
@@ -557,7 +574,6 @@ export function buildPathMesh(): PathMeshData {
         if (postIdx % 2 === 0) {
           m.ellipsoid([foot[0], foot[1] + 0.02, foot[2]], 0.11, 0.045, 0.10, 6, 3, MOSS, PATH_MAT.FOLIAGE);
         }
-        // Alternating hanging washi lanterns out over the water
         if ((postIdx === 0) || (postIdx > 0 && postIdx % 2 === (sd > 0 ? 1 : 0) && postIdx < 8)) {
           addWashiLantern(m, lanterns, foot, [f.n[0] * sd, f.n[1] * sd], postIdx * 1.7 + (sd > 0 ? 0.5 : 0));
         }
@@ -565,7 +581,6 @@ export function buildPathMesh(): PathMeshData {
         nextPostS = f.s + 1.7;
       }
     }
-    // Winding ivy vines along portions of the brass handrail
     for (let i = 2; i + 5 < railFrames.length; i += 7) {
       const vinePts: V3[] = [];
       for (let k = i; k <= Math.min(railFrames.length - 1, i + 5); k++) {
@@ -582,127 +597,154 @@ export function buildPathMesh(): PathMeshData {
     }
   }
 
-  // Two terracotta entry pots with lush shrubs & reeds flanking the entrance onto the boardwalk
-  const entryF = PATH_FRAMES[bw0];
-  for (const sd of [-1, 1] as const) {
-    const pp = ptAt(entryF, sd * (entryF.halfW + 0.58), 0);
-    m.cyl([pp[0], pp[1] - 0.05, pp[2]], [pp[0], pp[1] + 0.52, pp[2]], 0.25, 0.34, 12, TERRACOTTA, PATH_MAT.TERRACOTTA);
-    m.cyl([pp[0], pp[1] + 0.52, pp[2]], [pp[0], pp[1] + 0.57, pp[2]], 0.36, 0.36, 12, TERRACOTTA, PATH_MAT.TERRACOTTA);
-    addShrub(m, R, [pp[0], pp[1] + 0.54, pp[2]], 1.55);
-    addReeds(m, R, [pp[0], pp[1] + 0.54, pp[2]], 6);
+  // Warm garden washi lanterns flanking the north colonnade courtyard & golden meadow walk (well clear of portico columns)
+  const gardenLanternIndices = [6, 36, 48];
+  for (let gi = 0; gi < gardenLanternIndices.length; gi++) {
+    const f = PATH_FRAMES[gardenLanternIndices[gi]];
+    for (const sd of [-1, 1] as const) {
+      const foot = ptAt(f, sd * (f.halfW + 0.24), 0);
+      addWashiLantern(m, lanterns, foot, [-f.n[0] * sd, -f.n[1] * sd], gi * 2.1 + (sd > 0 ? 0.7 : 0));
+    }
+  }
+
+  // Terracotta Andalusian planters flanking the colonnade courtyard launch AND the cove bridge entry
+  for (const idx of [bw0 + 1, 56]) {
+    const ef = PATH_FRAMES[idx];
+    for (const sd of [-1, 1] as const) {
+      addTerracottaPot(m, R, ptAt(ef, sd * (ef.halfW + 0.60), 0));
+    }
   }
 
   // ====================================================================
-  // 2. INLAID ARABIC STAR MEDALLION PLAZAS (ENTRY & SUMMIT)
+  // 2. INLAID SPANISH-CEDAR & GRANADA STAR COMPASS PLAZA
   // ====================================================================
-  buildStarDeck(m, R, ENTRY_PLAZA, lanterns);
-  buildStarDeck(m, R, SUMMIT_DECK, lanterns);
+  buildStarDeck(m, ENTRY_PLAZA);
 
   // ====================================================================
-  // 3. TRIPPY ASCENDING CELESTIAL SKY-PATH (SPIRAL + FINAL DOME ARCH)
+  // 3. HANDCRAFTED WARM SPANISH-CEDAR & AZULEJO FLUID ASCENDING SPIRAL
   // ====================================================================
-  const insidePlaza = (p: V3): boolean =>
-    (Math.abs(p[1] - ENTRY_PLAZA.y) < 0.25 && Math.hypot(p[0] - ENTRY_PLAZA.x, p[2] - ENTRY_PLAZA.z) < ENTRY_PLAZA.r - 0.22) ||
-    (Math.abs(p[1] - SUMMIT_DECK.y) < 0.25 && Math.hypot(p[0] - SUMMIT_DECK.x, p[2] - SUMMIT_DECK.z) < SUMMIT_DECK.r - 0.22);
+  const allSpiral = PATH_FRAMES.slice(SPIRAL_RANGE[0], SPIRAL_RANGE[1] + 1);
+  let firstOut = 0;
+  while (
+    firstOut < allSpiral.length - 1 &&
+    Math.abs(allSpiral[firstOut].p[1] - ENTRY_PLAZA.y) < 0.25 &&
+    Math.hypot(allSpiral[firstOut].p[0] - ENTRY_PLAZA.x, allSpiral[firstOut].p[2] - ENTRY_PLAZA.z) < ENTRY_PLAZA.r - 0.20
+  ) {
+    firstOut++;
+  }
+  if (firstOut > 0) firstOut--;
+  const stripFrames = allSpiral.slice(firstOut);
 
-  const buildCelestialStrip = (startIdx: number, endIdx: number, withArches: boolean) => {
-    // Trim frames lying strictly inside the inlaid circular/octagonal plazas so slabs never coplanar-overlap them.
-    const allStrip = PATH_FRAMES.slice(startIdx, endIdx + 1);
-    let firstOut = 0;
-    while (firstOut < allStrip.length - 1 && insidePlaza(allStrip[firstOut].p)) firstOut++;
-    if (firstOut > 0) firstOut--; // keep one connecting boundary frame at the rim
-    let lastOut = allStrip.length - 1;
-    while (lastOut > firstOut + 1 && insidePlaza(allStrip[lastOut].p)) lastOut--;
-    if (lastOut < allStrip.length - 1) lastOut++;
-    const stripFrames = allStrip.slice(firstOut, lastOut + 1);
+  const lRailTop: V3[] = [];
+  const rRailTop: V3[] = [];
+  const lRailMid: V3[] = [];
+  const rRailMid: V3[] = [];
+  const keelPts: V3[] = [];
+  const brassTrimL: V3[] = [];
+  const brassTrimR: V3[] = [];
 
-    const lRailTop: V3[] = [];
-    const rRailTop: V3[] = [];
-    const lRailMid: V3[] = [];
-    const rRailMid: V3[] = [];
-    const keelPts: V3[] = [];
-    const glowSpineL: V3[] = [];
-    const glowSpineR: V3[] = [];
+  const spiralPlankStep = 0.24;
+  const runnerHalfW = 0.28;
 
-    for (let i = 0; i + 1 < stripFrames.length; i++) {
-      const fa = stripFrames[i];
-      const fb = stripFrames[i + 1];
-      const uA = fa.s * 0.25;
-      const uB = fb.s * 0.25;
-      const cel = 0.5 * (fa.celestial + fb.celestial);
-      const capStart = i === 0;
-      const capEnd = i + 2 === stripFrames.length;
+  for (let i = 0; i + 1 < stripFrames.length; i++) {
+    const fa = stripFrames[i];
+    const fb = stripFrames[i + 1];
+    const segLen = Math.hypot(fb.p[0] - fa.p[0], fb.p[1] - fa.p[1], fb.p[2] - fa.p[2]);
+    const capStart = i === 0;
+    const capEnd = i + 2 === stripFrames.length;
 
-      // Main celestial walkway slab (omit interior cross-section end-caps to prevent segment seam z-fighting)
+    // A) Individual warm Spanish-cedar timber planks across the full deck width
+    const nPlanks = Math.max(1, Math.round(segLen / spiralPlankStep));
+    for (let k = 0; k < nPlanks; k++) {
+      const u0 = k / nPlanks;
+      const u1 = (k + 0.93) / nPlanks;
+      const a = lerpFrame(fa, fb, u0);
+      const b = lerpFrame(fa, fb, u1);
       m.board(
-        ptAt(fa, -fa.halfW), ptAt(fa, fa.halfW),
-        ptAt(fb, fb.halfW), ptAt(fb, -fb.halfW),
-        0.13, LAPIS, PATH_MAT.CELESTIAL, 0, 1, uA, uB, cel, capStart, capEnd,
+        ptAt(a, -a.halfW), ptAt(a, a.halfW),
+        ptAt(b, b.halfW), ptAt(b, -b.halfW),
+        0.055, cedarPlankColor(R), PATH_MAT.WOOD, 0, 1, a.s * 0.12, b.s * 0.12,
       );
-
-      // Burnished gold side edge moldings
-      for (const sd of [-1, 1] as const) {
-        m.board(
-          ptAt(fa, sd * (fa.halfW - 0.04), 0.015), ptAt(fa, sd * (fa.halfW + 0.09), 0.015),
-          ptAt(fb, sd * (fb.halfW + 0.09), 0.015), ptAt(fb, sd * (fb.halfW - 0.04), 0.015),
-          0.18, GILT, PATH_MAT.BRASS, 0, 1, 0, 1, 0, capStart, capEnd,
-        );
-      }
-
-      // Tapered gilded keel ribs underneath (every 4th segment)
-      if (i % 4 === 0) {
-        const ka = ptAt(fa, 0, -0.44);
-        m.cyl(ptAt(fa, -fa.halfW * 0.85, -0.12), ka, 0.032, 0.025, 5, BRASS, PATH_MAT.BRASS, false);
-        m.cyl(ptAt(fa, fa.halfW * 0.85, -0.12), ka, 0.032, 0.025, 5, BRASS, PATH_MAT.BRASS, false);
-      }
     }
 
-    for (let i = 0; i < stripFrames.length; i++) {
-      const f = stripFrames[i];
-      const rOff = f.halfW + 0.02;
-      lRailTop.push(ptAt(f, -rOff, 0.92));
-      rRailTop.push(ptAt(f, rOff, 0.92));
-      lRailMid.push(ptAt(f, -rOff, 0.48));
-      rRailMid.push(ptAt(f, rOff, 0.48));
-      keelPts.push(ptAt(f, 0, -0.44));
-      glowSpineL.push(ptAt(f, -f.halfW - 0.05, -0.15));
-      glowSpineR.push(ptAt(f, f.halfW + 0.05, -0.15));
+    // B) Tasteful Granada azulejo ceramic center runner inlaid cleanly above the cedar planks (zero coplanar overlap!)
+    const uA = fa.s * 0.45;
+    const uB = fb.s * 0.45;
+    m.board(
+      ptAt(fa, -runnerHalfW, 0.011), ptAt(fa, runnerHalfW, 0.011),
+      ptAt(fb, runnerHalfW, 0.011), ptAt(fb, -runnerHalfW, 0.011),
+      0.007, COBALT, PATH_MAT.AZULEJO, 0, 1, uA, uB, 0.5 * (fa.celestial + fb.celestial), capStart, capEnd,
+    );
+
+    // C) Solid carved dark-walnut side timber beam stringers (omit interior cross-section end-caps)
+    for (const sd of [-1, 1] as const) {
+      m.board(
+        ptAt(fa, sd * (fa.halfW - 0.02), 0.018), ptAt(fa, sd * (fa.halfW + 0.11), 0.018),
+        ptAt(fb, sd * (fb.halfW + 0.11), 0.018), ptAt(fb, sd * (fb.halfW - 0.02), 0.018),
+        0.26, WALNUT, PATH_MAT.WOOD, 0, 1, 0, 1, 0, capStart, capEnd,
+      );
     }
 
-    // Continuous ornate brass handrails, glowing underside energy ribbons & suspended golden keel
-    m.tube(lRailTop, 0.028, 6, GILT, PATH_MAT.BRASS);
-    m.tube(rRailTop, 0.028, 6, GILT, PATH_MAT.BRASS);
-    m.tube(lRailMid, 0.012, 4, BRASS, PATH_MAT.BRASS);
-    m.tube(rRailMid, 0.012, 4, BRASS, PATH_MAT.BRASS);
-    m.tube(keelPts, 0.038, 5, GOLD_GLOW, PATH_MAT.GLOW, 0.4);
-    m.tube(glowSpineL, 0.018, 4, CYAN_GLOW, PATH_MAT.GLOW, 0.8);
-    m.tube(glowSpineR, 0.018, 4, CYAN_GLOW, PATH_MAT.GLOW, 1.4);
+    // D) Clean warm dark-walnut timber box-girder soffit underneath (6 mm below plank underside -> zero coplanar overlap!)
+    m.board(
+      ptAt(fa, -fa.halfW * 0.78, -0.065), ptAt(fa, fa.halfW * 0.78, -0.065),
+      ptAt(fb, fb.halfW * 0.78, -0.065), ptAt(fb, -fb.halfW * 0.78, -0.065),
+      0.11, WALNUT, PATH_MAT.WOOD, 0, 1, 0, 1, 0, capStart, capEnd,
+    );
 
-    // Ornate posts with glowing turquoise/gold orb finials along the climb
-    for (let i = 3; i < stripFrames.length - 2; i += 6) {
-      const f = stripFrames[i];
-      for (const sd of [-1, 1] as const) {
-        const foot = ptAt(f, sd * (f.halfW + 0.02), 0);
-        m.cyl([foot[0], foot[1] - 0.06, foot[2]], [foot[0], foot[1] + 0.94, foot[2]], 0.028, 0.022, 6, BRASS, PATH_MAT.BRASS, false);
-        m.ellipsoid([foot[0], foot[1] + 1.00, foot[2]], 0.055, 0.055, 0.055, 6, 4, ((i / 6) & 1) ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, i * 0.25);
+    // E) Carved dark-walnut timber knee-brackets meeting the central wooden spine beam (every 4th segment)
+    if (i % 4 === 0) {
+      const ka = ptAt(fa, 0, -0.46);
+      m.cyl(ptAt(fa, -fa.halfW * 0.88, -0.18), ka, 0.044, 0.036, 6, WALNUT, PATH_MAT.WOOD, false);
+      m.cyl(ptAt(fa, fa.halfW * 0.88, -0.18), ka, 0.044, 0.036, 6, WALNUT, PATH_MAT.WOOD, false);
+      // Warm burnished brass tie-collar at the apex
+      m.cyl([ka[0], ka[1] - 0.05, ka[2]], [ka[0], ka[1] + 0.05, ka[2]], 0.052, 0.052, 6, BRASS, PATH_MAT.BRASS, false);
+    }
+  }
+
+  for (let i = 0; i < stripFrames.length; i++) {
+    const f = stripFrames[i];
+    const rOff = f.halfW + 0.04;
+    lRailTop.push(ptAt(f, -rOff, 0.94));
+    rRailTop.push(ptAt(f, rOff, 0.94));
+    lRailMid.push(ptAt(f, -rOff, 0.48));
+    rRailMid.push(ptAt(f, rOff, 0.48));
+    keelPts.push(ptAt(f, 0, -0.46));
+    brassTrimL.push(ptAt(f, -(runnerHalfW + 0.025), 0.012));
+    brassTrimR.push(ptAt(f, runnerHalfW + 0.025, 0.012));
+  }
+
+  // Smooth warm handrails, bronze mid-rails, inlaid brass runner border rods, and dark-walnut keel timber
+  m.tube(lRailTop, 0.034, 6, CEDAR, PATH_MAT.WOOD);
+  m.tube(rRailTop, 0.034, 6, CEDAR, PATH_MAT.WOOD);
+  m.tube(lRailMid, 0.013, 4, BRASS, PATH_MAT.BRASS);
+  m.tube(rRailMid, 0.013, 4, BRASS, PATH_MAT.BRASS);
+  m.tube(brassTrimL, 0.012, 4, GILT, PATH_MAT.BRASS);
+  m.tube(brassTrimR, 0.012, 4, GILT, PATH_MAT.BRASS);
+  m.tube(keelPts, 0.068, 6, WALNUT, PATH_MAT.WOOD);
+
+  // Turned dark-walnut timber balustrade posts with gilded brass caps (and warm glowing orbs near the portal summit)
+  for (let i = 2; i < stripFrames.length - 1; i += 5) {
+    const f = stripFrames[i];
+    const nearPortal = f.p[1] > 21.5;
+    for (const sd of [-1, 1] as const) {
+      const foot = ptAt(f, sd * (f.halfW + 0.04), 0);
+      m.cyl([foot[0], foot[1] - 0.06, foot[2]], [foot[0], foot[1] + 0.96, foot[2]], 0.038, 0.030, 6, WALNUT, PATH_MAT.WOOD, false);
+      m.cyl([foot[0], foot[1] + 0.96, foot[2]], [foot[0], foot[1] + 1.02, foot[2]], 0.044, 0.026, 6, GILT, PATH_MAT.BRASS);
+      if (nearPortal) {
+        m.ellipsoid([foot[0], foot[1] + 1.08, foot[2]], 0.062, 0.062, 0.062, 6, 4, ((i / 5) & 1) ? CYAN_GLOW : GOLD_GLOW, PATH_MAT.GLOW, i * 0.25);
       }
     }
+  }
 
-    // Floating pointed Moorish/Islamic ogee golden arches soaring overhead along the spiral
-    if (withArches) {
-      let archIdx = 0;
-      for (let i = 10; i < stripFrames.length - 8; i += 12) {
-        buildCelestialArch(m, stripFrames[i], lanterns, archIdx++);
-      }
-    } else {
-      // Two grand gateway ogee arches framing the final ascent straight into the dome portal
-      buildCelestialArch(m, stripFrames[Math.floor(stripFrames.length * 0.25)], lanterns, 11);
-      buildCelestialArch(m, stripFrames[Math.floor(stripFrames.length * 0.65)], lanterns, 12);
-    }
-  };
-
-  buildCelestialStrip(SPIRAL_RANGE[0], SPIRAL_RANGE[1], true);
-  buildCelestialStrip(SUMMIT_RANGE[0], SUMMIT_RANGE[1], false);
+  // Carved walnut-and-brass Moorish horseshoe arches soaring overhead along the climb;
+  // the final 3 arches approaching y = 26.2 m shine as luminous cyan-and-gold portal beacons!
+  let archIdx = 0;
+  for (let i = 16; i < stripFrames.length - 12; i += 16) {
+    const f = stripFrames[i];
+    const portalBeacon = f.p[1] >= 20.5;
+    buildAlhambraArch(m, f, lanterns, archIdx++, portalBeacon);
+  }
 
   cached = m.finish(lanterns);
   return cached;

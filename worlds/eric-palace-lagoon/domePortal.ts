@@ -8,12 +8,7 @@ import {
   clamp,
   cos,
   dot,
-  exp,
   float,
-  floor,
-  fract,
-  max,
-  min,
   mix,
   normalWorld,
   normalize,
@@ -22,28 +17,33 @@ import {
   pow,
   sin,
   smoothstep,
-  step,
+  texture,
   time,
   uniform,
-  vec2,
+  uv,
   vec3,
   vec4,
 } from 'three/tsl';
 import type { PortalDefinition, PortalVisualHandle } from '@portalverse/core/types';
-import { createPortalVortexMaterial } from '@portalverse/core/shaders/portalShaders';
+import { createEnergyRingMaterial, createPortalVortexMaterial } from '@portalverse/core/shaders/portalShaders';
+import { createFloatingLabel } from '@portalverse/core/engine/signage';
 import { PALACE, ROTUNDA } from './layout';
-import { DOME_ARRIVAL_SPAWN, DOME_PORTAL_Y } from './path/curve';
+import { DOME_ARRIVAL_SPAWN, DOME_PORTAL_Y, PORTAL_THRESHOLD_FRAME } from './path/curve';
 
 /**
- * Full-dome exit portal for the Palace of Fine Arts rotunda.
+ * Full-dome Alhambra Spanish-tile exit portal for the Palace of Fine Arts rotunda.
  *
- * The entire inner dome vault (34 m wide, arching from y = 25.5 m to y = 42.6 m) is a giant custom
- * live portal aperture looking into the next room in the Portalverse loop. Draped inside it is a
- * procedural WebGPU TSL shell of iridescent Arabic / Moroccan zellige & girih geometric star tiles:
- * from the boardwalk and podium floor below, the dome gleams as a gilded cobalt-turquoise-emerald
- * mosaic vault; as you ascend the arching celestial sky-path (or fly up toward the dome), the tiles
- * dissolve radially tile-by-tile in a molten-gold wave from the crown rosette outward to reveal the
- * live destination world spanning the entire dome roof.
+ * The entire inner dome vault (34 m wide, arching from y = 25.5 m to y = 42.6 m) is a giant live
+ * portal aperture looking into the next room in the Portalverse loop. Draped inside it is a
+ * museum-grade Granada / Alhambra Nasrid ceramic zellige dome mosaic mapped via seamless
+ * azimuthal equidistant projection (zero polar pinching or stretching):
+ *   - From the colonnade, meadow, boardwalk, and lower spiral, the vault gleams as an ornate
+ *     kiln-fired Spanish ceramic dome with glazed Fresnel luster and gilded filigree highlights.
+ *   - As you ascend the fluid wooden spiral toward the summit, the tiles bloom open radially from
+ *     the 16-pointed zenith rosette in a molten-gold wave to reveal the live next room overhead.
+ *   - Right where the fluid spiral glides across DOME_PORTAL_Y (26.2 m) at dead center, an
+ *     unmistakable glowing Portalverse threshold ring + floating destination sign frames the
+ *     exact crossing point so you always know you are stepping straight into the next room.
  */
 
 const DOME_RADIUS = 17.15;
@@ -55,11 +55,35 @@ const CROSSING_RADIUS = 15.6;
  * Create an inward-facing hemispherical dome geometry oriented in portal-local space:
  * local +Z points DOWN into the rotunda (toward the viewer), local -Z arches UP to the dome crown.
  * Winding is reversed so THREE.FrontSide faces INWARD (matching PortalPreviews' oneWay FrontSide).
+ *
+ * UVs use azimuthal equidistant projection from the zenith crown (`u = 0.5 + 0.49 * rho * cos(theta)`,
+ * `v = 0.5 + 0.49 * rho * sin(theta)`), eliminating polar pinching and UV seams entirely.
  */
 function createInwardDomeGeometry(radius: number, widthSegs: number, heightSegs: number): THREE.SphereGeometry {
   const geo = new THREE.SphereGeometry(radius, widthSegs, heightSegs, 0, Math.PI * 2, 0, Math.PI * 0.495);
   // Rotate so the north pole (0, +R, 0) moves to (0, 0, -R) (world +Y when group.rotation.x = +PI/2)
   geo.rotateX(-Math.PI / 2);
+
+  // Assign seamless azimuthal equidistant UVs BEFORE translating by DOME_BASE_OFFSET_Z
+  const posAttr = geo.getAttribute('position');
+  const uvAttr = geo.getAttribute('uv');
+  if (posAttr && uvAttr) {
+    for (let i = 0; i < posAttr.count; i++) {
+      const px = posAttr.getX(i);
+      const py = posAttr.getY(i);
+      const pz = posAttr.getZ(i);
+      const len = Math.hypot(px, py, pz) || 1;
+      const nx = px / len;
+      const ny = py / len;
+      const nz = pz / len;
+      const rhoNorm = Math.acos(Math.min(1, Math.max(0, -nz))) / (Math.PI * 0.5);
+      const theta = Math.atan2(ny, nx);
+      const rUV = 0.488 * rhoNorm;
+      uvAttr.setXY(i, 0.5 + rUV * Math.cos(theta), 0.5 + rUV * Math.sin(theta));
+    }
+    uvAttr.needsUpdate = true;
+  }
+
   geo.translate(0, 0, DOME_BASE_OFFSET_Z);
 
   // Reverse triangle winding and invert normals so FrontSide faces the interior of the rotunda
@@ -85,8 +109,15 @@ function createInwardDomeGeometry(radius: number, widthSegs: number, heightSegs:
   return geo;
 }
 
-/** Procedural iridescent Arabic / Moroccan zellige & girih dome mosaic shader with tile-by-tile proximity fade. */
-function createArabicMosaicMaterial(colorA: string, colorB: string) {
+/**
+ * Glazed Granada / Alhambra Spanish ceramic tile dome shader with kiln-fired Fresnel luster
+ * and radial 16-petal molten-gold dissolve as the player climbs toward the portal threshold.
+ */
+function createAlhambraMosaicMaterial(
+  colorA: string,
+  colorB: string,
+  mosaicTexture: THREE.Texture | null,
+) {
   const uReveal = uniform(0.0);
   const uAccentA = uniform(new THREE.Color(colorA));
   const uAccentB = uniform(new THREE.Color(colorB));
@@ -98,132 +129,48 @@ function createArabicMosaicMaterial(colorA: string, colorB: string) {
   material.fog = false;
 
   const mosaicFn = Fn(() => {
-    // Local dome coordinates (crown at z = DOME_BASE_OFFSET_Z - R, base cornice at z = DOME_BASE_OFFSET_Z)
     const lp = positionLocal.sub(vec3(0.0, 0.0, DOME_BASE_OFFSET_Z));
     const nDir = normalize(lp);
-    const theta = atan(nDir.y, nDir.x); // -pi .. pi around dome
-    const elev = clamp(nDir.z.negate(), float(0.0), float(1.0)); // 0 at base, 1 at crown
-    const rho = acos(elev); // 0 at crown, pi/2 at base
-    const rhoNorm = clamp(rho.div(float(1.5707963)), float(0.0), float(1.0));
+    const theta = atan(nDir.y, nDir.x);
+    const elev = clamp(nDir.z.negate(), float(0.0), float(1.0));
+    const rhoNorm = clamp(acos(elev).div(float(1.5707963)), float(0.0), float(1.0));
 
-    // ---- 24-fold radial girih tessellation + staggered dual muqarnas lattice
-    const radialRepeats = float(24.0);
-    const tierRepeats = float(10.0);
-    const uCoord = theta.div(float(6.2831853)).add(0.5).mul(radialRepeats);
-    const vCoord = rhoNorm.mul(tierRepeats);
+    // Sample the high-detail Alhambra Spanish ceramic tile dome texture (or warm cobalt/gold fallback if unavailable)
+    const sampled = mosaicTexture
+      ? texture(mosaicTexture, uv()).xyz
+      : mix(vec3(0.06, 0.16, 0.40), vec3(0.86, 0.66, 0.24), smoothstep(float(0.35), float(0.05), rhoNorm));
 
-    // Primary 8-point Rub el Hizb Islamic star lattice
-    const cellA = fract(vec2(uCoord, vCoord)).sub(0.5);
-    const idA = floor(vec2(uCoord, vCoord));
-    const aA = abs(cellA);
-    const pA = vec2(max(aA.x, aA.y), min(aA.x, aA.y));
-    const sqA = max(pA.x, pA.y).sub(0.31);
-    const rotA = pA.x.add(pA.y).mul(0.7071068).sub(0.31);
-    const starA = min(sqA, rotA);
-    const octA = max(sqA, rotA);
-
-    // Staggered dual lattice (interlocking rosettes & kites between primary stars)
-    const cellB = fract(vec2(uCoord.add(0.5), vCoord.add(0.5))).sub(0.5);
-    const aB = abs(cellB);
-    const pB = vec2(max(aB.x, aB.y), min(aB.x, aB.y));
-    const sqB = max(pB.x, pB.y).sub(0.25);
-    const rotB = pB.x.add(pB.y).mul(0.7071068).sub(0.25);
-    const starB = min(sqB, rotB);
-
-    // 16-fold Royal Shamsa sunburst rosette at the zenith crown
-    const crownMask = smoothstep(float(0.26), float(0.06), rhoNorm);
-    const petalWave = abs(cos(theta.mul(8.0).add(time.mul(0.04)))).mul(0.06)
-      .add(abs(cos(theta.mul(16.0).sub(time.mul(0.03)))).mul(0.024));
-    const shamsaRing = abs(rhoNorm.sub(float(0.15).add(petalWave)));
-    const shamsaCore = abs(rhoNorm.sub(float(0.065).add(petalWave.mul(0.45))));
-    const shamsaRays = pow(abs(cos(theta.mul(8.0))), float(18.0)).mul(crownMask);
-    const shamsaLine = max(
-      max(
-        exp(shamsaRing.div(0.007).pow(2.0).negate()),
-        exp(shamsaCore.div(0.006).pow(2.0).negate()),
-      ),
-      shamsaRays.mul(0.85),
-    ).mul(smoothstep(float(0.34), float(0.14), rhoNorm));
-
-    // Intricate interlacing strapwork & 24k gold filigree grout lines
-    const lineA = exp(abs(starA).div(0.025).pow(2.0).negate());
-    const innerLineA = exp(abs(octA.add(0.09)).div(0.020).pow(2.0).negate()).mul(0.85);
-    const lineB = exp(abs(starB).div(0.023).pow(2.0).negate()).mul(0.9);
-    const ribLine = exp(abs(cellA.x).div(0.015).pow(2.0).negate()).mul(0.28);
-    const corniceFrieze = smoothstep(float(0.88), float(0.95), rhoNorm);
-    const friezeArch = exp(abs(fract(uCoord.mul(2.0)).sub(0.5)).div(0.04).pow(2.0).negate()).mul(corniceFrieze);
-    const goldGrouts = clamp(
-      max(max(lineA, innerLineA), max(lineB, max(shamsaLine, max(ribLine, friezeArch)))),
-      float(0.0),
-      float(1.0),
-    );
-
-    // Per-tile deterministic hash for handcrafted Moroccan zellige color variation
-    const hashDot = dot(idA, vec2(127.1, 311.7));
-    const tileRand = fract(sin(hashDot).mul(43758.5453));
-    const inStarA = step(starA, float(0.0));
-    const inStarB = step(starB, float(0.0));
-
-    // ---- Deep jewel-toned Moroccan Zellige palette tuned for ACES Filmic (Alhambra / Shah Mosque lusterware)
-    const lapis = vec3(0.018, 0.055, 0.24);
-    const turquoise = vec3(0.015, 0.26, 0.30);
-    const emerald = vec3(0.012, 0.16, 0.12);
-    const amethyst = vec3(0.11, 0.032, 0.22);
-    const pearl = vec3(0.36, 0.31, 0.24);
-    const gold = vec3(0.92, 0.62, 0.16);
-
-    const fieldCol = mix(lapis, mix(emerald, amethyst, smoothstep(float(0.3), float(0.8), tileRand)), inStarB);
-    const starCol = mix(turquoise, pearl, smoothstep(float(0.6), float(0.95), tileRand).mul(0.35));
-    const baseTile = mix(fieldCol, starCol, inStarA);
-    const enriched = mix(baseTile, mix(turquoise, gold, float(0.52)), crownMask.mul(0.55));
-
-    // ---- True thin-film ceramic iridescence (rich metallic turquoise -> violet -> gold shimmer with view angle)
+    // Warm kiln-fired ceramic glaze sheen + subtle golden highlight on bright gilded tilework
     const viewDir = normalize(cameraPosition.sub(positionWorld));
     const ndotv = clamp(abs(dot(normalWorld, viewDir)), float(0.0), float(1.0));
-    const fresnel = pow(float(1.0).sub(ndotv), 2.2);
-    const iridPhase = tileRand.mul(0.45)
-      .add(fresnel.mul(0.85))
-      .add(rhoNorm.mul(0.6))
-      .sub(time.mul(0.05));
-    const spectrum = vec3(
-      cos(iridPhase.mul(6.28318)).mul(0.5).add(0.5),
-      cos(iridPhase.mul(6.28318).add(2.094)).mul(0.5).add(0.5),
-      cos(iridPhase.mul(6.28318).add(4.188)).mul(0.5).add(0.5),
-    );
-    const luster = mix(enriched, enriched.mul(0.55).add(spectrum.mul(0.34)), float(0.22).add(fresnel.mul(0.55)));
+    const fresnel = pow(float(1.0).sub(ndotv), 2.4);
+    const breath = sin(time.mul(1.2).sub(rhoNorm.mul(5.5))).mul(0.5).add(0.5);
+    const warmth = clamp(sampled.x.sub(sampled.z), float(0.0), float(1.0));
+    const goldLuster = vec3(1.0, 0.78, 0.34).mul(warmth.mul(float(0.16).add(breath.mul(0.10)).add(fresnel.mul(0.28))));
+    const glazeSheen = mix(vec3(0.95, 0.88, 0.76), uAccentA, float(0.22)).mul(fresnel.mul(0.18));
 
-    // Subtle alive portal shimmer pulsing through the gilded strapwork
-    const breath = sin(time.mul(1.4).sub(rhoNorm.mul(6.0))).mul(0.5).add(0.5);
-    const goldShimmer = gold.mul(float(1.05).add(breath.mul(0.38)).add(fresnel.mul(0.55)));
-    let col = mix(luster, goldShimmer, goldGrouts);
-    col = col.add(uAccentA.mul(inStarA.mul(0.08).mul(breath)));
+    // Gently boost contrast & richness for ACES Filmic so the Granada cobalt/turquoise/gold gleams vibrantly
+    let col = sampled.mul(float(1.08)).add(goldLuster).add(glazeSheen);
 
-    // ---- Sacred-geometry star-by-star dissolve as the player climbs closer (uReveal: 0 -> 1)
-    // Uses continuous star SDF + scalloped radial petal wave (no boxy grid squares!):
-    // the royal Shamsa crown blooms open first, then each interlocking Islamic star melts away in molten gold.
-    const petalRipple = cos(theta.mul(12.0)).mul(0.035).add(sin(theta.mul(24.0).add(rhoNorm.mul(8.0))).mul(0.015));
-    const starShape = clamp(starA.mul(0.35).add(starB.mul(0.20)), float(-0.14), float(0.14));
-    const tileOrder = rhoNorm.mul(0.82)
-      .add(petalRipple)
-      .add(starShape)
-      .add(tileRand.mul(0.06))
-      .add(goldGrouts.mul(0.07));
-    const wave = uReveal.mul(1.22);
-    const dissolve = smoothstep(tileOrder.sub(0.065), tileOrder.add(0.065), wave);
+    // ---- Radial 16-petal Alhambra zenith dissolve as you ascend the wooden spiral (uReveal: 0 -> 1)
+    const petalWave = cos(theta.mul(16.0)).mul(0.032).add(sin(theta.mul(8.0).add(rhoNorm.mul(6.0))).mul(0.018));
+    // Gold filigree melts slightly after ceramic infill so the gilded tracery sparkles along the dissolving edge
+    const goldDelay = warmth.mul(0.055);
+    const tileOrder = rhoNorm.mul(0.84).add(petalWave).add(goldDelay);
+    const wave = uReveal.mul(1.24);
+    const dissolve = smoothstep(tileOrder.sub(0.07), tileOrder.add(0.07), wave);
 
-    // Keep the lower golden arabesque cornice frieze glowing as a royal frame around the giant open portal
-    const keepBorder = smoothstep(float(0.90), float(0.965), rhoNorm);
-    const effectiveDissolve = dissolve.mul(float(1.0).sub(keepBorder.mul(0.88)));
+    // Preserve the gilded perimeter cornice band framing the open sky portal
+    const keepBorder = smoothstep(float(0.91), float(0.97), rhoNorm);
+    const effectiveDissolve = dissolve.mul(float(1.0).sub(keepBorder.mul(0.90)));
 
-    // Molten iridescent gold + portal-accent flare right along the dissolving geometric star rim
+    // Molten 24k gold + destination portal accent glow right along the dissolving petal rim
     const edgeGlow = smoothstep(float(0.0), float(0.45), effectiveDissolve)
       .mul(smoothstep(float(1.0), float(0.45), effectiveDissolve));
-    const edgeColor = mix(gold, mix(uAccentA, uAccentB, float(0.35)), float(0.42)).mul(2.4);
+    const edgeColor = mix(vec3(1.0, 0.74, 0.22), mix(uAccentA, uAccentB, float(0.35)), float(0.38)).mul(2.2);
     col = col.add(edgeColor.mul(edgeGlow));
 
-    const closedAlpha = float(0.985).sub(inStarA.mul(0.03).mul(breath));
-    const alpha = clamp(closedAlpha.mul(float(1.0).sub(effectiveDissolve)), float(0.0), float(1.0));
-
+    const alpha = clamp(float(0.99).mul(float(1.0).sub(effectiveDissolve)), float(0.0), float(1.0));
     return vec4(col, alpha);
   });
 
@@ -240,9 +187,12 @@ export interface DomePortalHandle extends PortalVisualHandle {
 }
 
 /**
- * Create the Palace Lagoon's giant dome-roof exit portal replacing the standard route gate ring.
+ * Create the Palace Lagoon's giant Alhambra dome-roof exit portal + unmistakable summit threshold gateway.
  */
-export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
+export function createDomePortal(
+  gate: PortalDefinition,
+  mosaicTexture: THREE.Texture | null = null,
+): DomePortalHandle {
   const portal: PortalDefinition = {
     ...gate,
     position: [PALACE.at[0], DOME_PORTAL_Y, PALACE.at[1]],
@@ -270,9 +220,9 @@ export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
   aperture.userData.useFullOrientation = true;
   group.add(aperture);
 
-  // 2. Iridescent Arabic / Moroccan geometric mosaic shell that dissolves tile-by-tile as you get closer
+  // 2. High-detail Alhambra / Granada Spanish ceramic tile dome shell that blooms open as you climb
   const mosaicGeo = createInwardDomeGeometry(MOSAIC_RADIUS, 72, 36);
-  const { material: mosaicMat, uReveal } = createArabicMosaicMaterial(portal.colorA!, portal.colorB!);
+  const { material: mosaicMat, uReveal } = createAlhambraMosaicMaterial(portal.colorA!, portal.colorB!, mosaicTexture);
   const mosaic = new THREE.Mesh(mosaicGeo, mosaicMat);
   mosaic.renderOrder = 12;
   group.add(mosaic);
@@ -300,8 +250,83 @@ export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
   halo.position.z = DOME_BASE_OFFSET_Z + 0.05;
   group.add(halo);
 
+  // 4. UNMISTAKABLE PORTAL THRESHOLD GATEWAY standing right across the fluid wooden spiral at y = 26.2 m!
+  // Undo parent +PI/2 X rotation so this child sits in standard upright world space (+Y up, -Z forward).
+  const thresholdFrame = PORTAL_THRESHOLD_FRAME;
+  const thresholdGroup = new THREE.Group();
+  thresholdGroup.rotation.x = -Math.PI / 2;
+  // Convert world offset from portal center into parent-rotated local coords:
+  // parent rotates (lx, ly, lz) -> world (lx, -lz, ly), so world (dx, dy, dz) -> local (dx, dz, -dy).
+  const tDx = thresholdFrame.p[0] - portal.position[0];
+  const tDy = thresholdFrame.p[1] - portal.position[1];
+  const tDz = thresholdFrame.p[2] - portal.position[2];
+  thresholdGroup.position.set(tDx, tDz, -tDy);
+  group.add(thresholdGroup);
+
+  const gatewayRig = new THREE.Group();
+  gatewayRig.rotation.y = Math.atan2(-thresholdFrame.t[0], -thresholdFrame.t[1]);
+  thresholdGroup.add(gatewayRig);
+
+  const gateR = 2.55;
+  const gateRingGeo = new THREE.TorusGeometry(gateR, 0.14, 20, 72);
+  const { material: gateRingMat, hover: gateRingHover } = createEnergyRingMaterial(portal.colorA, portal.colorB);
+  const gateRing = new THREE.Mesh(gateRingGeo, gateRingMat);
+  gateRing.position.y = gateR;
+  gatewayRig.add(gateRing);
+
+  const gateHaloGeo = new THREE.TorusGeometry(gateR + 0.30, 0.048, 12, 72);
+  const gateHaloMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(portal.colorA),
+    transparent: true,
+    opacity: 0.82,
+  });
+  const gateHalo = new THREE.Mesh(gateHaloGeo, gateHaloMat);
+  gateHalo.position.y = gateR;
+  gatewayRig.add(gateHalo);
+
+  // Translucent luminous inner rim so the center stays crystal clear to gaze right into the blazing live next room
+  const veilGeo = new THREE.RingGeometry(gateR - 0.65, gateR - 0.06, 64);
+  const veilMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(portal.colorA),
+    transparent: true,
+    opacity: 0.28,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const veil = new THREE.Mesh(veilGeo, veilMat);
+  veil.position.y = gateR;
+  veil.renderOrder = 14;
+  gatewayRig.add(veil);
+
+  // Glowing golden threshold sill bar flush on the wooden spiral planks right at the crossing line
+  const sillGeo = new THREE.BoxGeometry(3.4, 0.06, 0.36);
+  const sillMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#fbbf24'),
+    emissive: new THREE.Color(portal.colorA),
+    emissiveIntensity: 0.9,
+    roughness: 0.25,
+    metalness: 0.75,
+  });
+  const sill = new THREE.Mesh(sillGeo, sillMat);
+  sill.position.y = 0.03;
+  gatewayRig.add(sill);
+
+  // Crisp floating destination sign hovering above the portal ring showing the next room's name
+  const destLabel = createFloatingLabel({
+    title: gate.label || 'Next Room',
+    subtitle: 'Walk Through → Next Room',
+    accentColor: portal.colorA,
+  });
+  destLabel.sprite.position.set(0, gateR * 2 + 0.85, 0);
+  gatewayRig.add(destLabel.sprite);
+
+  // Local warm + portal-accent light washing the wooden spiral planks at the threshold
+  const gateLight = new THREE.PointLight(new THREE.Color(portal.colorA), 4.5, 22, 1.4);
+  gateLight.position.set(0, gateR, 1.2);
+  gatewayRig.add(gateLight);
+
   // Subtle warm-gold interior light washing the upper dome cornice
-  const domeLight = new THREE.PointLight(new THREE.Color('#fbbf24'), 4.0, 32, 1.4);
+  const domeLight = new THREE.PointLight(new THREE.Color('#fbbf24'), 4.0, 34, 1.4);
   domeLight.position.set(0, 0, DOME_BASE_OFFSET_Z + 3.5);
   group.add(domeLight);
 
@@ -313,15 +338,13 @@ export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
       targetReveal = 0;
       return;
     }
-    // Distance from the dome crossing center (0, 26.2, -14):
-    // From the boardwalk, podium floor, and lower spiral (dist >= 20 m): full Arabic mosaic is intact (reveal = 0).
-    // As you climb the upper half of the spiral (dist 20 m -> 8.5 m) or fly up toward the dome:
-    // the Arabic geometric stars melt away in molten gold to reveal the live next room spanning the whole dome!
+    // Start blooming the Alhambra mosaic open slightly earlier (dist 24 m -> 9 m) so as you glide
+    // around the upper wooden spiral toward the glowing gateway ring, the live destination world is blazing ahead!
     const dx = pos.x - portal.position[0];
     const dy = (pos.y + 1.4) - portal.position[1];
     const dz = pos.z - portal.position[2];
     const dist = Math.hypot(dx, dy, dz);
-    const t = THREE.MathUtils.clamp((20.0 - dist) / (20.0 - 8.5), 0, 1);
+    const t = THREE.MathUtils.clamp((24.0 - dist) / (24.0 - 9.0), 0, 1);
     targetReveal = t * t * (3 - 2 * t);
   };
 
@@ -339,7 +362,7 @@ export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
     setPlayerPosition: updateRevealFromPos,
     setProximity: (p) => {
       vortexUniforms.proximity.value = p;
-      // Fallback if room's onUpdate hasn't pushed player position yet
+      gateRingHover.value = 0.25 + p * 0.95;
       if (p > targetReveal) targetReveal = p;
     },
     update: (dt, elapsed) => {
@@ -350,6 +373,14 @@ export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
       haloMat.opacity = 0.42 + currentReveal * 0.45 + Math.sin(elapsed * 2.1) * 0.08;
       ringMat.emissiveIntensity = 0.38 + currentReveal * 0.65 + Math.sin(elapsed * 1.7) * 0.08;
       domeLight.intensity = 3.5 + currentReveal * 4.0 + Math.sin(elapsed * 2.4) * 0.4;
+
+      // Animate the summit threshold gateway ring & shimmer so entering the portal feels magnetic & unmistakable
+      gateHalo.rotation.z = elapsed * 0.65;
+      gateHalo.rotation.y = Math.sin(elapsed * 0.95) * 0.14;
+      gateHaloMat.opacity = 0.68 + currentReveal * 0.28 + Math.sin(elapsed * 3.0) * 0.08;
+      veilMat.opacity = 0.18 + currentReveal * 0.26 + Math.sin(elapsed * 2.8) * 0.06;
+      sillMat.emissiveIntensity = 0.75 + currentReveal * 0.9 + Math.sin(elapsed * 2.6) * 0.15;
+      gateLight.intensity = 3.8 + currentReveal * 4.2 + Math.sin(elapsed * 3.1) * 0.5;
     },
     dispose: () => {
       apertureGeo.dispose();
@@ -360,6 +391,15 @@ export function createDomePortal(gate: PortalDefinition): DomePortalHandle {
       ringMat.dispose();
       haloGeo.dispose();
       haloMat.dispose();
+      gateRingGeo.dispose();
+      gateRingMat.dispose();
+      gateHaloGeo.dispose();
+      gateHaloMat.dispose();
+      veilGeo.dispose();
+      veilMat.dispose();
+      sillGeo.dispose();
+      sillMat.dispose();
+      destLabel.dispose();
     },
   };
 }
