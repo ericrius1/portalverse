@@ -287,11 +287,11 @@
     },
     {
       "id": "doug-cassette-station",
-      "name": "Midnight Cassette Station",
+      "name": "Sector 9 Rain Corner",
       "owner": "douglascalhoun",
       "author": "Doug (douglascalhoun)",
-      "description": "A calming blue-hour rain-washed cyber-tramway & glowing moss conservatory with neon-reflecting rain puddles, floating holographic koi, a giant spinning cassette arch, sleeping station cat, glowing vending machines, 24H steaming tea stall, channel-switching 90s CRT shrine, singing red payphone, lo-fi synth tiles, twilight monorail, and five hidden mixtapes.",
-      "accentColor": "#5eead4",
+      "description": "A dense Blade Runner Neo-Tokyo street corner under a dead-channel static sky behind low rain clouds: day/night & dynamic rain cycle, White Dragon open-air noodle bar, scheduled cyber shops, future-punks & animal-hybrid humans on foot and neon scooters dissolving into polygon wireframes at the street edge, a rare sparking Electro-Punk Trolley stopping for passengers, live NPC dialogue, and five hidden easter eggs.",
+      "accentColor": "#22d3ee",
       "kind": "local",
       "allowFlight": true,
       "spawns": {
