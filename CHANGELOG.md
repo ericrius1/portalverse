@@ -2,6 +2,22 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Sector 9 Rain Corner — Neo-Tokyo Blade Runner Evolution (`doug-cassette-station`) — Unreleased (2026-11-27)
+
+### Changed
+
+- **Transformed `worlds/doug-cassette-station/` (`"Sector 9 Rain Corner"`, owner `douglascalhoun`)** into a single dense, living **Neo-Tokyo Blade Runner street corner**:
+  - **Dead-Channel Static Sky, Day/Night Cycle & Dynamic Rain (`shaders.ts`, `worldState.ts`)**: replaced blue sky with a fog-exempt TSL television-static sky peeking eerily behind drifting low rain clouds and wispy smog across a continuous Dusk → Midnight → Pre-Dawn → Hazy Static Day cycle, paired with dynamic rain (~70% downpour/drizzle, ~30% misty static-sky breaks) driving raindrops, wet-puddle ripples, NPC neon umbrellas, and dynamic pink-noise rain audio.
+  - **Four Scheduled Street-Corner Shops & Bustle (`city.ts`)**: built the iconic Blade Runner **White Dragon Noodle Bar** (`龍麺`) with open-air chrome counter, 6 outdoor stools, sizzling broth cauldron, interactive noodle ordering, and Chef Kenta; **Kuro's Cyber-Optics & Bio-Mod Clinic** with floating holo-eyes & hovering calibration drone; **Analog Ghost** CRT & cassette shop with channel-switching 1990s monitors; and **Gekko Mart 24H Conbini** with glowing vending machines and stray bio-cat Mochi-X — each running its own day/night schedule and attached NPC routine.
+  - **Future-Punks, Bio-Engineered Animal-Hybrid Humans, Neon Scooters & Polygon-Mesh Dissolve (`characters.ts`)**: fully modeled articulated future-punks and 4 bio-hybrid species (kitsune, neko, okami, usagi) walking sidewalks, dining, waiting at the bus stop, and cruising on neo-futuristic scooters — smoothly dissolving from solid meshes into translucent glowing cyan/magenta polygon wireframes (`computeDissolveFactors`) before disappearing at the edge of the street.
+  - **Rare Electro-Punk Trolley (`city.ts`, `worldState.ts`)**: sparking streetcar that materializes from wireframes, stops smoothly at the covered Sector 9 bus stop with live countdown signage, opens its doors to board waiting commuters, and dissolves back into polygons as it departs.
+  - **Interactive NPC Dialogue, Subplots & 5 Easter Eggs (`audioHud.ts`)**: proximity cyberpunk dialogue terminal with `[F]` line cycling across interconnected rumors about the static sky and Block 32 wireframe boundary, plus 5 hidden secrets (Foil Origami Unicorn, Cassette `DEAD CHANNEL 88`, Voight-Class Iris Scanner, Trolley Pass #404, and Bio-Cat Mochi-X).
+
+### Design & engineering decisions
+
+- **Single dense street corner + simulation-seam storytelling**: concentrated architecture tightly around one rain-washed intersection while keeping the portal-to-portal road strictly flat at `Y = 0`, turning distance culling into an intentional aesthetic & narrative centerpiece (dissolving into glowing polygon wireframes alongside the dead-channel static sky).
+- **Zero-bloat procedural WebGPU performance**: kept all buildings, articulated characters, scooters, trolley, neon signs, CRT screens, and TSL shaders 100% procedural (~0.10 MiB folder size vs. 12 MiB budget) with `await ctx.breathe()` yields and strict active-only cleanup for audio and HUD DOM elements.
+
 ## Midnight Cassette Station (`doug-cassette-station`) — Unreleased (2026-11-27)
 
 ### Added

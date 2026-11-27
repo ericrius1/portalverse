@@ -3,48 +3,87 @@ import type { RoomCollider, Vec3Tuple } from '@portalverse/core/types';
 export const ENTRANCE_Z = 36.25;
 export const EXIT_Z = -36.25;
 
-/** Central promenade stays level at Y = 0 from portal to portal; gentle raised curbs flank the sides. */
-export const PROMENADE_HALF_WIDTH = 4.6;
+/** Wet asphalt road corridor runs along X in [-4.8, +4.8], completely level at Y = 0 from portal to portal. */
+export const ROAD_HALF_WIDTH = 4.8;
 
-/** Key landmark positions along the rain-washed twilight station promenade. */
-export const SHELTER_POS = { x: -7.8, z: 12.0 } as const;
-export const CAT_BENCH_POS = { x: -6.9, z: 12.2 } as const;
-export const VENDING_ROW_POS = { x: 7.4, z: 14.5 } as const;
-export const RAMEN_KIOSK_POS = { x: -8.2, z: -11.5 } as const;
-export const CRT_NOOK_POS = { x: 7.5, z: -2.0 } as const;
-export const PHONE_BOOTH_POS = { x: -7.2, z: -0.5 } as const;
-export const CASSETTE_ARCH_Z = 2.0;
+/** Key Neo-Tokyo Street Corner landmark coordinates. */
+export const NOODLE_BAR_POS = { x: -8.6, z: 6.2 } as const;
+export const OPTICS_SHOP_POS = { x: 8.8, z: 8.2 } as const;
+export const ANALOG_SHOP_POS = { x: -8.8, z: -10.8 } as const;
+export const CONBINI_POS = { x: 8.8, z: -10.2 } as const;
+export const BUS_STOP_POS = { x: 6.2, z: -1.0 } as const;
+export const TROLLEY_TRACK_X = 2.6;
+export const SCOOTER_LANE_NORTH_X = -1.6;
+export const SCOOTER_LANE_SOUTH_X = 0.8;
 
-/** Five recessed neon glass synth tiles along the central promenade (tuned to B major / G# minor). */
-export const SYNTH_PADS: ReadonlyArray<{ x: number; z: number; freq: number; color: string; note: string }> = [
-  { x: -1.8, z: 18.0, freq: 493.88, color: '#5eead4', note: 'B4' },
-  { x: 1.7, z: 10.5, freq: 554.37, color: '#38bdf8', note: 'C#5' },
-  { x: -1.6, z: 2.0, freq: 622.25, color: '#f472b6', note: 'D#5' },
-  { x: 1.8, z: -7.5, freq: 739.99, color: '#fbbf24', note: 'F#5' },
-  { x: -1.7, z: -16.5, freq: 830.61, color: '#c084fc', note: 'G#5' },
-];
-
-/** Five nostalgic glowing cassette tapes tucked near the station's cozy details. */
-export const CASSETTE_SPOTS: ReadonlyArray<{ id: string; title: string; spot: string; x: number; z: number; color: string }> = [
-  { id: 'blue-hour', title: 'Side A: Blue Hour Rain', spot: 'by the cat waiting bench', x: -5.4, z: 14.2, color: '#38bdf8' },
-  { id: 'peach-fizz', title: 'Side A: Midnight Vending Fizz', spot: 'by the glowing vending row', x: 5.4, z: 16.2, color: '#fb7185' },
-  { id: 'dial-tone', title: 'Side B: Rainy Payphone Echo', spot: 'outside the red phone booth', x: -5.5, z: 1.4, color: '#facc15' },
-  { id: 'crt-dream', title: 'Side B: Static & CRT Glow', spot: 'beside the retro CRT stack', x: 5.6, z: -4.2, color: '#5eead4' },
-  { id: 'noodle-steam', title: 'Bonus Track: 2AM Matcha Steam', spot: 'near the lantern tea kiosk', x: -5.6, z: -9.2, color: '#c084fc' },
+/** 5 Hidden Blade Runner / Neo-Tokyo Easter Eggs around the street corner. */
+export const EASTER_EGGS: ReadonlyArray<{
+  id: string;
+  name: string;
+  location: string;
+  lore: string;
+  x: number;
+  z: number;
+  color: string;
+}> = [
+  {
+    id: 'origami-unicorn',
+    name: 'Foil Origami Unicorn',
+    location: 'by the White Dragon Noodle counter',
+    lore: '"Too bad she won\'t live... but then again, who does?"',
+    x: -5.5,
+    z: 9.6,
+    color: '#e2e8f0',
+  },
+  {
+    id: 'dead-channel-tape',
+    name: 'Cassette: DEAD CHANNEL 88',
+    location: 'behind Analog Ghost\'s CRT shrine',
+    lore: 'Labelled: "When the rain parts, look up. The sky is tuned to a dead channel."',
+    x: -5.7,
+    z: -7.6,
+    color: '#22d3ee',
+  },
+  {
+    id: 'ocular-scanner',
+    name: 'Voight-Class Iris Scanner',
+    location: 'outside Kuro\'s Bio-Mod Clinic',
+    lore: 'Frozen screen reads: "BASELINE: TORTOISE IN DESERT — EMOTIONAL RESPONSE DETECTED."',
+    x: 5.9,
+    z: 11.4,
+    color: '#34d399',
+  },
+  {
+    id: 'trolley-pass-404',
+    name: 'Trolley Pass #404',
+    location: 'on the Sector 9 Tram Stop bench',
+    lore: 'Stamped: "DESTINATION: BEYOND BLOCK 32 — PASSENGERS DISSOLVE INTO POLYGONS."',
+    x: 6.6,
+    z: 1.4,
+    color: '#f472b6',
+  },
+  {
+    id: 'mochi-x',
+    name: 'Stray Bio-Cat Mochi-X',
+    location: 'sheltering under Gekko Mart\'s awning',
+    lore: 'Its tiny glowing ear-tag blinks: "PROPERTY OF NO ONE • 9 LIVES LEFT."',
+    x: 6.0,
+    z: -13.6,
+    color: '#fbbf24',
+  },
 ];
 
 /**
- * Walkable station height: completely level Y = 0 across the entire central promenade and both portals,
- * with a gentle 0.14m step onto the side station platforms (easily stepped onto or walked across).
+ * Walkable street height:
+ * - Strictly Y = 0 across the entire road corridor and within both portals (|z| > 26).
+ * - Smooth 0.14 m curb step up onto the tiled Neo-Tokyo sidewalks outside |x| > ROAD_HALF_WIDTH.
  */
 export function stationHeight(x: number, z: number): number {
-  // Keep both portals and approaches strictly flat at Y = 0
   if (Math.abs(z) > 26.5) return 0;
   const ax = Math.abs(x);
-  if (ax <= PROMENADE_HALF_WIDTH) return 0;
-  // Smooth beveled curb up to side platforms (+0.12m)
-  const t = Math.max(0, Math.min(1, (ax - PROMENADE_HALF_WIDTH) / 0.8));
-  return 0.12 * t * t * (3 - 2 * t);
+  if (ax <= ROAD_HALF_WIDTH) return 0;
+  const t = Math.max(0, Math.min(1, (ax - ROAD_HALF_WIDTH) / 0.55));
+  return 0.14 * t * t * (3 - 2 * t);
 }
 
 export interface SolidBox {
@@ -63,8 +102,8 @@ export interface SolidCylinder {
 }
 
 /**
- * Smooth sliding collider around vending machines, kiosks, phone booth, shelter posts, and planters.
- * Keeps the central portal-to-portal corridor completely open.
+ * Smooth sliding collider for buildings, shop counters, bus stop posts, and street props.
+ * Keeps the central street and sidewalks freely walkable.
  */
 export function createStationCollider(boxes: SolidBox[], cylinders: SolidCylinder[]): RoomCollider {
   return {
