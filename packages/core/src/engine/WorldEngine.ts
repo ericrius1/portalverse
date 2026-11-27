@@ -213,7 +213,13 @@ export class WorldEngine {
         callbacks.onCharacterChange?.(characterId);
       },
     );
-    this.playerView = { position: this.avatar.position, camera: this.camera };
+    const engine = this;
+    this.playerView = {
+      position: this.avatar.position, camera: this.camera,
+      turnToFace: target => this.avatar.turnToFace(target),
+      get grounded() { return engine.avatar.getMotionState().grounded; },
+      get inputEnabled() { return !engine.inputLocked && !engine.fallen && !engine.transitPortal; },
+    };
     this.frameMotion = {
       previousFeet: this.previousFeet,
       feet: this.avatar.position,

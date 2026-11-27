@@ -133,6 +133,8 @@ export class AvatarController {
   private virtualBoost = false;
   private virtualJumpHeld = false;
   private touchLookHandledExternally = false;
+  private chaseLift = 0;
+  private lookTurn?: { yaw: number; pitch: number; dyaw: number; dpitch: number; initialLift: number; start: number; duration: number };
   private activeDragPointerId: number | null = null;
   private readonly desiredCamPos = new THREE.Vector3();
   private readonly flyVel = new THREE.Vector3();
@@ -223,6 +225,7 @@ export class AvatarController {
   setInputLocked(locked: boolean): void {
     this.inputLocked = locked;
     if (locked) {
+      this.lookTurn = undefined;
       this.keys.clear();
       this.clearVirtualInputs();
       this.flyVel.set(0, 0, 0);
@@ -266,8 +269,45 @@ export class AvatarController {
   applyLookDelta(dx: number, dy: number, sensitivity = 0.0046): void {
     if (this.inputLocked) return;
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    if (dx || dy) this.lookTurn = undefined;
     this.yaw -= dx * sensitivity;
     this.pitch = THREE.MathUtils.clamp(this.pitch - dy * sensitivity, -1.32, 1.15);
+  }
+
+  /** One short eased turn along the shortest yaw arc. Mouse or touch look takes over immediately. */
+  turnToFace(target: THREE.Vector3): void {
+    if (this.inputLocked) return;
+    const x = target.x - this.position.x, z = target.z - this.position.z;
+    const range = Math.hypot(x, z);
+    const eyeY = this.position.y + 1.65;
+    const heading = range > 1e-6 ? Math.atan2(-x, -z) : this.yaw;
+    const dyaw = Math.atan2(Math.sin(heading - this.yaw), Math.cos(heading - this.yaw));
+    let pitch = Math.atan2(target.y - eyeY, range);
+    if (!this.firstPerson) {
+      // The chase camera sits behind the avatar and its boom stops at the ground.
+      // Solve for the orbit pitch that puts the target on its actual sightline.
+      const back = this.isFlying ? 7.2 : 5.6, ahead = this.isFlying ? 12 : 4;
+      const floor = this.sampleSurfaceHeight(this.position.x, this.position.z) + 0.65;
+      let low = -1.32, high = 1.15;
+      for (let i = 0; i < 14; i++) {
+        pitch = (low + high) / 2;
+        const cameraY = Math.max(floor, eyeY - Math.sin(pitch) * back + 1.15);
+        const offset = Math.cos(pitch) * back;
+        const aimY = eyeY + this.chaseRise(pitch, 1) * ahead;
+        if ((aimY - cameraY) * (range + offset) < (target.y - cameraY) * (ahead + offset)) low = pitch;
+        else high = pitch;
+      }
+    }
+    const dpitch = THREE.MathUtils.clamp(pitch, -1.32, this.firstPerson ? 1.38 : 1.15) - this.pitch;
+    const distance = Math.hypot(dyaw, dpitch);
+    if (distance < 1e-5) { this.lookTurn = undefined; return; }
+    this.lookTurn = { yaw: this.yaw, pitch: this.pitch, dyaw, dpitch,
+      initialLift: this.chaseLift, start: performance.now(), duration: distance / THREE.MathUtils.degToRad(330) * 1000 };
+  }
+
+  private chaseRise(pitch: number, lift = this.chaseLift): number {
+    // Once the boom nears the ground, continue tilting the view up over the character.
+    return Math.sin(pitch) * 0.7 + lift * 3 * Math.max(0, pitch - 0.65) ** 2;
   }
 
   /** When mobile touch controls own multi-touch look, ignore raw touch drags on the canvas. */
@@ -369,6 +409,8 @@ export class AvatarController {
     collider: RoomCollider | null = null,
     bounds: WalkBounds | null = null,
   ): void {
+    this.lookTurn = undefined;
+    this.chaseLift = 0;
     this.platforms = platforms;
     this.terrainHeightFn = terrainHeightFn;
     this.lowestY = lowestY;
@@ -388,6 +430,8 @@ export class AvatarController {
   }
 
   applySpawn(spawn: SpawnPoint): void {
+    this.lookTurn = undefined;
+    this.chaseLift = 0;
     this.position.set(spawn.position[0], spawn.position[1], spawn.position[2]);
     this.yaw = spawn.yaw;
     this.pitch = spawn.pitch ?? (this.firstPerson ? 0 : -0.14);
@@ -427,7 +471,7 @@ export class AvatarController {
       const lookAhead = this.isFlying ? 12 : 4;
       this.camera.lookAt(
         this.position.x - Math.sin(this.yaw) * lookAhead,
-        eyeY + Math.sin(this.pitch) * lookAhead * 0.7,
+        eyeY + this.chaseRise(this.pitch) * lookAhead,
         this.position.z - Math.cos(this.yaw) * lookAhead,
       );
     }
@@ -536,6 +580,8 @@ export class AvatarController {
 
   setFirstPerson(firstPerson: boolean): void {
     if (this.firstPerson === firstPerson) return;
+    this.lookTurn = undefined;
+    this.chaseLift = 0;
     this.firstPerson = firstPerson;
     this.localRig.group.visible = !this.firstPerson;
     this.onCameraViewChange?.(this.firstPerson);
@@ -657,6 +703,17 @@ export class AvatarController {
   }
 
   update(dt: number, elapsed: number, inputLocked: boolean): void {
+    if (inputLocked) this.lookTurn = undefined;
+    const turn = this.lookTurn;
+    if (turn) {
+      const t = Math.min(1, (performance.now() - turn.start) / turn.duration);
+      const ease = t * t * (3 - 2 * t);
+      this.yaw = turn.yaw + turn.dyaw * ease;
+      this.pitch = turn.pitch + turn.dpitch * ease;
+      if (!this.firstPerson) this.chaseLift = THREE.MathUtils.lerp(turn.initialLift, 1, ease);
+      if (t === 1) this.lookTurn = undefined;
+    }
+    if (!this.lookTurn && this.pitch <= 0.65) this.chaseLift = 0;
     const clampedDt = Math.min(dt, 0.05);
     const jumpPresses = this.pendingJumpPresses;
     this.pendingJumpPresses = 0;
@@ -926,7 +983,7 @@ export class AvatarController {
       const lookAhead = this.isFlying ? 12 : 4;
       this.camera.lookAt(
         this.position.x - Math.sin(this.yaw) * lookAhead,
-        eyeY + Math.sin(this.pitch) * lookAhead * 0.7,
+        eyeY + this.chaseRise(this.pitch) * lookAhead,
         this.position.z - Math.cos(this.yaw) * lookAhead,
       );
     }
@@ -1037,6 +1094,7 @@ export class AvatarController {
   };
 
   private readonly handleWindowBlur = (): void => {
+    this.lookTurn = undefined;
     this.keys.clear();
     if (this.movementMode === 'platformer') this.stride.set(0, 0);
     this.resetPlatformerTimers();
@@ -1074,6 +1132,7 @@ export class AvatarController {
       const dy = e.movementY;
       // Ignore occasional browser focus-change spikes in pointer lock deltas.
       if (Math.abs(dx) > 250 || Math.abs(dy) > 250) return;
+      if (dx || dy) this.lookTurn = undefined;
       this.yaw -= dx * 0.0022;
       this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0022, -1.38, 1.38);
       return;
@@ -1088,6 +1147,7 @@ export class AvatarController {
     this.lastPointerX = e.clientX;
     this.lastPointerY = e.clientY;
 
+    if (dx || dy) this.lookTurn = undefined;
     this.yaw -= dx * 0.0055;
     this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0045, -1.32, 1.15);
   };

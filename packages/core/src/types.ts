@@ -269,6 +269,12 @@ export interface FallSettings {
 
 /** What a room can read about the local player while it is the active room. */
 export interface PlayerView {
+  /** True while the player's feet are supported, including on room platforms. */
+  readonly grounded: boolean;
+  /** Whether gameplay can currently receive player input. */
+  readonly inputEnabled: boolean;
+  /** Briefly turn toward a room-space point. Manual look can interrupt the turn. */
+  turnToFace(target: THREE.Vector3): void;
   /** The live player camera, for projecting room interactions into the viewport. */
   readonly camera: THREE.PerspectiveCamera;
   /** The player's feet, in this room's coordinates. Live and read-only: never modify it. */
