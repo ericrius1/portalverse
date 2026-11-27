@@ -1413,7 +1413,7 @@ kbd {
 
 .character-pose-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 
@@ -1992,3 +1992,28 @@ body.touch-ui-active .toast-stack {
     height: 48px;
   }
 }
+
+/* Skin controls use the same color function as the model's albedo. */
+.character-skin-controls { margin-top: 14px; }
+.character-skin-controls[hidden] { display: none; }
+.character-skin-controls label { font-size: 0.8rem; color: #e2e8f0; }
+.character-skin-heading { display: flex; align-items: center; justify-content: space-between; }
+#character-skin-swatch { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #ffffff80; }
+.character-skin-controls input[type="range"] {
+  appearance: none; width: 100%; height: 12px; border-radius: 8px;
+  margin: 14px 0; cursor: pointer; border: 1px solid #ffffff40;
+}
+.character-skin-controls input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 22px; height: 22px; background: #fff;
+  border: 3px solid #334155; border-radius: 50%; box-shadow: 0 0 0 1px #fff;
+}
+.character-skin-controls input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px; background: #fff; border: 3px solid #334155; border-radius: 50%;
+}
+.character-skin-controls input:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 5px; }
+.character-undertone-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: #cbd5e1; }
+.character-load-status { position: absolute; top: 12px; left: 16px; right: 16px; color: #e2e8f0; font-size: 0.8rem; }
+
+.character-controls-info { padding: 10px 12px; border-radius: 8px; background: rgba(56, 189, 248, 0.08); font-size: 12px; line-height: 1.5; color: #cbd5e1; }
+.character-controls-info strong { color: #e0f2fe; }
+.character-controls-info p { margin: 6px 0 0; }

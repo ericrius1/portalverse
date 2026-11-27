@@ -1,18 +1,44 @@
+import { createAdventurerRig } from './adventurer';
 import { createSkyDrakeRig } from './skyDrake';
 import { createSuitBeeRig } from './suitBee';
-import type { CharacterDefinition, CharacterRig } from './types';
+import type { CharacterDefinition, CharacterRig, CharacterRigOptions } from './types';
 
 export * from './types';
 export { createSuitBeeRig } from './suitBee';
 export { createSkyDrakeRig } from './skyDrake';
 
+export * from './appearance';
+export { skinColor } from './skinTone';
+
+// Stable fallback for legacy network peers; app startup uses chooseStartupCharacter.
 export const DEFAULT_CHARACTER_ID = 'suit-bee';
+
+/** A saved explicit choice wins; otherwise both adventurers have equal probability. */
+export function chooseStartupCharacter(savedId?: string | null, random = Math.random): string {
+  return isValidCharacterId(savedId) ? savedId : random() < 0.5 ? 'adventurer-man' : 'adventurer-woman';
+}
 
 /**
  * Playable character roster. Add new characters here and they automatically
  * appear in the Character Select screen, multiplayer sync, and portal transit.
  */
 export const CHARACTERS: readonly CharacterDefinition[] = [
+  ...(['man', 'woman'] as const).map((variant): CharacterDefinition => ({
+    id: `adventurer-${variant}`,
+    name: variant === 'man' ? 'Adventurer · Man' : 'Adventurer · Woman',
+    title: 'Trail Explorer',
+    species: 'Human',
+    tagline: 'Ready for the next portal, on foot or in flight.',
+    description: 'A traveling adventurer by Quaternius. Choose your skin tone and undertone, then explore at your own pace.',
+    accentColor: variant === 'man' ? '#86b889' : '#d5ac72',
+    labelHeight: 2.12,
+    eyeHeight: 1.62,
+    supportsSkinTone: true,
+    thirdPersonMovement: 'adventure',
+    defaultMovementMode: 'platformer',
+    traits: ['Animated Stride', 'Soaring Flight', 'Custom Skin Tone'],
+    createRig: (options) => createAdventurerRig(variant, options),
+  })),
   {
     id: 'suit-bee',
     name: 'Barnaby Buzz',
@@ -59,7 +85,7 @@ export function getCharacterDefinition(id?: string): CharacterDefinition {
 
 export function createCharacterRig(
   id?: string,
-  options?: { accentColor?: string },
+  options?: CharacterRigOptions,
 ): CharacterRig {
   return getCharacterDefinition(id).createRig(options);
 }

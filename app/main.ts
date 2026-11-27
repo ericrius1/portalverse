@@ -24,7 +24,7 @@ import {
 import { InteractiveTutorial, hasCompletedTutorial } from './tutorial';
 import { CharacterSelectScreen } from './characterSelect';
 import { MobileControls } from './mobileControls';
-import { DEFAULT_CHARACTER_ID, getCharacterDefinition } from '@portalverse/core/characters';
+import { chooseStartupCharacter, getCharacterDefinition, normalizeSkinAppearance } from '@portalverse/core/characters';
 import {
   detectPerformanceProfile,
   isMobileTouchDevice,
@@ -47,7 +47,12 @@ function parseTouchPreference(value: unknown): TouchControlsPreference {
   return value === 'on' || value === 'off' ? value : 'auto';
 }
 
+const STORAGE_CHARACTER_CHOICE_KEY = 'portalverse.character.choice';
+
 function loadOrCreateIdentity(): PlayerIdentity {
+  let savedChoice: string | null = null;
+  try { savedChoice = localStorage.getItem(STORAGE_CHARACTER_CHOICE_KEY); } catch { /* storage unavailable */ }
+  const startupCharacter = chooseStartupCharacter(savedChoice);
   try {
     const raw = localStorage.getItem(STORAGE_PROFILE_KEY);
     if (raw) {
@@ -57,7 +62,8 @@ function loadOrCreateIdentity(): PlayerIdentity {
           id: parsed.id,
           name: parsed.name,
           color: parsed.color,
-          characterId: getCharacterDefinition(parsed.characterId).id,
+          characterId: startupCharacter,
+          ...normalizeSkinAppearance(parsed),
         };
       }
     }
@@ -70,7 +76,8 @@ function loadOrCreateIdentity(): PlayerIdentity {
     id,
     name: `Explorer ${id.slice(-4).toUpperCase()}`,
     color: palette[Math.floor(Math.random() * palette.length)],
-    characterId: DEFAULT_CHARACTER_ID,
+    characterId: startupCharacter,
+    ...normalizeSkinAppearance(),
   };
   saveIdentity(identity);
   return identity;
@@ -224,6 +231,7 @@ async function boot(): Promise<void> {
   if (route.handoff) {
     identity = {
       ...identity,
+      ...normalizeSkinAppearance({ ...identity, ...route.handoff }),
       name: route.handoff.playerName || identity.name,
       color: route.handoff.playerColor || identity.color,
       characterId: route.handoff.characterId
@@ -357,7 +365,7 @@ async function boot(): Promise<void> {
       net.switchWorld(
         manifest.id,
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
-        engine.avatar.yaw,
+        engine.avatar.getFacingYaw(),
       );
       scheduleHudSync(true);
     },
@@ -401,12 +409,18 @@ async function boot(): Promise<void> {
       try { localStorage.setItem(STORAGE_MOVEMENT_MODE_KEY, mode); } catch { /* storage unavailable */ }
     },
   }, identity.characterId);
+  engine.avatar.setSkinAppearance(normalizeSkinAppearance(identity));
   if (import.meta.env.DEV) (window as unknown as { engine: WorldEngine }).engine = engine;
 
-  // Walking physics (G), remembered between reloads.
-  try {
-    engine.avatar.setMovementMode(parseMovementMode(localStorage.getItem(STORAGE_MOVEMENT_MODE_KEY)));
-  } catch { /* storage unavailable */ }
+  // Adventurers start with their character default; other characters retain saved physics.
+  // G remains available to change physics during play.
+  const defaultPhysics = getCharacterDefinition(identity.characterId).defaultMovementMode;
+  if (!defaultPhysics) {
+    try {
+      engine.avatar.setMovementMode(parseMovementMode(localStorage.getItem(STORAGE_MOVEMENT_MODE_KEY)));
+    } catch { /* storage unavailable */ }
+  }
+  physicsModeLabel.textContent = engine.avatar.movementMode === 'platformer' ? 'Physics: Platformer' : 'Physics: Classic';
 
   // Debug: show each portal's warp zone, remembered between reloads.
   const readWarpZones = (): boolean => {
@@ -577,7 +591,7 @@ async function boot(): Promise<void> {
       net.switchWorld(
         worldId,
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
-        engine.avatar.yaw,
+        engine.avatar.getFacingYaw(),
       );
       renderPresenceRoster();
       if (needsOverlay) {
@@ -606,6 +620,7 @@ async function boot(): Promise<void> {
         version: 1,
         playerName: identity.name,
         playerColor: identity.color,
+        ...normalizeSkinAppearance(identity),
         characterId: identity.characterId,
         fromWorldId: activeWorldId,
         fromWorldName: activeManifest.name,
@@ -636,11 +651,14 @@ async function boot(): Promise<void> {
   const characterSelect = new CharacterSelectScreen(modalCharacters, {
     getEquippedId: () => engine.avatar.getCharacterId(),
     getAccentColor: () => identity.color,
-    onSelect: (char, switchToThirdPerson) => {
-      identity = { ...identity, characterId: char.id };
+    getSkinAppearance: () => normalizeSkinAppearance(identity),
+    onSelect: (char, switchToThirdPerson, appearance) => {
+      identity = { ...identity, characterId: char.id, ...appearance };
+      try { localStorage.setItem(STORAGE_CHARACTER_CHOICE_KEY, char.id); } catch { /* storage unavailable */ }
       saveIdentity(identity);
+      engine.avatar.setSkinAppearance(appearance);
       engine.avatar.setCharacter(char.id);
-      net.updateProfile(identity.name, identity.color, char.id);
+      net.updateProfile(identity.name, identity.color, char.id, appearance);
       if (switchToThirdPerson && engine.avatar.firstPerson) {
         engine.avatar.setFirstPerson(false);
       }
@@ -1091,7 +1109,7 @@ async function boot(): Promise<void> {
         Number(engine.avatar.position.y.toFixed(3)),
         Number(engine.avatar.position.z.toFixed(3)),
       ],
-      Number(engine.avatar.yaw.toFixed(3)),
+      Number(engine.avatar.getFacingYaw().toFixed(3)),
       Number(engine.avatar.velocityY.toFixed(3)),
       engine.avatar.isFlying,
     );

@@ -1,3 +1,4 @@
+import type { SkinAppearance } from './characters/appearance';
 import type * as THREE from 'three/webgpu';
 
 export type Vec3Tuple = [number, number, number];
@@ -65,14 +66,14 @@ export interface RegistryFile {
   worlds: WorldManifest[];
 }
 
-export interface PlayerIdentity {
+export interface PlayerIdentity extends Partial<SkinAppearance> {
   id: string;
   name: string;
   color: string;
   characterId?: string;
 }
 
-export interface AvatarState {
+export interface AvatarState extends Partial<SkinAppearance> {
   id: string;
   name: string;
   color: string;
@@ -85,7 +86,7 @@ export interface AvatarState {
   updatedAt: number;
 }
 
-export interface PortalHandoffPayload {
+export interface PortalHandoffPayload extends Partial<SkinAppearance> {
   version: 1;
   playerName: string;
   playerColor: string;
@@ -128,6 +129,8 @@ export type ClientNetMessage =
     }
   | {
       type: 'update_profile';
+      skinTone?: number;
+      undertone?: number;
       name: string;
       color: string;
       characterId?: string;

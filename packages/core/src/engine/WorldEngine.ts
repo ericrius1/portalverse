@@ -208,10 +208,12 @@ export class WorldEngine {
         this.transitRig.dispose();
         this.transitRig = createCharacterRig(characterId, {
           accentColor: this.avatar.getLocalColor(),
+          ...this.avatar.getSkinAppearance(),
         });
         this.transitAvatarState.rig = this.transitRig.group;
         callbacks.onCharacterChange?.(characterId);
       },
+      (appearance) => this.transitRig.setSkinAppearance?.(appearance),
     );
     const engine = this;
     this.playerView = {
@@ -429,7 +431,7 @@ export class WorldEngine {
       const yawDelta = crossingYawDelta(crossing.portal.yaw ?? 0, crossing.side, anchor.yaw);
       carryThroughPortal(this.avatar.position, sourceOrigin, yawDelta, landing);
       carryThroughPortal(this.camera.position, sourceOrigin, yawDelta, landing);
-      this.avatar.yaw += yawDelta;
+      this.avatar.rotateHeading(yawDelta);
       this.avatar.turnMomentum(yawDelta);
       this.camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawDelta));
       this.avatar.syncRigTransform(this.elapsed);
@@ -794,7 +796,7 @@ export class WorldEngine {
     if (this.warpZones.visible) this.syncWarpZones(portals);
 
     this.avatar.updateCameraVisibility();
-    this.transitAvatarState.yaw = this.avatar.yaw;
+    this.transitAvatarState.yaw = this.avatar.getFacingYaw();
     this.transitAvatarState.visible = !this.avatar.firstPerson;
     this.currentFramePortals = portals;
     this.currentFrameDt = dt;

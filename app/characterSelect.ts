@@ -1,23 +1,35 @@
 import * as THREE from 'three/webgpu';
 import {
   CHARACTERS,
+  normalizeSkinAppearance,
+  skinColor,
+  type SkinAppearance,
   getCharacterDefinition,
   type AvatarMotionState,
   type CharacterDefinition,
   type CharacterRig,
 } from '@portalverse/core/characters';
 
-export type PreviewPose = 'idle' | 'walk' | 'fly' | 'boost';
+export type PreviewPose = 'idle' | 'walk' | 'run' | 'jump' | 'fly' | 'boost';
 
 export interface CharacterSelectCallbacks {
   getEquippedId: () => string;
   getAccentColor: () => string;
-  onSelect: (character: CharacterDefinition, switchToThirdPerson: boolean) => void;
+  getSkinAppearance: () => SkinAppearance;
+  onSelect: (character: CharacterDefinition, switchToThirdPerson: boolean, appearance: SkinAppearance) => void;
   onClose: (relockPointer: boolean) => void;
 }
 
 function buildPreviewMotion(pose: PreviewPose, elapsed: number): AvatarMotionState {
   switch (pose) {
+    case 'run':
+      return { ...buildPreviewMotion('walk', elapsed), speed: 13, speedNorm: 1, forwardSpeed: 13, boost: 1 };
+    case 'jump': {
+      const phase = elapsed % 1.5;
+      return { ...buildPreviewMotion('idle', elapsed), grounded: phase > 0.9,
+        velocityY: phase <= 0.9 ? 7 - phase * 16 : 0,
+        landImpact: phase > 0.9 ? Math.max(0, 1 - (phase - 0.9) * 8) : 0 };
+    }
     case 'walk':
       return {
         speed: 8.6,
@@ -88,12 +100,20 @@ export class CharacterSelectScreen {
   private readonly nameEl: HTMLElement;
   private readonly titleEl: HTMLElement;
   private readonly descEl: HTMLElement;
+  private readonly controlsEl: HTMLElement;
   private readonly traitsEl: HTMLElement;
   private readonly countEl: HTMLElement;
   private readonly btnEquip: HTMLButtonElement;
   private readonly thirdPersonCheckbox: HTMLInputElement;
   private readonly poseButtons: HTMLButtonElement[];
   private readonly callbacks: CharacterSelectCallbacks;
+  private readonly skinControls: HTMLElement;
+  private readonly skinToneInput: HTMLInputElement;
+  private readonly undertoneInput: HTMLInputElement;
+  private readonly skinSwatch: HTMLElement;
+  private readonly loadStatus: HTMLElement;
+  private appearance: SkinAppearance;
+  private rigReady = false;
 
   private previewedId: string;
   private pose: PreviewPose = 'idle';
@@ -122,11 +142,18 @@ export class CharacterSelectScreen {
 
   constructor(modal: HTMLElement, callbacks: CharacterSelectCallbacks) {
     this.callbacks = callbacks;
+    this.appearance = normalizeSkinAppearance(callbacks.getSkinAppearance());
+    this.skinControls = modal.querySelector('#character-skin-controls') as HTMLElement;
+    this.skinToneInput = modal.querySelector('#character-skin-tone') as HTMLInputElement;
+    this.undertoneInput = modal.querySelector('#character-undertone') as HTMLInputElement;
+    this.skinSwatch = modal.querySelector('#character-skin-swatch') as HTMLElement;
+    this.loadStatus = modal.querySelector('#character-load-status') as HTMLElement;
     this.canvas = modal.querySelector('#character-preview-canvas') as HTMLCanvasElement;
     this.rosterEl = modal.querySelector('#character-roster') as HTMLElement;
     this.nameEl = modal.querySelector('#character-detail-name') as HTMLElement;
     this.titleEl = modal.querySelector('#character-detail-title') as HTMLElement;
     this.descEl = modal.querySelector('#character-detail-desc') as HTMLElement;
+    this.controlsEl = modal.querySelector('#character-controls-info') as HTMLElement;
     this.traitsEl = modal.querySelector('#character-detail-traits') as HTMLElement;
     this.countEl = modal.querySelector('#character-roster-count') as HTMLElement;
     this.btnEquip = modal.querySelector('#btn-equip-character') as HTMLButtonElement;
@@ -185,6 +212,16 @@ export class CharacterSelectScreen {
   }
 
   private bindEvents(): void {
+    const updateSkin = () => {
+      this.appearance = normalizeSkinAppearance({
+        skinTone: Number(this.skinToneInput.value) / 100,
+        undertone: Number(this.undertoneInput.value) / 100,
+      });
+      this.activeRig?.setSkinAppearance?.(this.appearance);
+      this.syncSkinControls();
+    };
+    this.skinToneInput.addEventListener('input', updateSkin);
+    this.undertoneInput.addEventListener('input', updateSkin);
     for (const btn of this.poseButtons) {
       btn.addEventListener('click', () => {
         const nextPose = btn.dataset.previewPose as PreviewPose | undefined;
@@ -221,6 +258,8 @@ export class CharacterSelectScreen {
 
     window.addEventListener('keydown', (e) => {
       if (!this.open) return;
+      // Range controls retain their native arrow-key behavior.
+      if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'ArrowRight' || e.code === 'ArrowDown') {
         e.preventDefault();
         this.stepSelection(1);
@@ -243,6 +282,7 @@ export class CharacterSelectScreen {
 
   show(): void {
     this.open = true;
+    this.appearance = normalizeSkinAppearance(this.callbacks.getSkinAppearance());
     this.previewedId = getCharacterDefinition(this.callbacks.getEquippedId()).id;
     this.orbitYaw = Math.PI + 0.42;
     this.orbitPitch = 0.16;
@@ -285,8 +325,9 @@ export class CharacterSelectScreen {
   }
 
   private equipPreviewed(): void {
+    if (!this.rigReady) return;
     const def = getCharacterDefinition(this.previewedId);
-    this.callbacks.onSelect(def, this.thirdPersonCheckbox.checked);
+    this.callbacks.onSelect(def, this.thirdPersonCheckbox.checked, { ...this.appearance });
     this.renderRoster();
     this.syncDetails();
     this.callbacks.onClose(true);
@@ -303,6 +344,7 @@ export class CharacterSelectScreen {
     }
     if (this.activeRigId === def.id && this.activeRig) {
       this.activeRig.setAccentColor?.(this.callbacks.getAccentColor());
+      this.activeRig.setSkinAppearance?.(this.appearance);
       return;
     }
     if (this.activeRig) {
@@ -310,10 +352,22 @@ export class CharacterSelectScreen {
       this.activeRig.dispose();
       this.activeRig = null;
     }
-    const rig = def.createRig({ accentColor: this.callbacks.getAccentColor() });
+    const rig = def.createRig({ accentColor: this.callbacks.getAccentColor(), ...this.appearance });
     this.stageRoot.add(rig.group);
     this.activeRig = rig;
     this.activeRigId = def.id;
+    this.rigReady = !rig.ready;
+    this.btnEquip.disabled = !this.rigReady;
+    this.loadStatus.textContent = rig.ready ? 'Loading character…' : '';
+    void rig.ready?.then(() => {
+      if (this.activeRig !== rig) return;
+      this.rigReady = true;
+      this.btnEquip.disabled = false;
+      this.loadStatus.textContent = '';
+    }, () => {
+      if (this.activeRig !== rig) return;
+      this.loadStatus.textContent = 'Character could not load. Choose another character and try again.';
+    });
   }
 
   private renderRoster(): void {
@@ -350,12 +404,29 @@ export class CharacterSelectScreen {
     }
   }
 
+  private syncSkinControls(): void {
+    this.skinToneInput.value = String(Math.round(this.appearance.skinTone * 100));
+    this.undertoneInput.value = String(Math.round(this.appearance.undertone * 100));
+    const hex = `#${skinColor(this.appearance).getHexString()}`;
+    this.skinSwatch.style.background = hex;
+    this.skinToneInput.style.background = `linear-gradient(to right, ${Array.from({ length: 11 }, (_, i) =>
+      `#${skinColor({ ...this.appearance, skinTone: i / 10 }).getHexString()}`).join(', ')})`;
+    this.undertoneInput.style.background = `linear-gradient(to right, ${[-1, 0, 1].map((undertone) =>
+      `#${skinColor({ ...this.appearance, undertone }).getHexString()}`).join(', ')})`;
+    this.skinToneInput.setAttribute('aria-valuetext', `${this.skinToneInput.value} percent`);
+    this.undertoneInput.setAttribute('aria-valuetext', this.appearance.undertone === 0 ? 'Balanced' :
+      `${Math.abs(Number(this.undertoneInput.value))} percent ${this.appearance.undertone < 0 ? 'rosy' : 'golden'}`);
+  }
+
   private syncDetails(): void {
     const def = getCharacterDefinition(this.previewedId);
     const equippedId = getCharacterDefinition(this.callbacks.getEquippedId()).id;
+    this.skinControls.hidden = !def.supportsSkinTone;
+    this.syncSkinControls();
     this.nameEl.textContent = def.name;
     this.titleEl.textContent = `${def.title} · ${def.species}`;
     this.descEl.textContent = def.description;
+    this.controlsEl.hidden = def.thirdPersonMovement !== 'adventure';
     this.traitsEl.innerHTML = def.traits
       .map((t) => `<span class="character-trait">${escapeHtml(t)}</span>`)
       .join('');
@@ -427,7 +498,8 @@ export class CharacterSelectScreen {
     this.activeRig?.update(dt, this.elapsed, motion);
 
     // Lift character subtly above the pedestal when previewing flight/boost
-    const flyLift = this.pose === 'fly' || this.pose === 'boost' ? 0.36 : 0;
+    const flyLift = this.pose === 'fly' || this.pose === 'boost' ? 0.36
+      : this.pose === 'jump' ? Math.max(0, Math.sin(Math.min(this.elapsed % 1.5, 0.9) / 0.9 * Math.PI)) * 0.45 : 0;
     this.stageRoot.position.y += (flyLift - this.stageRoot.position.y) * Math.min(1, dt * 8);
 
     const radius = this.pose === 'fly' || this.pose === 'boost' ? 4.35 : 3.45;

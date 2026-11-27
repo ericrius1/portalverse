@@ -1,3 +1,4 @@
+import { sanitizeSkinAppearance, type SkinAppearance } from '../../core/src/characters/appearance';
 import { SIDE_PORTALS } from '../../core/src/portal/roomLayout';
 import type {
   AvatarState,
@@ -163,7 +164,7 @@ export class RoomManager {
       case 'switch_world':
         return this.handleSwitchWorld(session, msg.worldId, msg.position, msg.yaw);
       case 'update_profile':
-        return this.handleUpdateProfile(session, msg.name, msg.color, msg.characterId);
+        return this.handleUpdateProfile(session, msg.name, msg.color, msg.characterId, msg);
       case 'spawn_portal':
         return this.handleSpawnPortal(session, msg.worldId, msg.portal);
       case 'remove_portal':
@@ -204,6 +205,7 @@ export class RoomManager {
       id: playerId,
       name: msg.player.name,
       color: msg.player.color,
+      ...sanitizeSkinAppearance({ ...msg.player }),
       ...(msg.player.characterId ? { characterId: msg.player.characterId } : {}),
       worldId,
       position: this.clampPosition(msg.position),
@@ -279,11 +281,13 @@ export class RoomManager {
     name: string,
     color: string,
     characterId?: string,
+    appearance?: Partial<SkinAppearance>,
   ): Outbound[] {
     const a = session.avatar;
     const oldName = a.name;
     a.name = name;
     a.color = color;
+    Object.assign(a, sanitizeSkinAppearance({ ...appearance }));
     if (characterId) a.characterId = characterId;
     a.updatedAt = this.now();
     const event = oldName !== name ? `${oldName} is now known as ${name}` : undefined;
