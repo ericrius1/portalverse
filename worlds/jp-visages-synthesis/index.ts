@@ -12,7 +12,7 @@
  *  - Claude's convincingly recessed and asymmetrically patchy face cracks, thin blood trails
  *    weeping down the cheeks, moon-and-cloud night sky, and textured uneven dirt beside
  *    the cobbled road (without triangular snow particles).
- *  - Codex's endless procession with two-tier head LOD, and the selected A-style
+ *  - Codex's endless procession with camera-selected head LOD, and the selected A-style
  *    moon-mirror eyes. Earlier eye treatments remain in the optional blind study.
  */
 import * as THREE from 'three/webgpu';
@@ -52,6 +52,7 @@ import {
   texture,
   time,
   uniform,
+  uniformArray,
   vec2,
   vec3,
 } from 'three/tsl';
@@ -59,6 +60,9 @@ import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { breathe } from '@portalverse/core/rooms/kit';
 import headUrl from './assets/female_human_head_game.glb?url';
 import { createWinningEyes } from './eyes';
+import { loadHeadLods } from './headLods';
+import { RippleTrail, poolCoverage, RIPPLE_CAPACITY, RIPPLE_LIFETIME } from './ripples';
+import { createVisibleHeads, spatialGroups } from './visibility';
 import { DEFAULT_TUNING, type VisagesTuning } from './tuning';
 import {
   EYE_STUDY_HEADS, EYE_STUDY_KEY, EYE_STUDY_LABELS,
@@ -69,7 +73,6 @@ import {
   createVisageCollider,
   HEAD_PAIR_HALF_COUNT,
   HEAD_SPACING,
-  NEAR_LOD_Z,
   PATH_HALF_WIDTH,
   terrainHeightAt,
   WALK_BOUNDS,
@@ -112,10 +115,6 @@ interface SharedSynthesisLayout {
   groundGeometry: THREE.BufferGeometry;
   rockShapes: THREE.BufferGeometry[];
   pillarShapes: THREE.BufferGeometry[];
-  nearHeads: HeadPlacement[];
-  farHeads: HeadPlacement[];
-  nearHeadMatrices: THREE.Matrix4[];
-  farHeadMatrices: THREE.Matrix4[];
   allHeadMatrices: THREE.Matrix4[];
   rockMatrices: THREE.Matrix4[][];
   rockMeta: Float32Array[];
@@ -211,10 +210,6 @@ async function buildSharedLayout(): Promise<SharedSynthesisLayout> {
     );
   };
 
-  const nearHeads = plan.heads.filter(h => Math.abs(h.z) <= NEAR_LOD_Z);
-  const farHeads = plan.heads.filter(h => Math.abs(h.z) > NEAR_LOD_Z);
-  const nearHeadMatrices = nearHeads.map(makeHeadMatrix);
-  const farHeadMatrices = farHeads.map(makeHeadMatrix);
   const allHeadMatrices = plan.heads.map(makeHeadMatrix);
 
   const rockMatrices: THREE.Matrix4[][] = rockShapes.map(() => []);
@@ -262,10 +257,6 @@ async function buildSharedLayout(): Promise<SharedSynthesisLayout> {
     groundGeometry,
     rockShapes,
     pillarShapes,
-    nearHeads,
-    farHeads,
-    nearHeadMatrices,
-    farHeadMatrices,
     allHeadMatrices,
     rockMatrices,
     rockMeta,
@@ -312,7 +303,7 @@ function schlickFresnel(normal: Vec3Node, f0: number): FloatNode {
 export default defineRoom('jp-visages-synthesis', {
   async mount(ctx) {
     const eyeStudy = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('eyes') === 'compare';
-    const layout = await sharedSynthesisLayout();
+    const [layout, headLods] = await Promise.all([sharedSynthesisLayout(), loadHeadLods()]);
     const root = new THREE.Group();
     ctx.scene.add(root);
     const roomBrightness = uniform(1);
@@ -462,9 +453,11 @@ export default defineRoom('jp-visages-synthesis', {
     const distFromEye = positionWorld.sub(cameraPosition).length();
     const keepVis = float(1).sub(smoothstep(DARK_NEAR, DARK_FAR, distFromEye).mul(0.85));
 
-    // Track player feet for live concentric ripples in the crimson blood pools.
-    const playerFeet = uniform(new THREE.Vector3(0, -100, 0));
-    const playerSpeed = uniform(0);
+    const trail = new RippleTrail();
+    const rippleClock = uniform(0);
+    const impacts = Array.from({ length: RIPPLE_CAPACITY }, () => new THREE.Vector4(0, 0, -100, 0));
+    const rippleData = uniformArray<'vec4'>(impacts, 'vec4');
+    const isWet = (x: number, z: number) => poolCoverage(x, z, stoneNoiseData, cobbleData) > .7;
 
     // -------------------------------------------------------------------------
     // 1. SINGLE-LAYER COBBLESTONE ROAD, UNEVEN DIRT VERGES & INTEGRATED BLOOD POOLS
@@ -561,15 +554,22 @@ export default defineRoom('jp-visages-synthesis', {
       ).r;
       const liquidBase = mix(bloodShallow, bloodDeep, poolDepth.mul(0.84).add(liquidShimmer.mul(0.16))).mul(bloodBrightness);
 
-      // Dual ambient ripples + live concentric ripples around the walking player's feet.
+      // Dual ambient ripples + persistent waves from individual foot impacts.
       const rippleA = texture(stoneNoiseTex, p.xz.mul(0.26).add(vec2(time.mul(0.022), time.mul(0.016)))).g;
       const rippleB = texture(stoneNoiseTex, p.xz.mul(0.41).add(vec2(time.mul(-0.019), time.mul(0.025)))).g;
       const ambientRipple = rippleA.add(rippleB).mul(0.5).sub(0.5).mul(0.009);
-      const playerDist = p.xz.sub(playerFeet.xz).length();
-      const stepWave = sin(playerDist.mul(10).sub(time.mul(6.5)))
-        .mul(float(1).sub(smoothstep(0.2, 4.4, playerDist)))
-        .mul(playerSpeed)
-        .mul(0.011);
+      let stepWave: FloatNode = float(0);
+      for (let i = 0; i < RIPPLE_CAPACITY; i++) {
+        const impact = rippleData.element(i);
+        const age = max(rippleClock.sub(impact.z), 0);
+        const radius = p.xz.sub(impact.xy).length();
+        const width = age.mul(.065).add(.16);
+        const q = radius.sub(age.mul(1.45)).div(width);
+        // A soft crest/trough packet expands from a fixed impact, then dissipates.
+        const pulse = float(1).sub(q.mul(q)).mul(exp(q.mul(q).negate()));
+        const fade = float(1).sub(smoothstep(0, RIPPLE_LIFETIME, age));
+        stepWave = stepWave.add(pulse.mul(fade).mul(impact.w).mul(.009)) as FloatNode;
+      }
       // Subtle slow droplet rings expanding periodically on the crimson surface.
       const cellXZ = floor(p.xz.mul(0.18));
       const dropPhase = fract(time.mul(0.18).add(hash(cellXZ.x.mul(17.3).add(cellXZ.y.mul(31.7)))));
@@ -613,7 +613,7 @@ export default defineRoom('jp-visages-synthesis', {
     // 2. ENDLESS COLOSSAL ANCIENT STONE HEADS (NEAR/FAR LOD) + GLOSSY BLACK EYES
     // -------------------------------------------------------------------------
     {
-      const { skin, skinFar, eyes, leftEyeCenter, rightEyeCenter, eyeRadius } = layout.headAssets;
+      const { skin, eyes, leftEyeCenter, rightEyeCenter, eyeRadius } = layout.headAssets;
 
       // 2a. Ancient weathered limestone skin shader:
       //     Neon's pale cyan-ash stone & dark smudges + cavernous eye sockets +
@@ -769,24 +769,22 @@ export default defineRoom('jp-visages-synthesis', {
         root.add(mesh);
       };
 
-      addHeadBatch(skin, layout.nearHeads, layout.nearHeadMatrices);
-      await ctx.breathe();
-      addHeadBatch(skinFar, layout.farHeads, layout.farHeadMatrices);
-      await ctx.breathe();
-
-      // The blind-study winner A is now used by every avenue head.
       const eyeMat = ownMat(createWinningEyes(MOON_DIR));
-
-      const eyeMesh = new THREE.InstancedMesh(
-        ownGeo(copyOfGeometry(eyes)),
-        eyeMat,
-        layout.allHeadMatrices.length,
+      const visibleHeads = createVisibleHeads(
+        layout.plan.heads, layout.allHeadMatrices,
+        [skin, ...headLods.map(lod => lod.skin)],
+        [eyes, ...headLods.map(lod => lod.eyes)], skinMat, eyeMat,
       );
-      instanced.push(eyeMesh);
-      layout.allHeadMatrices.forEach((m, i) => eyeMesh.setMatrixAt(i, m));
-      eyeMesh.instanceMatrix.needsUpdate = true;
-      eyeMesh.frustumCulled = false;
-      root.add(eyeMesh);
+      root.add(...visibleHeads.meshes);
+      const previousBeforeRender = ctx.scene.onBeforeRender;
+      ctx.scene.onBeforeRender = function(...args) {
+        previousBeforeRender.call(this, ...args);
+        visibleHeads.update(args[2]);
+      };
+      ctx.onDispose(() => {
+        ctx.scene.onBeforeRender = previousBeforeRender;
+        visibleHeads.dispose();
+      });
 
       if (eyeStudy) {
         // 2b. Glossy obsidian-black eyeballs combining Codex's HDR environment reflections
@@ -900,14 +898,18 @@ export default defineRoom('jp-visages-synthesis', {
       layout.rockShapes.forEach((shape, i) => {
         const mats = layout.rockMatrices[i];
         if (!mats.length) return;
-        const geo = ownGeo(copyOfGeometry(shape));
-        geo.setAttribute('aRubble', new THREE.InstancedBufferAttribute(layout.rockMeta[i], 4));
-        const im = new THREE.InstancedMesh(geo, rubbleMat, mats.length);
-        instanced.push(im);
-        mats.forEach((m, j) => im.setMatrixAt(j, m));
-        im.instanceMatrix.needsUpdate = true;
-        im.frustumCulled = false;
-        root.add(im);
+        for (const group of spatialGroups(mats)) {
+          const geo = ownGeo(copyOfGeometry(shape));
+          const metadata = new Float32Array(group.length * 4);
+          group.forEach((source, slot) => metadata.set(layout.rockMeta[i].subarray(source * 4, source * 4 + 4), slot * 4));
+          geo.setAttribute('aRubble', new THREE.InstancedBufferAttribute(metadata, 4));
+          const im = new THREE.InstancedMesh(geo, rubbleMat, group.length);
+          instanced.push(im);
+          group.forEach((source, slot) => im.setMatrixAt(slot, mats[source]));
+          im.instanceMatrix.needsUpdate = true;
+          im.computeBoundingSphere();
+          root.add(im);
+        }
       });
     }
 
@@ -949,14 +951,18 @@ export default defineRoom('jp-visages-synthesis', {
       layout.pillarShapes.forEach((shape, i) => {
         const mats = layout.pillarMatrices[i];
         if (!mats.length) return;
-        const geo = ownGeo(copyOfGeometry(shape));
-        geo.setAttribute('aPillar', new THREE.InstancedBufferAttribute(layout.pillarMeta[i], 4));
-        const im = new THREE.InstancedMesh(geo, pillarMat, mats.length);
-        instanced.push(im);
-        mats.forEach((m, j) => im.setMatrixAt(j, m));
-        im.instanceMatrix.needsUpdate = true;
-        im.frustumCulled = false;
-        root.add(im);
+        for (const group of spatialGroups(mats)) {
+          const geo = ownGeo(copyOfGeometry(shape));
+          const metadata = new Float32Array(group.length * 4);
+          group.forEach((source, slot) => metadata.set(layout.pillarMeta[i].subarray(source * 4, source * 4 + 4), slot * 4));
+          geo.setAttribute('aPillar', new THREE.InstancedBufferAttribute(metadata, 4));
+          const im = new THREE.InstancedMesh(geo, pillarMat, group.length);
+          instanced.push(im);
+          group.forEach((source, slot) => im.setMatrixAt(slot, mats[source]));
+          im.instanceMatrix.needsUpdate = true;
+          im.computeBoundingSphere();
+          root.add(im);
+        }
       });
     }
 
@@ -1004,29 +1010,16 @@ export default defineRoom('jp-visages-synthesis', {
       ctx.onActivate(() => enableTuningShortcut(() => mountDevControls(tuning, apply)));
     }
 
-    let lastX = 0;
-    let lastZ = 0;
-    let hasLast = false;
-    ctx.onActivate(() => {
-      hasLast = false;
-      playerSpeed.value = 0;
-    });
-
+    const clearTrail = () => {
+      trail.reset();
+      impacts.forEach(v => v.w = 0);
+    };
+    ctx.onActivate(() => { clearTrail(); return clearTrail; });
     ctx.onUpdate((dt) => {
+      rippleClock.value += dt;
       const feet = ctx.player?.position;
-      if (!feet) {
-        playerSpeed.value = 0;
-        return;
-      }
-      playerFeet.value.copy(feet);
-      if (hasLast && dt > 1e-4) {
-        const speed = Math.hypot(feet.x - lastX, feet.z - lastZ) / dt;
-        const target = Math.min(1, speed / 5.5);
-        playerSpeed.value += (target - playerSpeed.value) * Math.min(1, dt * 6);
-      }
-      lastX = feet.x;
-      lastZ = feet.z;
-      hasLast = true;
+      if (feet) trail.update(feet.x, feet.y, feet.z, terrainHeightAt(feet.x, feet.z), rippleClock.value, isWet);
+      trail.impacts.forEach((impact, i) => impacts[i].set(impact.x, impact.z, impact.born, impact.strength));
     });
   },
 });

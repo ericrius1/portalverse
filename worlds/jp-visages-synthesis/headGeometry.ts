@@ -4,8 +4,6 @@ import { HEAD_CENTER_X, HEAD_CENTER_Z, HEAD_SINK_Y } from './layout';
 
 export interface SplitHeadAssets {
   skin: THREE.BufferGeometry;
-  /** Vertex-clustered lower-poly skin copy for heads deep in the fog beyond NEAR_LOD_Z. */
-  skinFar: THREE.BufferGeometry;
   eyes: THREE.BufferGeometry;
   /** Normalized local centers of the two eyeballs (for socket AO and weeping blood trails). */
   leftEyeCenter: THREE.Vector3;
@@ -18,7 +16,7 @@ const headCache = new Map<string, Promise<SplitHeadAssets>>();
 /**
  * Load the head GLB once, split out the two eyeball connected components from the stone head/skin,
  * normalize it upright centered on (0, 0, 0) with the under-chin/neck at y = 0, trim buried
- * shoulder triangles deep underground, and build a decimated far LOD copy. Shared across mounts.
+ * shoulder triangles deep underground. Shared across mounts; distance LODs are prepared offline.
  */
 export function loadSplitHead(url: string): Promise<SplitHeadAssets> {
   let pending = headCache.get(url);
@@ -295,9 +293,8 @@ async function buildSplitHead(url: string): Promise<SplitHeadAssets> {
     await breathe();
     const eyes = compactSubGeometry(positions, normals, eyeIndices, !normAttr);
     await breathe();
-    const skinFar = await decimateGeometry(skin, 0.16, breathe);
 
-    return { skin, skinFar, eyes, leftEyeCenter, rightEyeCenter, eyeRadius };
+    return { skin, eyes, leftEyeCenter, rightEyeCenter, eyeRadius };
   } finally {
     disposeObject(gltf.scene);
   }

@@ -23,9 +23,6 @@ export const HEAD_SPACING = 28;
  */
 export const HEAD_PAIR_HALF_COUNT = 14;
 
-/** Heads within this distance of Z = 0 use the full-detail mesh; beyond use decimated far LOD. */
-export const NEAR_LOD_Z = 228;
-
 /** Uniform monumental scale applied to the normalized head mesh (~27.5 m tall above ground). */
 export const HEAD_BASE_SCALE = 4.2;
 

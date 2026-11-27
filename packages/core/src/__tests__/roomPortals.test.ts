@@ -10,6 +10,7 @@ import {
   threshold,
 } from '../portal/roomLayout';
 import { RoomInstance } from '../engine/RoomInstance';
+import { createArchwayPortal } from '../engine/PortalMesh';
 import { readRouteFromLocation } from '../portal/handoff';
 import { framePortal, portalPixels, PortalPreviews } from '../engine/PortalPreviews';
 import { WorldRegistry } from '../portal/registry';
@@ -17,6 +18,22 @@ import catalog from '../../../../registry.json';
 import { catalogForTour } from '../portal/roomTour';
 
 describe('room modules', () => {
+  it('aligns custom doorway previews with the gate while retaining a separate safe landing', async () => {
+    const manifest = (catalog as unknown as RegistryFile).worlds.find(room => room.id === 'jp-abyss')!;
+    const safe: SpawnPoint = { position: [-3, 24, -8], yaw: 2.07, pitch: -.1 };
+    const plane: [number, number, number] = [0, 26.2, -14];
+    const room = await RoomInstance.mount({ manifest, mount(ctx) {
+      ctx.customizeRouteGate!('exit', gate => {
+        const handle = createArchwayPortal({ ...gate, position: plane, yaw: -.02 }, { passage: true, routeGate: true });
+        handle.arrivalSpawn = safe;
+        return handle;
+      });
+    } }, {} as THREE.WebGPURenderer);
+    try {
+      expect(room.spawn('exit')).toEqual(safe);
+      expect(room.portalAnchor('exit')).toEqual({ position: plane, yaw: Math.PI - .02, pitch: 0 });
+    } finally { room.dispose(); }
+  });
   it('loads every local catalog entry and matches every room folder to its manifest', async () => {
     const modules = import.meta.glob<{ default: WorldModule }>('../../../../worlds/*/index.ts');
     const loaders = Object.fromEntries(Object.entries(modules).map(([path, load]) => [path.split('/').at(-2)!, load]));

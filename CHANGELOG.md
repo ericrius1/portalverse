@@ -2,6 +2,20 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Visages performance, persistent liquid footsteps and custom portal alignment — Unreleased (2026-11-26)
+
+### Changed
+
+- Added offline Blender medium/far head and eye assets while preserving the original close-up mesh, winner A eye material, per-head weathering and endless row layout. Each scene pass now selects detail from its own camera distance and culls individual heads; rubble and pillars use spatial batches with bounds. Removed runtime far-head decimation and the old fixed-Z detail split.
+- Replaced the rings attached to the moving player with a bounded history of alternating foot impacts. Waves remain at their world positions, expand with soft crests/troughs, and dissipate over three seconds. Only near-ground impacts in liquid emit waves; teleports, stationary feet and airborne travel do not create trails. Leaving the room clears transient impacts.
+- Custom route-gate previews and continuous crossings use the actual upright doorway frame rather than a separate safe teleport spawn. This retains Palace Lagoon's safe summit landing without offsetting its outgoing portal view or return crossing.
+
+### Design & engineering decisions
+
+- Shared geometry already saved loading work; the remaining cost came from submitting the full avenue and shading it. Preserve the full near material/mesh and use 9.3k/2.5k skin LODs and 1.2k/472-triangle eye LODs farther away. Camera-specific selection also applies to portal and snapshot views. Avoid baking/replacing the approved crack/grime shaders while visibility/geometry savings address the observed frame pacing.
+- Use twelve reusable ripple slots rather than a fluid simulation: fixed-cost expanding wave packets produce a persistent trail without unbounded allocation. CPU liquid detection samples the same procedural texture data as the shader, with a conservative wetness threshold.
+- The blank local Palace portal was reproduced as Vite's `504 Outdated Optimize Dep` after a dependency update; restarting the local client rebuilt its cache. No room-link removal or Palace artwork change was needed. Reciprocal local crossings were checked after the restart.
+
 ## Visages approved lighting and hidden development controls — Unreleased (2026-11-26)
 
 ### Changed

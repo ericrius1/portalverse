@@ -31,6 +31,7 @@ export class RoomInstance {
   private activeCleanups: Array<() => void> = [];
   private spawnOverride?: SpawnPoint;
   private readonly routeGateSpawns = new Map<'entrance' | 'exit', SpawnPoint>();
+  private readonly routeGateAnchors = new Map<'entrance' | 'exit', SpawnPoint>();
   private readonly updates: Array<(dt: number, elapsed: number) => void> = [];
   private readonly layers: GpuLayerCompositor[] = [];
   /** The room's clock as its last update saw it, for GPU layers. */
@@ -105,6 +106,11 @@ export class RoomInstance {
           if (handle.aperture.userData.oneWay === undefined) handle.aperture.userData.oneWay = true;
           if (handle.useFullOrientation) handle.aperture.userData.useFullOrientation = true;
           if (handle.arrivalSpawn) room.routeGateSpawns.set(end, handle.arrivalSpawn);
+          // Safe teleport landings can sit metres away from a custom doorway.
+          // Continuous crossings/previews must align with the actual doorway.
+          room.routeGateAnchors.set(end, handle.useFullOrientation && handle.arrivalSpawn
+            ? handle.arrivalSpawn
+            : { position: [...handle.portal.position], yaw: (handle.portal.yaw ?? 0) + Math.PI, pitch: 0 });
           register(handle);
         } else {
           register(createArchwayPortal(gate, { passage: true, routeGate: true }));
@@ -160,7 +166,7 @@ export class RoomInstance {
 
   /** Previews and continuous crossings meet the exact plane of a route gate. */
   portalAnchor(id?: string): SpawnPoint {
-    return id === 'entrance' || id === 'exit' ? this.routeGateSpawns.get(id) ?? threshold(id) : this.spawn(id);
+    return id === 'entrance' || id === 'exit' ? this.routeGateAnchors.get(id) ?? threshold(id) : this.spawn(id);
   }
 
   update(dt: number, elapsed: number): void {

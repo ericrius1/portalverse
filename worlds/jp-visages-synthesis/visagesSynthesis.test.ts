@@ -8,7 +8,6 @@ import {
   HEAD_PAIR_HALF_COUNT,
   HEAD_ROW_X,
   HEAD_SPACING,
-  NEAR_LOD_Z,
   PATH_FLAT_HALF_WIDTH,
   terrainHeightAt,
 } from './layout';
@@ -50,11 +49,6 @@ describe('jp-visages-synthesis layout, terrain, and collider', () => {
     expect(minZ).toBeLessThan(EXIT_Z - 320);
     expect(maxZ).toBeGreaterThan(ENTRANCE_Z + 320);
     expect(maxZ - minZ).toBeGreaterThanOrEqual(HEAD_PAIR_HALF_COUNT * 2 * HEAD_SPACING - 6);
-
-    const nearCount = plan.heads.filter(h => Math.abs(h.z) <= NEAR_LOD_Z).length;
-    const farCount = plan.heads.filter(h => Math.abs(h.z) > NEAR_LOD_Z).length;
-    expect(nearCount).toBeGreaterThan(20);
-    expect(farCount).toBeGreaterThan(10);
 
     // Varied weeping and asymmetric crack attributes across statues.
     const distinctCrackAngles = new Set(plan.heads.map(h => Math.round(h.crackAngle * 10)));
