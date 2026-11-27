@@ -1,7 +1,7 @@
-import catalog from '../../../../registry.json';
+import { sessionCatalog } from '../portal/sessionCatalog';
 import { routeGates, threshold, SIDE_PORTALS } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
-import type { FallSettings, RegistryFile, RoomCollider, WalkBounds, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, TerrainHeight, WorldModule } from '../types';
+import type { FallSettings, RoomCollider, WalkBounds, PlatformCollider, PlayerView, PortalDefinition, PortalVisualHandle, SpawnPoint, TerrainHeight, WorldModule } from '../types';
 import { createArchwayPortal } from './PortalMesh';
 import { breathe } from './breathe';
 import { GpuLayerCompositor, rendererDevice } from './gpuLayers';
@@ -95,7 +95,7 @@ export class RoomInstance {
         onDispose: fn => room.cleanups.push(fn),
       });
       for (const link of links) register(createArchwayPortal(link, { passage: true }));
-      for (const gate of routeGates(module.manifest.id, (catalog as unknown as RegistryFile).worlds)) {
+      for (const gate of routeGates(module.manifest.id, sessionCatalog.worlds)) {
         const end = gate.id as 'entrance' | 'exit';
         const custom = routeGateBuilders.get(end);
         if (custom) {
@@ -153,9 +153,14 @@ export class RoomInstance {
   }
 
   spawn(id?: string): SpawnPoint {
-    if (id === 'entrance' || id === 'exit') return this.routeGateSpawns.get(id) ?? threshold(id);
+    if (id === 'entrance' || id === 'exit') return this.routeGateSpawns.get(id) ?? threshold(id, 0.5);
     const spawns = this.module.manifest.spawns;
     return (id && id !== 'default' ? spawns[id] : undefined) ?? this.spawnOverride ?? spawns.default;
+  }
+
+  /** Previews and continuous crossings meet the exact plane of a route gate. */
+  portalAnchor(id?: string): SpawnPoint {
+    return id === 'entrance' || id === 'exit' ? this.routeGateSpawns.get(id) ?? threshold(id) : this.spawn(id);
   }
 
   update(dt: number, elapsed: number): void {

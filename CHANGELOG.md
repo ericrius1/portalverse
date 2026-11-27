@@ -2,6 +2,91 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Portal arrival and preview alignment — Unreleased (2026-11-26)
+
+### Fixed
+
+- Route-gate spawns place players 0.5 m inside the destination room, while portal previews and continuous crossings use the exact gate plane through `RoomInstance.portalAnchor()`.
+
+### Design & engineering decisions
+
+- Separate safe arrival positions from portal alignment anchors so entering a room clears the doorway without shifting the preview or continuous crossing by the same inset.
+
+## Visages — Synthesis (fourth comparison room) — Unreleased (2026-11-26)
+
+### Added
+
+- **New room `jp-visages-synthesis` (`worlds/jp-visages-synthesis/`, `"Visages — Synthesis (Neon)"`)**, added right after `jp-visages-codex` in `registry.json` while keeping the three original blind implementations (`jp-visages`, `jp-visages-claude`, `jp-visages-codex`) byte-for-byte untouched for side-by-side comparison.
+  - Synthesizes the strongest visual qualities from each study based on user critique: Neon's overall composition, ruined monolith pillars, scattered rubble, pale stone visages with dark smudges, readable moonlit lighting, and shader-integrated organic blood pools (wet halos, arterial color/depth shifts, ambient + live footstep ripples); Claude's metric recessed & asymmetrically patchy face cracks, thin multi-rivulet blood trails weeping from the eyes, moon-and-cloud night sky, and textured uneven dirt beside the road (without triangular snow particles); and Codex's truly endless procession (`29` pairs / `58` upright heads spanning `±392 m` with near/far LOD) and rich HDR environment reflections on glossy obsidian eyeballs.
+  - **Single-layer cobblestones (`textures.ts`)**: replaced Neon's overlapping multi-scale Voronoi noise (which produced "cobblestones within cobblestones") with one coherent 512×512 seamless laid-stone atlas storing exact mortar edge distance, per-stone constant tone/elevation ID, beveled convex crown height, and occasional hairline fractures strictly confined inside ~28% of individual stones, paired with a separate non-Voronoi mineral grain map.
+  - **Non-tiled 3D rubble & pillars (`index.ts`)**: switched rubble and ruined monolith shading to per-instance offset 3D procedural noise (`aRubble` / `aPillar` instanced attributes) so boulders and obelisks never show tiled 2D skin.
+  - Added soundtrack mix (`packages/core/src/audio/musicMix.ts`), unit tests (`worlds/jp-visages-synthesis/visagesSynthesis.test.ts`), and honest asset provenance (`worlds/jp-visages-synthesis/CREDITS.md`).
+- **Four-room `?tour=visages` loop (`roomTour.ts`, `app/main.ts`, `roomTour.test.ts`)**: extended `VISAGES_TOUR` to **Neon → Claude → Codex → Synthesis → Neon** (and reverse through entrance portals), removed hardcoded `3` counts/labels in the HUD and tour validation/tests, and kept the normal full-world catalog loop intact.
+
+### Design & engineering decisions
+
+- **Fix nested cobblestones structurally rather than tuning noise weights.** User critique called out Neon's biggest flaw as a larger Voronoi pattern overlaid on a smaller Voronoi pattern with no alignment, plus tiled stone skin on rubble. Encoding one coherent primary stone layout in `cobbleTex` (with per-stone IDs and boundary-clipped internal fractures) and removing Voronoi completely from the mineral grain texture (`stoneNoiseTex`) guarantees internal stone detail reads as wear/grain or isolated cracks rather than a competing cobblestone grid.
+- **Unite Claude's recessed face detailing with Neon's brighter readability and Codex's endlessness.** Using screen-space metric height derivatives (`bumpNormal`) gives face cracks the appearance of carved depth without changing the mesh, while per-head directional bias (`crackAngle`, `crackDensity`) makes cracks cluster asymmetrically across faces. Combining Codex's equirectangular HDR reflection map with Claude's analytic moon glint and `FogExp2` (`VOID_DARK`) delivers crisp mirror reflections on the black eyeballs and crimson pools that fade smoothly into darkness well before the `±392 m` rows end.
+- **Keep original blind rooms unchanged.** Preserving `worlds/jp-visages/`, `worlds/jp-visages-claude/`, and `worlds/jp-visages-codex/` byte-for-byte lets anyone walk `/?tour=visages` and compare all four rooms directly.
+
+## Visages comparison portal loop — Unreleased (2026-11-26)
+
+### Added
+
+- Integrated the independently built `jp-visages-claude` and `jp-visages-codex` rooms alongside Neon's `jp-visages`, including their assets, credits, tests and soundtrack mixes. The full catalog now places the three variants together after `jp-abyss`.
+- Open `/?tour=visages` to start in Neon and walk a closed **Neon → Claude → Codex → Neon** loop. Walking back reverses that order. The HUD identifies the variant and its position in the comparison; portal labels identify the destination. Share links and URL updates preserve the tour on reload. All three default arrivals start just inside the entrance gate, so each walk covers the full path.
+
+### Design & engineering decisions
+
+- Keep the blind implementations visually unchanged. Both were completed independently before integration; this change only connects them for comparison. A shared startup catalog selects the same three-room order for the directory, mounted gates and preview loading, while the ordinary URL keeps the full world loop. Multiplayer still uses the existing room IDs; no server protocol or room-geometry changes are needed.
+- Limit the comparison directory and dynamic links to its three rooms, so a normal shared-world portal or roster shortcut cannot unexpectedly leave the comparison. Tour selection is per browser and does not rewrite the persistent catalog.
+
+## Visages (Claude variant): endless rows of colossal stone heads — Unreleased (2026-11-26)
+
+### Added
+
+- **New room `jp-visages-claude` (`worlds/jp-visages-claude/`)**, JP's, placed beside the other Visages variants in the comparison integration. Two rows of colossal heads, buried to the chin, face each other across the path. Each head is about 40 m tall and carved from ancient stone, cracked, stained and lichened. Their eyes are polished black and catch the moon, and some of them weep blood down their cheeks. The path is rough matte cobbles with pebbles and loose stones, and wet red pools lie along it, rippling now and then. The rows, the path and the rubble run about 400 m past both portals and fade into fog and night, so the avenue seems to go on forever. Ash drifts down through the dark.
+- **Head model processing (`headModel.ts`)** — the supplied `female_human_head_game.glb` (shipped unmodified, ~1 MB, no textures, no compression) is used upright, as modelled, facing +Z. At load we split the two loose eyeballs from the skin (connected components), centre the skull between the eyes, trim the shoulders (they are always underground) and build a vertex-clustered far copy (~32k → ~10k triangles) for heads deep in the fog. Every head and eye is instanced.
+- `layout.ts` (seeded terrain, head rows, blood pools, stones), `visages.test.ts`, `CREDITS.md`, a registry entry and the room in both expected-order tests.
+- `packages/core/src/audio/musicMix.ts` — a `ROOM_VIBES` line for the new room (the eerie abyss stems), which the soundtrack test requires for every room in the loop.
+
+### Design & engineering decisions
+
+- **Not tilted.** With its node transform applied, the bust already stands upright and looks straight ahead. Each head only turns about Y (±90° plus a little jitter) to face the path, and sinks so its chin meets the ground, as in the reference image.
+- **"Forever" means fog, not geometry to infinity.** The rows stop at about ±400 m, inside the 450 m draw distance. Exponential fog matches the sky's horizon colour, so the far heads fade into the dark instead of ending. Heads more than 140 m from the middle use the decimated skin, which the fog hides.
+- **Procedural everything else.** The stone, the cobbles, the blood and the sky are TSL node shaders with screen-space bump, so the room ships one asset. The black eyes and the blood pools fake their mirror reflections (sky, cloud light and a sharp moon glint), so they read as shiny and liquid without an environment map.
+- **Loading.** The model is processed once per page and cached as typed arrays, and each mount wraps them in its own geometries and disposes them. The long loops (welding, splitting, decimating, building the ground) yield through `breathe`.
+- **Safety.** The path is dead level (y = 0) within 5.5 m of the centre line, so it passes level through both portals, which stay clear. Walk bounds of ±12 m keep players, even flying ones, between the rows and out of the noses.
+
+## The Unending Witnesses — Codex — Unreleased (2026-11-26)
+
+### Added
+
+- **`jp-visages-codex` / The Unending Witnesses — Codex**: two ranks of 30-metre upright stone heads facing a flat, rubble-strewn portal path, with glossy black eyes, fractured limestone, mineral streaks, and irregular crimson pools with subtle animated ripples. Forty-two heads continue from z=-320 to +320, far beyond both route gates, fading into black distance fog.
+- Prepared the supplied female head GLB into separate stone and eyeball surfaces, with original detail near the route and a clustered distant mesh. Included reproducible preparation and honest source/unknown-license provenance in the room's credits. Registered the room with JP's ownership and updated route-order expectations.
+
+### Design & engineering decisions
+
+- Follow the supplied reference's ancient stone / black eyes / red liquid contrast while honoring the request for level, inward-facing heads. Preserve the supplied face and eye shapes, remove the shoulders, and use physically reflective eyes and liquid against fully matte ground.
+- Keep the gates incidental to a much longer procession: rows and ground continue deep into fog, with no end walls or final statues visible. Reserve a clear centre lane at y=0 through both portals and give each head a conservative collision envelope.
+- Use instancing, a distant model variant, small generated reflection data, cooperative setup yields, and mount-owned resource disposal. The existing soundtrack contract requires a room blend, so add a quiet abyss-only mix to the shared audio catalog. No engine behavior or other-room edits are needed; the room remains below 1 MiB of bundled assets/code.
+
+## Avenue of Visages room (`worlds/jp-visages`) — Unreleased (2026-11-26)
+
+### Added
+
+- **Fourteenth room, `worlds/jp-visages/`**, placed between `jp-abyss` and `eric-palace-lagoon` in the loop: two endless rows of colossal, upright ancient stone heads facing inward across a rough matte stone path pooled with glossy red liquid, flanked by jagged ruined monolith pillars and piles of broken rubble.
+  - Uses `worlds/jp-visages/assets/female_human_head_game.glb` (996 KB, uncompressed), split once at load time (`headGeometry.ts`) into two cached geometries: the weathered ancient limestone visage (with buried shoulder geometry trimmed below ground) and its two separate glossy obsidian-black eyeballs.
+  - 42 instanced heads (`21` opposing pairs at `28 m` intervals from `Z = -280 m` to `+280 m`, ~25 m tall above the rubble floor) extend well past both portals (`Z = ±36.25`) and fade seamlessly into pitch darkness (`#04060b`) so the corridor reads as infinite in either direction.
+  - WebGPU TSL ground shader pairs ultra-matte fractured pale slate stone (`roughness: 0.96`) with domain-warped glossy crimson liquid pools (`roughness: 0.06`), wet stone rims, cold moonlight Fresnel reflections, and live concentric ripples around the walking player.
+  - Registered in `registry.json`, assigned the eerie abyss stem blend in `packages/core/src/audio/musicMix.ts`, and verified in `worlds/jp-visages/visages.test.ts` plus updated catalog tests.
+
+### Design & engineering decisions
+
+- **Split the single-primitive GLB by welded connected components at load time.** The source GLB shipped as one primitive with a single material, but its two eyeballs are clean disconnected mesh islands (`988` and `986` vertices). Splitting them once into `skin` and `eyes` (and computing exact local eye centers) lets us shade the skin as matte fractured ancient limestone with cavernous dark eye sockets and weeping rust-crimson streaks while rendering the eyeballs as high-clearcoat obsidian glass with crisp moonlight and red-pool glints — all in just two instanced draw calls.
+- **Bury the bust shoulders below ground and drop underground triangles.** Sinking the model to `HEAD_SINK_Y = 3.05` rests the colossal chins naturally in the rocky rubble while culling triangles fully below ground cuts vertex work across the 42 instances.
+- **Extended walk bounds (`Z ∈ [-175, +175]`) with radial darkness fade finishing by `238 m`.** Players can walk or fly past either portal down the avenue without ever reaching the end of the rows or seeing a far-plane clip edge.
+
 ## Open creator infrastructure brainstorm — Unreleased (2026-11-26)
 
 ### Added
@@ -232,6 +317,16 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 ### Design & engineering decisions
 
 - The scene stays visible behind the title to echo the Souls reference. Respawn is available throughout the reveal, and reduced-motion preferences skip the animation.
+
+## Room starts at the entrance — Unreleased
+
+### Changed
+
+- All 12 local rooms now start players half a meter past the entrance portal, facing into the room. This applies to first load, the room directory and direct `?world=` links. Links to `spawn=exit` start the same distance inside the exit and face back down the path.
+
+### Design & engineering decisions
+
+- Use the room authoring guide's existing entrance position so players see the path ahead on arrival. Portal previews and walk-through transitions still use the exact gate planes to keep the view continuous.
 
 ## Landable floating stones in Abyss — `834306f`
 

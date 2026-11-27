@@ -16,8 +16,8 @@ import {
   vec2,
   vec4,
 } from 'three/tsl';
-import catalog from '../../../../registry.json';
-import type { PortalDefinition, PortalVisualHandle, RegistryFile, SpawnPoint, WorldModule } from '../types';
+import { sessionCatalog } from '../portal/sessionCatalog';
+import type { PortalDefinition, PortalVisualHandle, SpawnPoint, WorldModule } from '../types';
 import {
   PORTAL_CENTER_Y,
   PORTAL_LENS_REF_DIST,
@@ -49,7 +49,7 @@ export interface PortalPreviewOptions {
   portalResolutionScale?: number;
 }
 
-const catalogOrder = (catalog as unknown as RegistryFile).worlds
+const catalogOrder = sessionCatalog.worlds
   .filter(world => world.kind === 'local')
   .map(world => world.id);
 
@@ -828,7 +828,7 @@ export class PortalPreviews {
       this.snapshots.set(key, snap);
     }
 
-    const spawn = room.spawn(spawnId);
+    const spawn = room.portalAnchor(spawnId);
     const forward = new THREE.Vector3(-Math.sin(spawn.yaw), 0, -Math.cos(spawn.yaw));
     const center = new THREE.Vector3(
       spawn.position[0],
@@ -1127,7 +1127,7 @@ export class PortalPreviews {
         }
         portalPixels(aperture, viewer, this.size, this.bounds);
         if (!this.bounds.z || !this.bounds.w) continue;
-        const spawn = room.spawn(portal.targetSpawnId);
+        const spawn = room.portalAnchor(portal.targetSpawnId);
         framePortal(this.camera, viewer, aperture, spawn,
           portal.position[1], portal.yaw ?? 0, this.size, this.bounds);
         this.animate(room, dt, elapsed, animated);
@@ -1289,7 +1289,7 @@ export class PortalPreviews {
 
     far.group.updateWorldMatrix(true, false);
     this.farFloor.setFromMatrixPosition(far.group.matrixWorld).applyMatrix4(this.nearMapping);
-    const farSpawn = farRoom.spawn(far.portal.targetSpawnId);
+    const farSpawn = farRoom.portalAnchor(far.portal.targetSpawnId);
     framePortal(this.farCamera, viewer, this.farProxy, farSpawn,
       this.farFloor.y, (far.portal.yaw ?? 0) + turn, this.size, fb);
     this.animate(farRoom, dt, elapsed, animated);

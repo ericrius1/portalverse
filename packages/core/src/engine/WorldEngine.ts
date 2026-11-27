@@ -337,18 +337,12 @@ export class WorldEngine {
       return undefined;
     }
 
-    const arrival = room.spawn(options?.spawnId);
-    let sourceOrigin: THREE.Vector3 | undefined;
-    let yawDelta = 0;
-    if (source && options?.crossed && !source.useFullOrientation) {
-      sourceOrigin = new THREE.Vector3().fromArray(source.portal.position);
-      const side = viewerSide(source, this.camera.position);
-      yawDelta = crossingYawDelta(source.portal.yaw ?? 0, side, arrival.yaw);
-    }
+    const crossing = source && options?.crossed && !source.useFullOrientation
+      ? { portal: source.portal, side: viewerSide(source, this.camera.position) }
+      : undefined;
 
     this.previews?.take(id);
-    this.installRoom(room, arrival, headingThrough(options?.fromPortal), sourceOrigin, yawDelta, options?.extraPortals);
-    return arrival;
+    return this.installRoom(room, options?.spawnId, headingThrough(options?.fromPortal), crossing, options?.extraPortals);
   }
 
   /** Wait for the next (exit) and previous (entrance) rooms; the rest of the window loads behind them. */
@@ -385,12 +379,12 @@ export class WorldEngine {
 
   private installRoom(
     room: RoomInstance,
-    arrival: SpawnPoint,
+    spawnId: string | undefined,
     heading: Heading,
-    sourceOrigin?: THREE.Vector3,
-    yawDelta = 0,
+    crossing?: { portal: PortalDefinition; side: CrossingSide },
     extraPortals?: PortalDefinition[],
-  ): void {
+  ): SpawnPoint {
+    const arrival = room.spawn(spawnId);
     const prevRoom = this.room;
     // Keep the room we just left mounted as a preview when it's still in the window or
     // the new room links back to it, so turning around costs no remount.
@@ -417,8 +411,11 @@ export class WorldEngine {
       this.callbacks.onFallChange?.(false);
     }
 
-    if (sourceOrigin) {
-      const landing = new THREE.Vector3().fromArray(arrival.position);
+    if (crossing) {
+      const anchor = room.portalAnchor(spawnId);
+      const sourceOrigin = new THREE.Vector3().fromArray(crossing.portal.position);
+      const landing = new THREE.Vector3().fromArray(anchor.position);
+      const yawDelta = crossingYawDelta(crossing.portal.yaw ?? 0, crossing.side, anchor.yaw);
       carryThroughPortal(this.avatar.position, sourceOrigin, yawDelta, landing);
       carryThroughPortal(this.camera.position, sourceOrigin, yawDelta, landing);
       this.avatar.yaw += yawDelta;
@@ -444,6 +441,7 @@ export class WorldEngine {
     }
 
     this.callbacks.onWorldLoaded?.(room.module.manifest);
+    return arrival;
   }
 
   /**
@@ -455,12 +453,8 @@ export class WorldEngine {
     const room = this.previews?.takeReady(portal.targetWorldId);
     if (!room) return false;
 
-    const arrival = room.spawn(portal.targetSpawnId);
-    const sourceOrigin = handle.useFullOrientation ? undefined : new THREE.Vector3().fromArray(portal.position);
-    const yawDelta = handle.useFullOrientation ? 0 : crossingYawDelta(portal.yaw ?? 0, sideSign, arrival.yaw);
-
     this.mountSequence++;
-    this.installRoom(room, arrival, headingThrough(portal), sourceOrigin, yawDelta);
+    this.installRoom(room, portal.targetSpawnId, headingThrough(portal), handle.useFullOrientation ? undefined : { portal, side: sideSign });
     this.callbacks.onPortalPromoted?.(room.module.manifest);
     return true;
   }

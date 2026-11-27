@@ -37,9 +37,9 @@ export function livePortalSlots(room?: Pick<WorldManifest, 'portals' | 'customPo
 
 export type RouteEnd = 'entrance' | 'exit';
 
-export function threshold(end: RouteEnd): SpawnPoint {
+export function threshold(end: RouteEnd, inset = 0): SpawnPoint {
   return {
-    position: [0, 0, (end === 'entrance' ? 1 : -1) * ROUTE_LENGTH / 2],
+    position: [0, 0, (end === 'entrance' ? 1 : -1) * (ROUTE_LENGTH / 2 - inset)],
     yaw: end === 'entrance' ? 0 : Math.PI,
     pitch: 0,
   };

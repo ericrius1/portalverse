@@ -13,7 +13,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         },
         "from-jp": {
@@ -33,7 +33,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         },
         "from-eric": {
@@ -53,7 +53,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -69,7 +69,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -85,7 +85,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -101,7 +101,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -117,7 +117,71 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "jp-visages",
+      "name": "Avenue of Visages — Neon",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Two endless rows of colossal ancient stone heads with obsidian-black eyes facing a rough matte stone path pooled with liquid crimson, marching past both portals into pitch darkness.",
+      "accentColor": "#c81d25",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "jp-visages-claude",
+      "name": "Visages (Claude variant)",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Two endless rows of colossal ancient stone heads, buried to the chin with polished black eyes, stare across a rough cobbled path pooled with blood, vanishing into the dark beyond both portals.",
+      "accentColor": "#b3121c",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "jp-visages-codex",
+      "name": "The Unending Witnesses — Codex",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Two endless ranks of colossal ancient stone faces watch a rubble-strewn path. Black glass eyes and crimson liquid shine in the cold darkness.",
+      "accentColor": "#a9182d",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "jp-visages-synthesis",
+      "name": "Visages — Synthesis (Neon)",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "Synthesized fourth Visages corridor uniting single-layer cobblestones, uneven dirt verges, integrated crimson pools, asymmetric recessed face cracks, weeping blood trails, moonlit clouds, ruined monoliths, and endless glossy-eyed colossi.",
+      "accentColor": "#d11824",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -149,7 +213,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -165,7 +229,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -181,7 +245,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -197,7 +261,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }
@@ -213,7 +277,7 @@
       "allowFlight": true,
       "spawns": {
         "default": {
-          "position": [0, 0, 0],
+          "position": [0, 0, 35.75],
           "yaw": 0
         }
       }

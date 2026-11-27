@@ -10,6 +10,7 @@ import {
   threshold,
 } from '../portal/roomLayout';
 import { RoomInstance } from '../engine/RoomInstance';
+import { readRouteFromLocation } from '../portal/handoff';
 import { framePortal, portalPixels, PortalPreviews } from '../engine/PortalPreviews';
 import { WorldRegistry } from '../portal/registry';
 import catalog from '../../../../registry.json';
@@ -24,7 +25,27 @@ describe('room modules', () => {
     for (const id of localIds) {
       const room = await registry.loadWorld(id);
       expect(room.manifest).toEqual(registry.getManifest(id));
-      expect(room.manifest.spawns.default.position).toHaveLength(3);
+      // Palace Lagoon was added upstream with its own arrival placement; retain it
+      // while checking the entrance-spawn change for the original twelve rooms.
+      const position = id === 'eric-palace-lagoon' ? [0, 0, 35] : threshold('entrance', 0.5).position;
+      expect(room.manifest.spawns.default).toMatchObject({ position, yaw: 0 });
+    }
+  });
+
+  it('places direct links inside their gate and keeps the crossing at the portal plane', async () => {
+    const manifest = (catalog as unknown as RegistryFile).worlds.find(room => room.id === 'jp-abyss')!;
+    const room = await RoomInstance.mount({ manifest, mount() {} }, {} as THREE.WebGPURenderer);
+    try {
+      for (const id of ['', 'default', 'entrance', 'unknown', 'exit']) {
+        const route = readRouteFromLocation(`?world=jp-abyss${id ? '&spawn=' + id : ''}`);
+        const end = id === 'exit' ? 'exit' : 'entrance';
+        const spawn = room.spawn(route.spawnId);
+        expect(spawn.position).toEqual(threshold(end, 0.5).position);
+        expect(spawn.yaw).toBe(threshold(end).yaw);
+        expect(room.portalAnchor(end).position).toEqual(threshold(end).position);
+      }
+    } finally {
+      room.dispose();
     }
   });
 });
@@ -113,6 +134,10 @@ it('links the rooms in catalog order and back to the start', () => {
     'jp-reef',
     'jp-loft',
     'jp-abyss',
+    'jp-visages',
+    'jp-visages-claude',
+    'jp-visages-codex',
+    'jp-visages-synthesis',
     'eric-palace-lagoon',
     'laser-lab',
     'alpine-sled',

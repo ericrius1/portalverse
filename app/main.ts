@@ -1,12 +1,12 @@
 /// <reference types="vite/client" />
 import { livePortalSlots } from '@portalverse/core/portal/roomLayout';
-import registryData from '../registry.json';
+import { sessionCatalog } from '@portalverse/core/portal/sessionCatalog';
+import { tourShareBase } from '@portalverse/core/portal/roomTour';
 import type {
   AvatarState,
   ConnectionState,
   PlayerIdentity,
   PortalDefinition,
-  RegistryFile,
   WorldManifest,
   WorldModule,
 } from '@portalverse/core/types';
@@ -207,8 +207,13 @@ async function boot(): Promise<void> {
 
   // Register lazy local world modules
   const modules = import.meta.glob<{ default: WorldModule }>('../worlds/*/index.ts');
-  const loaders = Object.fromEntries(Object.entries(modules).map(([path, load]) => [path.split('/')[2], load]));
-  const registry = new WorldRegistry(registryData as unknown as RegistryFile, loaders);
+  const roomIds = new Set(sessionCatalog.worlds.map(room => room.id));
+  const loaders = Object.fromEntries(Object.entries(modules)
+    .map(([path, load]) => [path.split('/')[2], load] as const)
+    .filter(([id]) => roomIds.has(id)));
+  const registry = new WorldRegistry(sessionCatalog, loaders);
+  const shareBase = tourShareBase(window.location.href);
+  const isVisagesTour = new URL(shareBase).searchParams.get('tour') === 'visages';
 
   // Read initial deep-link route (?world=eric-world, ?handoff=...)
   const route = readRouteFromLocation(window.location.search, window.location.hash);
@@ -245,7 +250,7 @@ async function boot(): Promise<void> {
   function syncUrlBar(): void {
     window.clearTimeout(urlSyncTimer);
     urlSyncTimer = window.setTimeout(() => {
-      const shareUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
+      const shareUrl = buildShareableWorldUrl(shareBase, {
         worldId: activeWorldId,
       });
       try {
@@ -257,6 +262,9 @@ async function boot(): Promise<void> {
   }
 
   function combinedDynamicPortals(): PortalDefinition[] {
+    if (isVisagesTour) {
+      return latestDynamicPortals.filter(portal => !portal.remoteUrl && registry.getManifest(portal.targetWorldId));
+    }
     if (returnPortalFromHandoff && activeWorldId === initialWorldId) {
       // First, so a room full of player portals never crowds out the way home.
       return [returnPortalFromHandoff, ...latestDynamicPortals];
@@ -270,7 +278,9 @@ async function boot(): Promise<void> {
     const run = () => {
       hudWorldName.textContent = activeManifest.name;
       const authorLabel = activeManifest.owner ? `Owner: ${activeManifest.owner}` : activeManifest.author;
-      hudWorldAuthor.textContent = `${authorLabel} · WebGPU`;
+      hudWorldAuthor.textContent = isVisagesTour
+        ? `Visages comparison · ${sessionCatalog.worlds.findIndex(room => room.id === activeWorldId) + 1} of ${sessionCatalog.worlds.length} · Neon → Claude → Codex → Synthesis`
+        : `${authorLabel} · WebGPU`;
       worldAccentDot.style.background = activeManifest.accentColor;
       worldAccentDot.style.boxShadow = `0 0 14px ${activeManifest.accentColor}`;
       if (updateRoster) renderPresenceRoster();
@@ -466,7 +476,8 @@ async function boot(): Promise<void> {
       const li = document.createElement('li');
       const isMe = p.id === net.getLocalPlayerId();
       const worldName = registry.getManifest(p.worldId)?.name ?? p.worldId;
-      li.className = `player-item${!isMe && p.worldId !== activeWorldId ? ' clickable' : ''}`;
+      const canJoin = !isMe && p.worldId !== activeWorldId && !!registry.getManifest(p.worldId);
+      li.className = `player-item${canJoin ? ' clickable' : ''}`;
       li.innerHTML = `
         <span class="player-meta">
           <span class="player-swatch" style="background:${p.color};box-shadow:0 0 8px ${p.color}"></span>
@@ -474,7 +485,7 @@ async function boot(): Promise<void> {
         </span>
         <span class="player-world">${escapeHtml(worldName)}</span>
       `;
-      if (!isMe && p.worldId !== activeWorldId) {
+      if (canJoin) {
         li.title = `Click to join ${p.name} in ${worldName}`;
         li.addEventListener('click', () => {
           void transitionToWorld(p.worldId, { spawnId: 'default' });
@@ -486,7 +497,7 @@ async function boot(): Promise<void> {
 
   function renderWorldDirectory(): void {
     worldDirectoryList.innerHTML = '';
-    const base = window.location.origin + window.location.pathname;
+    const base = shareBase;
 
     const entries = registry.listWorlds().filter(w => w.kind === 'local').map(w => ({
       title: w.name,
@@ -568,7 +579,7 @@ async function boot(): Promise<void> {
 
   async function handlePortalTransition(portal: PortalDefinition, crossed: boolean): Promise<void> {
     if (portal.remoteUrl) {
-      const returnUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
+      const returnUrl = buildShareableWorldUrl(shareBase, {
         worldId: activeWorldId,
       });
       const dest = buildRemotePortalUrl(portal.remoteUrl, {
@@ -717,7 +728,7 @@ async function boot(): Promise<void> {
 
   // Share current room direct link
   btnShareLink.addEventListener('click', async () => {
-    const shareUrl = buildShareableWorldUrl(window.location.origin + window.location.pathname, {
+    const shareUrl = buildShareableWorldUrl(shareBase, {
       worldId: activeWorldId,
     });
     await copyToClipboard(shareUrl);
