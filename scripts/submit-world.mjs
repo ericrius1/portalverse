@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Zero-friction PR submission helper for Portalverse contributors (and coding agents).
  *
