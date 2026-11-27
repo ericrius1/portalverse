@@ -11,6 +11,7 @@ COPY app ./app
 COPY packages ./packages
 COPY worlds ./worlds
 COPY scripts ./scripts
+COPY .github/scripts ./.github/scripts
 
 RUN pnpm run build
 
