@@ -2,6 +2,28 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Visages: blind A–D eye comparison — Unreleased (2026-11-26)
+
+### Added
+
+- `?eyes=compare&world=jp-visages-synthesis` adds four side-by-side, upright comparison heads near the entrance in the synthesis room's existing lighting and scenery. Matching scale, geometry, grime, cracks and blood trails isolate the four eye treatments; only A–D labels appear in the scene. The fixed shuffled answer key is kept in `worlds/jp-visages-synthesis/eyeStudy.ts`.
+- Comparison heads and plinths have collision protection while leaving the central portal route clear. Share links preserve the optional view, and the ordinary avenue remains available without the query flag.
+
+### Design & engineering decisions
+
+- Let the user choose eye materials in context without knowing their authors. Preserve each treatment's highlight/reflection settings, align analytic moon glints to the synthesis sky, and use identical faces at equal height so the comparison is about eyes rather than competing room art. A stable ordering keeps letters meaningful across reloads and later feedback.
+
+## Visages synthesis: darker light, subdued blood and weathered faces — Unreleased (2026-11-26)
+
+### Changed
+
+- Reduced the synthesis room's moonlight, ambient and cross-corridor fill, and red bounce while retaining silhouette light and glossy eyes. Darkened the blood's shallow and deep colors, reduced its added glow and reflection strength, and preserved its depth patches, wet borders and ripples.
+- Strengthened varied vertical face stains, added broad charcoal/mineral deposits, extended grime above the buried chin, and subdued fresh pale chips. Face direction, layout, crack relief and the three original variants remain unchanged.
+
+### Design & engineering decisions
+
+- Follow the user's request for a darker, long-forgotten realm without making it as dark as the darkest comparison. Reduce fill lighting more than rim lighting to retain readable silhouettes, and darken the blood material itself so its added glow cannot overpower the mood. Patchy, per-head grime restores the original Neon's dirty stone character rather than merely lowering every face's brightness uniformly.
+
 ## Portal arrival and preview alignment — Unreleased (2026-11-26)
 
 ### Fixed

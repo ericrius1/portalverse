@@ -61,6 +61,15 @@ describe('Visages comparison tour', () => {
     expect(() => catalogForTour(incomplete, '?tour=visages')).toThrow(/all Visages rooms installed/i);
   });
 
+  it('preserves the optional blind eye study across share URLs without exposing its answer key', () => {
+    const url = buildShareableWorldUrl(tourShareBase(
+      'http://localhost:5173/?tour=visages&eyes=compare&world=jp-visages-synthesis',
+    ), { worldId: 'jp-visages-synthesis' });
+    expect(new URL(url).searchParams.get('eyes')).toBe('compare');
+    expect(new URL(url).searchParams.get('tour')).toBe('visages');
+    expect(tourShareBase('http://localhost:5173/?eyes=unknown')).toBe('http://localhost:5173/');
+  });
+
   it('mounts the engine-owned gates using the same tour as the directory and previews', async () => {
     vi.stubGlobal('window', { location: { search: '?tour=visages' } });
     vi.resetModules();

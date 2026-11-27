@@ -19,8 +19,10 @@ export function catalogForTour(catalog: RegistryFile, search: string): RegistryF
 export function tourShareBase(href: string): string {
   const url = new URL(href);
   const tour = url.searchParams.get('tour');
+  const eyes = url.searchParams.get('eyes');
   url.search = '';
   url.hash = '';
   if (tour === 'visages') url.searchParams.set('tour', tour);
+  if (eyes === 'compare') url.searchParams.set('eyes', eyes);
   return url.toString();
 }

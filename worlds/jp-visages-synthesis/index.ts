@@ -59,6 +59,10 @@ import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { breathe } from '@portalverse/core/rooms/kit';
 import headUrl from './assets/female_human_head_game.glb?url';
 import {
+  EYE_STUDY_HEADS, EYE_STUDY_KEY, EYE_STUDY_LABELS,
+  eyeStudyCollider, studyEyeMaterial, studyReflectionMap,
+} from './eyeStudy';
+import {
   buildVisageSynthesisPlan,
   createVisageCollider,
   HEAD_PAIR_HALF_COUNT,
@@ -305,6 +309,7 @@ function schlickFresnel(normal: Vec3Node, f0: number): FloatNode {
 
 export default defineRoom('jp-visages-synthesis', {
   async mount(ctx) {
+    const eyeStudy = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('eyes') === 'compare';
     const layout = await sharedSynthesisLayout();
     const root = new THREE.Group();
     ctx.scene.add(root);
@@ -329,7 +334,9 @@ export default defineRoom('jp-visages-synthesis', {
 
     ctx.setTerrainHeight(terrainHeightAt);
     ctx.setWalkBounds(WALK_BOUNDS);
-    ctx.setCollider(createVisageCollider(layout.plan.heads, layout.plan.pillars));
+    const avenueCollider = createVisageCollider(layout.plan.heads, layout.plan.pillars);
+    ctx.setCollider(eyeStudy ? eyeStudyCollider(avenueCollider) : avenueCollider);
+    if (eyeStudy) ctx.configureSpawn({ position: [0, 0, 34], yaw: 0, pitch: 0.12 });
 
     const moonTuple = [MOON_DIR.x, MOON_DIR.y, MOON_DIR.z] as const;
     const [cobbleData, stoneNoiseData, envSkyData] = await Promise.all([
@@ -417,27 +424,27 @@ export default defineRoom('jp-visages-synthesis', {
     // Exponential fog swallows the 392 m rows seamlessly before the 450 m far plane.
     ctx.scene.fog = new THREE.FogExp2(VOID_DARK, 0.0062);
 
-    // Readable cold moonlight from Neon + balanced cross-corridor cheek fills + crimson pool bounce.
-    root.add(new THREE.HemisphereLight('#4b6378', '#22060a', 0.62));
+    // Keep the moonlit edges readable, with deeper shadows across the forgotten avenue.
+    root.add(new THREE.HemisphereLight('#4b6378', '#22060a', 0.44));
 
-    const keyMoon = new THREE.DirectionalLight('#d8ecfa', 2.3);
+    const keyMoon = new THREE.DirectionalLight('#d8ecfa', 1.75);
     keyMoon.position.copy(MOON_DIR).multiplyScalar(120);
     root.add(keyMoon);
 
     for (const [x, tint, intensity] of [
-      [-1, '#9ab8cc', 0.88],
-      [1, '#a2b2cc', 0.82],
+      [-1, '#9ab8cc', 0.55],
+      [1, '#a2b2cc', 0.51],
     ] as const) {
       const crossFill = new THREE.DirectionalLight(tint, intensity);
       crossFill.position.set(x * 110, 52, 24);
       root.add(crossFill);
     }
 
-    const rimMoon = new THREE.DirectionalLight('#86aec6', 0.72);
+    const rimMoon = new THREE.DirectionalLight('#86aec6', 0.60);
     rimMoon.position.copy(RIM_DIR).multiplyScalar(120);
     root.add(rimMoon);
 
-    const crimsonBounce = new THREE.DirectionalLight('#9f1119', 0.52);
+    const crimsonBounce = new THREE.DirectionalLight('#9f1119', 0.28);
     crimsonBounce.position.set(0, -85, 10);
     root.add(crimsonBounce);
 
@@ -539,13 +546,13 @@ export default defineRoom('jp-visages-synthesis', {
       // Dampen & darken stone/dirt around every wet crimson rim.
       const dampGround = dryGround.mul(float(1).sub(wetHalo.mul(0.46)));
 
-      // Deep arterial crimson interior transitioning to vivid scarlet shallow rims.
+      // Muted crimson shallows retain contrast against the nearly black deep patches.
       const liquidShimmer = texture(
         stoneNoiseTex,
         p.xz.mul(0.21).add(vec2(time.mul(0.011), time.mul(-0.008))),
       ).r;
-      const shallowRed = color('#c8141c');
-      const deepRed = color('#450307');
+      const shallowRed = color('#961018');
+      const deepRed = color('#340206');
       const liquidBase = mix(shallowRed, deepRed, poolDepth.mul(0.84).add(liquidShimmer.mul(0.16)));
 
       // Dual ambient ripples + live concentric ripples around the walking player's feet.
@@ -580,8 +587,8 @@ export default defineRoom('jp-visages-synthesis', {
 
       // Mirror sky/moon reflection & subtle arterial depth luminance on the wet red liquid.
       const poolFresnel = schlickFresnel(normalView as Vec3Node, 0.045);
-      const poolMirror = mirroredSky(reflectVector as Vec3Node).mul(poolFresnel).mul(0.85);
-      const arterialGlow = color('#70080f').mul(float(0.28).add(float(1).sub(poolDepth).mul(0.14)));
+      const poolMirror = mirroredSky(reflectVector as Vec3Node).mul(poolFresnel).mul(0.6);
+      const arterialGlow = color('#52060c').mul(float(0.07).add(float(1).sub(poolDepth).mul(0.045)));
 
       groundMat.colorNode = mix(dampGround, liquidBase, poolMask).mul(keepVis);
       // Ultra-matte cobbles (0.95) & dirt (0.98), damp wet rims (0.42), mirror-glossy crimson pools (0.05).
@@ -624,7 +631,11 @@ export default defineRoom('jp-visages-synthesis', {
       const grain = mx_noise_float(lp.mul(3.8).add(instShift)).mul(0.5)
         .add(mx_noise_float(lp.mul(10.5).add(instShift.mul(1.7))).mul(0.25));
       const smudges = mx_noise_float(vec3(lp.x.mul(1.6).add(instShift.x), lp.y.mul(0.22).add(instShift.y), lp.z.mul(1.6)));
-      const smudgeMask = smoothstep(0.14, 0.64, smudges).mul(0.34);
+      const smudgeMask = smoothstep(0.02, 0.52, smudges).mul(0.56);
+      // Broad soot/mineral deposits break up the clean stone; stretched runoff stains
+      // cross the brows and cheeks, with a different weathering pattern on each head.
+      const deposits = mx_fractal_noise_float(lp.mul(0.72).add(instShift.mul(0.63)), 3, 2, 0.5);
+      const depositMask = smoothstep(-0.16, 0.32, deposits).mul(0.62);
 
       // Asymmetric, patchy, convincingly recessed face cracks (3D warped Worley cells).
       const crackWarp = vec3(
@@ -663,7 +674,8 @@ export default defineRoom('jp-visages-synthesis', {
       let skinColor: Vec3Node = mix(midStone, paleStone, smoothstep(0.22, 0.8, mottle)) as Vec3Node;
       skinColor = skinColor.mul(grain.mul(0.16).add(0.9)) as Vec3Node;
       skinColor = skinColor.mul(float(1).sub(smudgeMask)) as Vec3Node;
-      skinColor = mix(skinColor, color('#d4dee0'), spall.mul(0.26)) as Vec3Node;
+      skinColor = mix(skinColor, color('#303332'), depositMask) as Vec3Node;
+      skinColor = mix(skinColor, color('#b6c1c4'), spall.mul(0.17)) as Vec3Node;
 
       // Cavernous darkened eye sockets so the glossy black eyes gleam out of deep shadow.
       const dLeftEye = lp.sub(vec3(leftEyeCenter.x, leftEyeCenter.y, leftEyeCenter.z)).length();
@@ -703,13 +715,13 @@ export default defineRoom('jp-visages-synthesis', {
 
       // Apply deeply recessed cracks, base dirt/rubble contact grime, and glossy wet crimson blood trails.
       skinColor = mix(skinColor, deepCrevice, crack.mul(0.9)) as Vec3Node;
-      const baseGrime = float(1).sub(smoothstep(0.0, 4.2, positionWorld.y));
-      skinColor = mix(skinColor, color('#1c212a'), baseGrime.mul(0.56)) as Vec3Node;
+      const baseGrime = float(1).sub(smoothstep(0.0, 6.2, positionWorld.y));
+      skinColor = mix(skinColor, color('#1c212a'), baseGrime.mul(0.66)) as Vec3Node;
       skinColor = mix(skinColor, color('#5c0407'), bloodTrails) as Vec3Node;
 
       // Subtle cold moonlight rim along silhouettes so distant visages read before vanishing into fog.
       const rim = pow(float(1).sub(clamp(dot(normalView, positionViewDirection), 0, 1)), 3.2);
-      const coldRim = color('#58768b').mul(rim).mul(0.24).mul(float(1).sub(socketAO.mul(0.8)));
+      const coldRim = color('#58768b').mul(rim).mul(0.18).mul(float(1).sub(socketAO.mul(0.8)));
 
       // Metric bump height: deep recessed cracks (-0.145 m equivalent) + limestone surface texture + subtle raised wet trails.
       const skinHeight = grain
@@ -788,6 +800,58 @@ export default defineRoom('jp-visages-synthesis', {
       eyeMesh.instanceMatrix.needsUpdate = true;
       eyeMesh.frustumCulled = false;
       root.add(eyeMesh);
+
+      if (eyeStudy) {
+        // A compact frontal lineup in the real avenue. All four skins share exactly
+        // the same attributes and material, so weathering cannot bias the eye choice.
+        const matrices = EYE_STUDY_HEADS.map(h => new THREE.Matrix4().compose(
+          new THREE.Vector3(h.x, h.y, h.z), new THREE.Quaternion(),
+          new THREE.Vector3(h.scale, h.scale, h.scale),
+        ));
+        addHeadBatch(skin, EYE_STUDY_HEADS, matrices);
+        const studyEnv = ownTex(await studyReflectionMap(ctx.breathe));
+        const eyeGeo = ownGeo(copyOfGeometry(eyes));
+        const plinthGeo = ownGeo(new THREE.BoxGeometry(6.0, 1.6, 6.0));
+        const plinthMat = ownMat(new THREE.MeshStandardNodeMaterial({ color: '#30383e', roughness: 0.98 }));
+        for (const [i, h] of EYE_STUDY_HEADS.entries()) {
+          const selected = studyEyeMaterial(EYE_STUDY_KEY[i], eyeMat, studyEnv, MOON_DIR, RIM_DIR);
+          if (selected !== eyeMat) ownMat(selected);
+          const sampleEyes = new THREE.InstancedMesh(eyeGeo, selected, 1);
+          sampleEyes.setMatrixAt(0, matrices[i]);
+          sampleEyes.instanceMatrix.needsUpdate = true;
+          sampleEyes.frustumCulled = false;
+          instanced.push(sampleEyes);
+          root.add(sampleEyes);
+
+          const plinth = new THREE.Mesh(plinthGeo, plinthMat);
+          plinth.position.set(h.x, 0.8, h.z);
+          root.add(plinth);
+          ctx.addPlatform({ minX: h.x - 3, maxX: h.x + 3, minZ: h.z - 3, maxZ: h.z + 3, topY: 1.6 });
+
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 256;
+          const ink = canvas.getContext('2d')!;
+          ink.fillStyle = '#111820';
+          ink.fillRect(0, 0, 256, 256);
+          ink.strokeStyle = '#71818a';
+          ink.lineWidth = 5;
+          ink.strokeRect(8, 8, 240, 240);
+          ink.fillStyle = '#e3e9ed';
+          ink.font = 'bold 178px sans-serif';
+          ink.textAlign = 'center';
+          ink.textBaseline = 'middle';
+          ink.fillText(EYE_STUDY_LABELS[i], 128, 137);
+          const labelTex = ownTex(new THREE.CanvasTexture(canvas));
+          labelTex.colorSpace = THREE.SRGBColorSpace;
+          const label = new THREE.Mesh(
+            ownGeo(new THREE.PlaneGeometry(1.8, 1.8)),
+            ownMat(new THREE.MeshBasicNodeMaterial({ map: labelTex, toneMapped: false, side: THREE.DoubleSide })),
+          );
+          label.position.set(h.x, 10.3, h.z + 0.3);
+          root.add(label);
+          await ctx.breathe();
+        }
+      }
     }
 
     await ctx.breathe();
