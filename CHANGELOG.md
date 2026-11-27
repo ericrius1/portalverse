@@ -2,7 +2,17 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
-## Palace portal snapshot clipping — Unreleased (2026-11-26)
+## Palace live portal projection — Unreleased (2026-11-26)
+
+### Fixed
+
+- Palace Lagoon's distant live portal no longer shows a solid brown wall when the viewer looks slightly down or sideways. The shared weft adapter now preserves the complete portal projection, including tilted clipping planes and the distance-adjusted lens, in both its main and reflection views. Layer depth is converted directly from the matching reversed projection.
+
+### Design & engineering decisions
+
+- The earlier snapshot fix handled only perpendicular clipping. Reproducing the reported view 21.25 m from the portal with a -0.08 radian pitch showed the adapter falling back to a 0.1 m near plane, exposing geometry behind the doorway. Preserve the supplied matrix instead of approximating it with field of view and near distance; no Palace artwork or material-facing settings change. Regression tests cover near/far views, pitch/yaw, doorway occlusion, pixel/depth agreement and reuse of the shared camera.
+
+## Palace portal snapshot clipping — c30b33d (2026-11-26)
 
 ### Fixed
 

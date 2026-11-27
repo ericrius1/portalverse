@@ -1,5 +1,6 @@
 import { Kit, Ref, type RunEntry, type Texture, type View } from '@ericrius1/weft';
 import type { GpuContext, GpuLayer, GpuLayerResult, GpuLayerView } from '../types';
+import { setWeftProjection } from './weftProjection';
 
 /**
  * Rooms drawn with weft (github.com/ericrius1/weft), on the device the engine shares.
@@ -8,8 +9,9 @@ import type { GpuContext, GpuLayer, GpuLayerResult, GpuLayerView } from '../type
  * `WeftLayer` is a GPU layer (`ctx.addGpuLayer`) that points weft's camera at each
  * view the engine asks for and runs the room's passes into its own colour and depth
  * targets. Bind `layer.color` and `layer.depth` as your passes' targets and give them
- * `viewport: layer.viewport`. weft's conventions hold inside: reversed-Z with an
- * infinite far plane, linear HDR colour (the engine tone-maps it).
+ * `viewport: layer.viewport`. Colour is linear HDR and depth is reversed-Z using
+ * the engine's full projection, including portal clipping. For depth reconstruction
+ * use the inverse projection; `near / depth` is not valid for oblique portal views.
  *
  * Only this module imports weft, so weft lands in the chunks of the rooms that use it
  * and costs Three.js rooms nothing.
@@ -36,8 +38,8 @@ export function projectionToLens(projection: ArrayLike<number>): { fovY: number;
   const p0 = projection[0], p5 = projection[5];
   // A standard WebGPU projection reaches z_clip = 0 at z_view = -near.
   // Snapshot cameras put that plane at the doorway, metres ahead of the eye.
-  // Oblique live-portal planes cannot be represented by a scalar cam.near;
-  // retain the room's existing near value for those projections.
+  // Oblique live-portal planes cannot be represented by a scalar cam.near.
+  // These lens numbers are metadata; setWeftProjection preserves actual clipping.
   const parallel = Math.abs(projection[2]) < 1e-7 && Math.abs(projection[6]) < 1e-7;
   const near = projection[14] / projection[10];
   return {
@@ -133,6 +135,7 @@ export class WeftLayer implements GpuLayer {
     cam.shift = lens.shift;
     cam.near = near;
     cam.far = Infinity;
+    setWeftProjection(cam, view.projection);
     kit.mainView.size = [w, h];
     const items = this.options.frame(view, this);
     kit.mainView.update(true);
@@ -141,13 +144,14 @@ export class WeftLayer implements GpuLayer {
       v.camera.fovY = lens.fovY;
       v.camera.shift = lens.shift;
       v.camera.near = near;
+      setWeftProjection(v.camera, view.projection);
       v.update(true);
     }
     kit.run(items);
     return {
       color: this.colorTex!.gpu,
       depth: this.depthTex!.gpu,
-      depthMode: { reversed: true, near },
+      depthMode: { reversed: true, near, matchesProjection: true },
     };
   }
 }

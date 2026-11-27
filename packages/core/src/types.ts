@@ -305,6 +305,10 @@ export interface GpuLayerView {
 
 /** How a layer's depth texture maps to distance from the eye. */
 export interface GpuLayerDepth {
+  /** Uses the supplied view.projection exactly (with z replaced by w-z if reversed).
+   * Allows oblique portal projections without reducing depth to a scalar distance.
+   */
+  matchesProjection?: boolean;
   /** Reversed-Z: 1 at the near plane, 0 at the far one (or infinity). */
   reversed: boolean;
   near: number;

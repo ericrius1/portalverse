@@ -26,6 +26,7 @@ struct P { proj: vec4f, mode: vec4f }
 @fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let d = textureLoad(src, vec2i(pos.xy), 0);
   let rev = p.mode.x > 0.5;
+  if (p.mode.w > 0.5) { return vec4f(select(d, 1.0 - d, rev)); }
   let n = p.mode.y;
   let f = p.mode.z;
   if ((rev && d <= 0.0) || (!rev && d >= 1.0)) { return vec4f(1.0); }
@@ -220,6 +221,7 @@ export class GpuLayerCompositor {
     p[4] = mode.reversed ? 1 : 0;
     p[5] = mode.near;
     p[6] = mode.far && Number.isFinite(mode.far) ? mode.far : INFINITE_FAR;
+    p[7] = mode.matchesProjection ? 1 : 0;
     this.device.queue.writeBuffer(this.params, 0, p);
     let group = this.groups.get(source);
     if (!group) {
