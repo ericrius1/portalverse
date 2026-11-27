@@ -284,6 +284,22 @@
           "yaw": 0
         }
       }
+    },
+    {
+      "id": "doug-cassette-station",
+      "name": "Midnight Cassette Station",
+      "owner": "douglascalhoun",
+      "author": "Doug (douglascalhoun)",
+      "description": "A calming blue-hour rain-washed cyber-tramway & glowing moss conservatory with neon-reflecting rain puddles, floating holographic koi, a giant spinning cassette arch, sleeping station cat, glowing vending machines, 24H steaming tea stall, channel-switching 90s CRT shrine, singing red payphone, lo-fi synth tiles, twilight monorail, and five hidden mixtapes.",
+      "accentColor": "#5eead4",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
     }
   ]
 }

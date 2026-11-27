@@ -68,6 +68,7 @@ export const ROOM_VIBES: Record<string, Vibe> = {
   'eric-biolum-grove': { 'shimmer-bells': 0.8, 'lagoon-bed': 0.5, 'holo-bed': 0.35 },
   'eric-sun-observatory': { 'golden-bed': 1, 'shimmer-bells': 0.5, 'holo-bed': 0.15 },
   'honey-hood': { 'lofi-bed': 0.9, 'soft-beat': 0.8, 'golden-bed': 0.3 },
+  'doug-cassette-station': { 'lofi-bed': 0.95, 'shimmer-bells': 0.55, 'holo-bed': 0.3, 'soft-beat': 0.35 },
 };
 export const DEFAULT_VIBE: Vibe = { 'holo-bed': 0.6, 'shimmer-bells': 0.4, 'golden-bed': 0.3 };
 
