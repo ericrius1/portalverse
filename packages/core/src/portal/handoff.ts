@@ -1,3 +1,4 @@
+import { sanitizeSkinAppearance } from '../characters/appearance';
 import type {
   PortalDefinition,
   PortalHandoffPayload,
@@ -148,6 +149,7 @@ export function sanitizeHandoffPayload(value: unknown): PortalHandoffPayload | n
     version: 1,
     playerName: sanitizeText(raw.playerName, 32) ?? 'Traveler',
     playerColor: sanitizeColor(raw.playerColor) ?? DEFAULT_PLAYER_COLOR,
+    ...sanitizeSkinAppearance(raw),
     fromWorldId,
     fromWorldName: sanitizeText(raw.fromWorldName, 40) ?? fromWorldId,
     sentAt: isFiniteNumber(raw.sentAt) ? raw.sentAt : 0,

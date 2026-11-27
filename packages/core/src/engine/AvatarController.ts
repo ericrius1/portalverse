@@ -1,3 +1,4 @@
+import { normalizeSkinAppearance, type SkinAppearance } from '../characters/appearance';
 import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
 import type { AvatarState, PlatformCollider, RoomCollider, SpawnPoint, TerrainHeight, Vec3Tuple, WalkBounds } from '../types';
@@ -117,7 +118,9 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 
 export class AvatarController {
   readonly position = new THREE.Vector3(0, 0, 10);
+  /** Camera heading; also the movement reference for WASD and touch input. */
   yaw = 0;
+  private facingYaw = 0;
   pitch = 0;
   velocityY = 0;
   isFlying = false;
@@ -159,6 +162,7 @@ export class AvatarController {
   private localRig: CharacterRig;
   private localCharacterId: string;
   private localColor: string;
+  private localAppearance = normalizeSkinAppearance();
   private readonly localMotion: AvatarMotionState = { ...IDLE_MOTION_STATE };
   private readonly prevRigPos = new THREE.Vector3();
   private prevRigYaw = 0;
@@ -195,12 +199,15 @@ export class AvatarController {
     onMovementModeChange?: (mode: MovementMode) => void,
     initialCharacterId: string = DEFAULT_CHARACTER_ID,
     onCharacterChange?: (characterId: string) => void,
+    private readonly onSkinAppearanceChange?: (appearance: SkinAppearance) => void,
   ) {
     this.scene = scene;
     this.camera = camera;
     this.domElement = domElement;
     this.localColor = initialColor;
-    this.localCharacterId = getCharacterDefinition(initialCharacterId).id;
+    const initialCharacter = getCharacterDefinition(initialCharacterId);
+    this.localCharacterId = initialCharacter.id;
+    this.movementMode = initialCharacter.defaultMovementMode ?? 'classic';
     this.onFlightChange = onFlightChange;
     this.onColorChange = onColorChange;
     this.onCameraViewChange = onCameraViewChange;
@@ -375,22 +382,54 @@ export class AvatarController {
     this.onColorChange?.(hexColor);
   }
 
+  private usesAdventureControls(): boolean {
+    return !this.firstPerson && getCharacterDefinition(this.localCharacterId).thirdPersonMovement === 'adventure';
+  }
+
+  /** Body heading for rendering, multiplayer and portal proxies. Camera yaw stays independent. */
+  getFacingYaw(): number {
+    return this.usesAdventureControls() ? this.facingYaw : this.yaw;
+  }
+
+  /** Carry camera and body headings through a portal by the same rotation. */
+  rotateHeading(yawDelta: number): void {
+    this.yaw += yawDelta;
+    this.facingYaw += yawDelta;
+    if (this.usesAdventureControls()) {
+      this.prevRigYaw += yawDelta;
+      this.skipMotionSample = true;
+    }
+  }
+
   getCharacterId(): string {
     return this.localCharacterId;
+  }
+
+  getSkinAppearance(): SkinAppearance {
+    return { ...this.localAppearance };
+  }
+
+  setSkinAppearance(appearance: Partial<SkinAppearance>): void {
+    this.localAppearance = normalizeSkinAppearance(appearance);
+    this.localRig.setSkinAppearance?.(this.localAppearance);
+    this.onSkinAppearanceChange?.(this.localAppearance);
   }
 
   setCharacter(characterId: string): void {
     const resolved = getCharacterDefinition(characterId).id;
     if (resolved === this.localCharacterId) return;
+    this.facingYaw = this.getFacingYaw();
     this.localCharacterId = resolved;
+    const defaultMode = getCharacterDefinition(resolved).defaultMovementMode;
+    if (defaultMode) this.setMovementMode(defaultMode);
 
     const wasVisible = this.localRig.group.visible;
     this.scene.remove(this.localRig.group);
     this.localRig.dispose();
 
-    this.localRig = createCharacterRig(resolved, { accentColor: this.localColor });
+    this.localRig = createCharacterRig(resolved, { accentColor: this.localColor, ...this.localAppearance });
     this.localRig.group.position.copy(this.position);
-    this.localRig.group.rotation.y = this.yaw;
+    this.localRig.group.rotation.y = this.getFacingYaw();
     this.localRig.group.visible = wasVisible;
     this.localRig.update(0, 0, this.localMotion);
     this.scene.add(this.localRig.group);
@@ -434,6 +473,7 @@ export class AvatarController {
     this.chaseLift = 0;
     this.position.set(spawn.position[0], spawn.position[1], spawn.position[2]);
     this.yaw = spawn.yaw;
+    this.facingYaw = spawn.yaw;
     this.pitch = spawn.pitch ?? (this.firstPerson ? 0 : -0.14);
     this.velocityY = 0;
     this.setFlying(Boolean(spawn.flying));
@@ -447,7 +487,7 @@ export class AvatarController {
 
   syncRigTransform(elapsed = 0): void {
     this.localRig.group.position.copy(this.position);
-    this.localRig.group.rotation.y = this.yaw;
+    this.localRig.group.rotation.y = this.getFacingYaw();
     this.localRig.update(0, elapsed, this.localMotion);
   }
 
@@ -537,14 +577,20 @@ export class AvatarController {
     this.setMovementMode(this.movementMode === 'classic' ? 'platformer' : 'classic');
   }
 
-  /** Keep Platformer momentum pointing the same way relative to the player through a portal. */
+  /** Carry platformer momentum and adventure travel direction through a rotated portal. */
   turnMomentum(yawDelta: number): void {
-    if (this.movementMode !== 'platformer') return;
+    const adventure = this.usesAdventureControls();
+    if (this.movementMode !== 'platformer' && !adventure) return;
     const state = this.platformer;
     state.velocity.x = this.stride.x;
     state.velocity.z = this.stride.y;
     turnMomentum(state, yawDelta);
     this.stride.set(state.velocity.x, state.velocity.z);
+    if (adventure) {
+      const axis = new THREE.Vector3(0, 1, 0);
+      this.flyVel.applyAxisAngle(axis, yawDelta);
+      this.takeoffDrift.applyAxisAngle(axis, yawDelta);
+    }
   }
 
   private resetPlatformerTimers(): void {
@@ -582,7 +628,11 @@ export class AvatarController {
     if (this.firstPerson === firstPerson) return;
     this.lookTurn = undefined;
     this.chaseLift = 0;
+    this.facingYaw = this.getFacingYaw();
     this.firstPerson = firstPerson;
+    if (getCharacterDefinition(this.localCharacterId).thirdPersonMovement === 'adventure') {
+      this.prevRigYaw = this.getFacingYaw();
+    }
     this.localRig.group.visible = !this.firstPerson;
     this.onCameraViewChange?.(this.firstPerson);
   }
@@ -612,7 +662,7 @@ export class AvatarController {
       const charDef = getCharacterDefinition(p.characterId);
       let vis = this.remoteMap.get(p.id);
       if (!vis) {
-        const rig = charDef.createRig({ accentColor: p.color });
+        const rig = charDef.createRig({ accentColor: p.color, ...normalizeSkinAppearance(p) });
         const label = createFloatingLabel({
           title: p.name,
           accentColor: p.color,
@@ -657,7 +707,7 @@ export class AvatarController {
           this.remoteRoot.remove(oldGroup);
           vis.rig.dispose();
 
-          const newRig = charDef.createRig({ accentColor: p.color });
+          const newRig = charDef.createRig({ accentColor: p.color, ...normalizeSkinAppearance(p) });
           newRig.group.position.copy(pos);
           newRig.group.rotation.y = yaw;
           vis.label.sprite.position.set(0, charDef.labelHeight, 0);
@@ -666,6 +716,8 @@ export class AvatarController {
           vis.rig = newRig;
           vis.characterId = charDef.id;
         }
+
+        vis.rig.setSkinAppearance?.(normalizeSkinAppearance(p));
 
         if (vis.name !== p.name || vis.color !== p.color) {
           vis.rig.setAccentColor?.(p.color);
@@ -911,6 +963,7 @@ export class AvatarController {
     let vx = 0;
     let vz = 0;
     let turnRate = 0;
+    const canSampleMotion = !this.skipMotionSample && clampedDt > 1e-5;
     if (this.skipMotionSample || clampedDt <= 1e-5) {
       this.skipMotionSample = false;
     } else {
@@ -922,22 +975,34 @@ export class AvatarController {
         vx = dx / clampedDt;
         vz = dz / clampedDt;
       }
-      const dyaw = Math.atan2(
-        Math.sin(this.yaw - this.prevRigYaw),
-        Math.cos(this.yaw - this.prevRigYaw),
-      );
-      if (Math.abs(dyaw) < 1.2) {
-        turnRate = dyaw / clampedDt;
-      }
     }
-    this.prevRigPos.copy(this.position);
-    this.prevRigYaw = this.yaw;
-
-    const fwdX = -Math.sin(this.yaw);
-    const fwdZ = -Math.cos(this.yaw);
-    const rightX = Math.cos(this.yaw);
-    const rightZ = -Math.sin(this.yaw);
     const speed = Math.hypot(vx, vz);
+    const adventure = this.usesAdventureControls();
+    if (adventure) {
+      // Follow actual displacement (including momentum), and retain facing at rest
+      // so looking around a stationary character never spins their body.
+      if (speed > 0.15) {
+        const targetYaw = Math.atan2(-vx, -vz);
+        const delta = Math.atan2(Math.sin(targetYaw - this.facingYaw), Math.cos(targetYaw - this.facingYaw));
+        // Ease small corrections, but cap large reversals so alternating left/right
+        // cannot rotate most of a half-turn in a single frame.
+        const turnStep = delta * (1 - Math.exp(-clampedDt * 14));
+        const maxTurnStep = Math.PI * 4 * clampedDt;
+        this.facingYaw += THREE.MathUtils.clamp(turnStep, -maxTurnStep, maxTurnStep);
+      }
+    } else {
+      this.facingYaw = this.yaw;
+    }
+    const bodyYaw = this.getFacingYaw();
+    const dyaw = Math.atan2(Math.sin(bodyYaw - this.prevRigYaw), Math.cos(bodyYaw - this.prevRigYaw));
+    if (canSampleMotion && Math.abs(dyaw) < 1.2) turnRate = dyaw / clampedDt;
+    this.prevRigPos.copy(this.position);
+    this.prevRigYaw = bodyYaw;
+
+    const fwdX = -Math.sin(bodyYaw);
+    const fwdZ = -Math.cos(bodyYaw);
+    const rightX = Math.cos(bodyYaw);
+    const rightZ = -Math.sin(bodyYaw);
     const speedNorm = speed / RUN_SPEED;
     const targetGroundSprint =
       !this.isFlying && this.onGround && !inputLocked && this.isSprinting() && speedNorm > 0.5
@@ -954,12 +1019,15 @@ export class AvatarController {
     this.localMotion.grounded = this.onGround && !this.isFlying;
     this.localMotion.isFlying = this.isFlying;
     this.localMotion.boost = this.isFlying ? this.boostT : this.groundSprintBlend;
-    this.localMotion.pitch = this.pitch;
+    this.localMotion.pitch = adventure
+      ? this.isFlying && Math.hypot(speed, this.velocityY) > 0.2
+        ? Math.atan2(this.velocityY, Math.max(0.01, speed)) : 0
+      : this.pitch;
     this.localMotion.landImpact = this.landImpact;
 
     // Update local avatar rig
     this.localRig.group.position.copy(this.position);
-    this.localRig.group.rotation.y = this.yaw;
+    this.localRig.group.rotation.y = this.getFacingYaw();
     this.localRig.update(clampedDt, elapsed, this.localMotion);
 
     // Update camera (3rd person chase OR 1st person eye)
@@ -1025,7 +1093,8 @@ export class AvatarController {
       vis.motion.isFlying = vis.isFlying;
       vis.motion.grounded = !vis.isFlying && Math.abs(vis.velocityY) < 0.35;
       vis.motion.boost = vis.isFlying && rSpeed > FLY_CRUISE_SPEED + 2 ? 0.85 : 0;
-      vis.motion.pitch = 0;
+      vis.motion.pitch = getCharacterDefinition(vis.characterId).thirdPersonMovement === 'adventure' && vis.isFlying
+        ? Math.atan2(vis.velocityY, Math.max(0.01, rSpeed)) : 0;
       vis.motion.landImpact = 0;
       vis.rig.update(clampedDt, elapsed, vis.motion);
     }

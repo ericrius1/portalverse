@@ -1,3 +1,4 @@
+import type { SkinAppearance } from './appearance';
 import type * as THREE from 'three/webgpu';
 
 /**
@@ -44,12 +45,19 @@ export const IDLE_MOTION_STATE: Readonly<AvatarMotionState> = Object.freeze({
   landImpact: 0,
 });
 
+export interface CharacterRigOptions extends Partial<SkinAppearance> {
+  accentColor?: string;
+}
+
 export interface CharacterRig {
   /**
    * Root group placed at the player's feet (`Y = 0` at soles/ground, facing `-Z`
    * forward in Portalverse convention).
    */
   readonly group: THREE.Group;
+  /** Resolves once an asynchronous model is mounted. */
+  readonly ready?: Promise<void>;
+  setSkinAppearance?(appearance: Partial<SkinAppearance>): void;
   /** Optional accent/aura color hook when the player customizes their profile color. */
   setAccentColor?(hexColor: string): void;
   /** Advance procedural rigging and shaders for the current frame. */
@@ -60,6 +68,11 @@ export interface CharacterRig {
 
 export interface CharacterDefinition {
   id: string;
+  supportsSkinTone?: boolean;
+  /** Defaults to camera-facing strafing. Adventure mode separates body facing from camera orbit. */
+  thirdPersonMovement?: 'adventure';
+  /** Physics applied on startup and when switching to this character. */
+  defaultMovementMode?: 'platformer';
   name: string;
   title: string;
   species: string;
@@ -73,5 +86,5 @@ export interface CharacterDefinition {
   /** Short flavor badges displayed on the character selection screen. */
   traits: readonly string[];
   /** Creates a fresh, isolated rig instance. */
-  createRig: (options?: { accentColor?: string }) => CharacterRig;
+  createRig: (options?: CharacterRigOptions) => CharacterRig;
 }

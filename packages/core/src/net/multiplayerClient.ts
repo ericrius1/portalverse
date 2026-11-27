@@ -1,3 +1,4 @@
+import { sanitizeSkinAppearance, type SkinAppearance } from '../characters/appearance';
 import { SIDE_PORTALS } from '../portal/roomLayout';
 import type {
   AvatarState,
@@ -210,22 +211,25 @@ export class MultiplayerClient {
     this.send({ type: 'switch_world', worldId, position: [...this.position] as Vec3Tuple, yaw });
   }
 
-  updateProfile(name: string, color: string, characterId?: string): void {
+  updateProfile(name: string, color: string, characterId?: string, appearance?: Partial<SkinAppearance>): void {
     const cleanName = sanitizeText(name, 32);
     const cleanColor = sanitizeColor(color);
     if (!cleanName || !cleanColor) {
       this.options.onError?.('Invalid name or color');
       return;
     }
+    const cleanSkin = sanitizeSkinAppearance({ ...this.identity, ...appearance });
     const cleanChar = characterId ? sanitizeId(characterId) ?? undefined : this.identity.characterId;
     this.identity = {
       ...this.identity,
+      ...cleanSkin,
       name: cleanName,
       color: cleanColor,
       ...(cleanChar ? { characterId: cleanChar } : {}),
     };
     const msg: Extract<ClientNetMessage, { type: 'update_profile' }> = {
       type: 'update_profile',
+      ...cleanSkin,
       name: cleanName,
       color: cleanColor,
       ...(cleanChar ? { characterId: cleanChar } : {}),
@@ -478,6 +482,7 @@ export class MultiplayerClient {
       id: this.localPlayerId,
       name: this.identity.name,
       color: this.identity.color,
+      ...sanitizeSkinAppearance({ ...this.identity }),
       ...(this.identity.characterId ? { characterId: this.identity.characterId } : {}),
       worldId: this.worldId,
       position: [...this.position] as Vec3Tuple,

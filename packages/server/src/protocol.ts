@@ -1,3 +1,4 @@
+import { sanitizeSkinAppearance } from '../../core/src/characters/appearance';
 import type {
   ClientNetMessage,
   PlayerIdentity,
@@ -32,7 +33,7 @@ function sanitizeIdentity(value: unknown): PlayerIdentity | null {
   const name = sanitizeText(value.name, MAX_PLAYER_NAME_LENGTH);
   const color = sanitizeColor(value.color);
   if (!id || !name || !color) return null;
-  const identity: PlayerIdentity = { id, name, color };
+  const identity: PlayerIdentity = { id, name, color, ...sanitizeSkinAppearance(value) };
   if (value.characterId !== undefined) {
     const characterId = sanitizeId(value.characterId);
     if (characterId) identity.characterId = characterId;
@@ -140,6 +141,7 @@ export function parseClientMessage(raw: string): ClientNetMessage | null {
       if (!name || !color) return null;
       const msg: Extract<ClientNetMessage, { type: 'update_profile' }> = {
         type: 'update_profile',
+        ...sanitizeSkinAppearance(data),
         name,
         color,
       };

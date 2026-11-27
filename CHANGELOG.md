@@ -2,6 +2,71 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Adventurers default to Platformer physics — Unreleased (2026-11-27)
+
+### Changed
+
+- Both adventurers start with Platformer physics on startup and when switching to them. Their character sheets mention the default and the G shortcut for changing physics.
+
+### Design & engineering decisions
+
+- Store the default in character metadata and prevent an old global Classic preference from overriding it on startup. Characters without an explicit default retain the existing saved-physics behavior; manual physics switching remains available.
+
+## Adventurer turning and foot stability — Unreleased (2026-11-27)
+
+### Changed
+
+- Added a 720°/second cap to the adventurers’ existing eased third-person turns so quick left/right reversals visibly turn instead of snapping. Bee and sky drake controls remain unchanged.
+- Increased the authored walk clip’s playback cadence by 40%; retained the existing run playback rate.
+
+### Fixed
+
+- Keep each independent foot control attached to its animated ankle during grounded clip blending as well as flight. Repeated direction changes previously separated feet and shins by up to 34–37 cm, stretching the boot meshes.
+- Interrupted animation fades now start from their current weights, and movement clips preserve their step phase instead of restarting each time direction changes.
+
+### Design & engineering decisions
+
+- Preserve the original GLBs and authored animation curves, with a small runtime foot attachment constraint applied after sampling. This corrects the mismatch between independently blended foot positions and leg rotations.
+- Added rapid-reversal checks at 30/60/120 fps, a repeated interrupted-transition regression on both real models, and authored-clip comparisons confirming the faster walk cadence and unchanged run timing.
+
+## Adventurer third-person adventure controls — Unreleased (2026-11-27)
+
+### Changed
+
+- The man and woman now turn smoothly toward travel in third person, while WASD/touch movement remains relative to the camera. Stationary mouse/drag/touch orbit can circle around to their face without turning their body. Flight facing and pitch follow travel rather than camera look.
+- Added an adventure-controls explanation to their character selection sheets. First-person strafing stays familiar, and the bee and sky drake retain their existing camera-facing controls.
+
+### Design & engineering decisions
+
+- Opt in through character metadata; this control style is independent of the Classic/Platformer physics setting. Separate camera heading from body heading, and transmit body heading to multiplayer peers and portal proxies. Rotated portals carry both headings and adventure momentum together.
+- Retain facing at rest, ease turns along the shortest yaw arc, and use body-relative motion telemetry for the existing authored animation clips. Added regression coverage for both adventurers, both existing characters, both physics modes, orbit, flight, portal rotation, respawn, first person, and character switching.
+
+## Adventurer flight hands and matte materials — Unreleased (2026-11-27)
+
+### Fixed
+
+- Turned both adventurers’ hands inward during flight and boost so the thumbs face each other. The wrist roll blends out when returning to the authored ground animations.
+- Set roughness to 1 on every material of both adventurers to remove their overly glossy appearance.
+
+### Design & engineering decisions
+
+- Apply the hand correction only to the procedural flight pose; preserve Quaternius’s original animation clips. Override roughness on each instance’s materials without changing the source GLBs or the selected skin color.
+
+## Adventurer characters and skin customization — Unreleased (2026-11-27)
+
+### Added
+
+- Both supplied Quaternius Adventurer models (man and woman) in character select, with their embedded idle, walk, run, backward and strafe clips. Procedural jump, landing, flight and boost poses follow the existing movement telemetry; the preview now includes Run and Jump.
+- Continuous Skin tone and Undertone sliders, live material preview, and a warm medium-brown default. Appearance persists through character changes, profile saves, multiplayer joins/updates/reconnects, and remote portal handoffs.
+- Equal-probability adventurer selection at startup until the player explicitly equips a character. Explicit choices are remembered in a separate preference, including the existing bee and drake.
+
+### Design & engineering decisions
+
+- Use an artist-authored skin-color ramp with Oklab interpolation and restrained rosy/golden undertone adjustment: hue and chroma change with tone, rather than simply darkening one color. Research and asset attribution are recorded in `packages/core/src/characters/assets/CREDITS.md`; UI and data use color parameters only.
+- Preserve the source GLBs and their animation clips. Each live rig owns its skeleton and materials; shared geometry is released after the last instance. Skin alone is recolored and uses nonmetallic rough shading. Airborne posing carries the separate foot controls with the shins so the boots stay attached.
+- Keep the legacy network fallback character stable. The new startup preference distinguishes a deliberate selection from an old automatically saved default. Optional bounded appearance fields keep older clients compatible without resetting customized skin.
+- Model loading exposes readiness/error feedback in character select and ignores late results after disposal. Added real-asset tests for rig scale, animation states, resource isolation, tone range, startup choice, and appearance transport.
+
 ## Avenue of Visages prayer — Unreleased (2026-11-27)
 
 ### Added
