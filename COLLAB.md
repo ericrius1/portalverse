@@ -6,7 +6,7 @@ Portalverse is an open-source, community-built portal metaverse. Each contributo
 
 - **Your rooms**: build freely in your own room folders under `worlds/`. Each room's `owner` in `registry.json` says whose it is; ask the owner before changing someone else's room. Starting folder names with your handle (as in `worlds/eric-world/` and `worlds/jp-abyss/`) makes them easy to tell apart.
 - **Shared code (`packages/core/`, `packages/server/`, `app/`, `registry.json`)**: change it through short, tested pull requests, or in a shared T3 Code session.
-- **Without write access?** Fork the repo and open a pull request; a maintainer reviews and merges it.
+- **Without write access?** Commit your room changes, verify `pnpm run build && pnpm test`, and run `pnpm submit`. It automatically creates your GitHub fork (if you don't have one yet), moves commits off `main` onto a `<handle>/<room-id>` branch, pushes to your fork, and opens a Pull Request against `ericrius1/portalverse`. Once a maintainer merges your PR, GitHub Actions deploys it live to Railway automatically.
 
 ### Building your room
 

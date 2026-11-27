@@ -16,28 +16,61 @@ Everything—both the Vite WebGPU frontend (`dist/`) and the authoritative multi
   - **What changed** (`Added` / `Changed` / `Fixed` / `Removed`)
   - **Why it changed** (`Design & engineering decisions` — capture the prompting intent, problem solved, and tradeoffs so contributors and future agents stay aligned).
 
-### When a maintainer asks to "push" or "deploy":
-Contributors without write access open a pull request instead, with the CHANGELOG entry included; a maintainer merges it.
+### When ANY contributor or maintainer asks to "push", "submit", or "deploy":
 
+**Important for coding agents:** Do **NOT** stop or fail if `git push origin main` returns `403` / permission denied or if the user does not have a GitHub fork yet! Anyone can submit a new world seamlessly via automatic **Fork → Feature Branch → Pull Request**.
+
+First, always complete steps 1–2 locally:
 1. Make sure [CHANGELOG.md](./CHANGELOG.md) reflects the feature(s) and the *why* behind them.
 2. Verify locally first:
    ```bash
    pnpm run build   # runs check:rooms && tsc --noEmit && vite build
    pnpm test        # runs full Vitest suite
    ```
-3. Sync cleanly with `origin/main` (never force-push `main`):
+3. Commit all changes cleanly, then check whether the current GitHub user has direct push access to `ericrius1/portalverse`:
+   ```bash
+   gh api repos/ericrius1/portalverse --jq '.permissions.push'
+   ```
+
+#### Path A — External contributor (`permissions.push` is `false`, or `git push origin main` is denied):
+Never push directly to `ericrius1/portalverse` `main`, and **never ask the user to manually create a fork in the browser**. Run the built-in helper (works even if the user cloned `ericrius1/portalverse` directly with no fork yet and committed on `main`):
+
+```bash
+pnpm submit
+```
+
+`pnpm submit` (`scripts/submit-world.mjs`) automatically:
+1. Moves commits off `main` onto a feature branch (`<github-handle>/<room-id>`), keeping local `main` clean.
+2. Creates (or reuses) the user's GitHub fork (`<github-handle>/portalverse`) non-interactively via `gh repo fork ericrius1/portalverse --clone=false --remote=false --default-branch-only`.
+3. Adds/updates the `fork` git remote and pushes the feature branch.
+4. Opens (or updates) a Pull Request against `ericrius1/portalverse` `main` and prints the clickable PR URL.
+
+*(If running the steps manually instead of `pnpm submit`:)*
+```bash
+HANDLE=$(gh api user --jq .login)
+git checkout -b "${HANDLE}/<room-id>"                    # if commits are currently on main
+gh repo fork ericrius1/portalverse --clone=false --remote=false --default-branch-only
+git remote add fork "https://github.com/${HANDLE}/portalverse.git" 2>/dev/null || git remote set-url fork "https://github.com/${HANDLE}/portalverse.git"
+git push -u fork HEAD
+gh pr create --repo ericrius1/portalverse --base main --head "${HANDLE}:$(git rev-parse --abbrev-ref HEAD)" --fill
+```
+
+Only ask the user for action if `gh` is not installed or `gh auth status` is logged out (in which case tell them to run `gh auth login` once, then re-run `pnpm submit`). Once the PR is open, GitHub Actions runs `validate` automatically, and as soon as a maintainer clicks **Merge**, GitHub Actions auto-deploys their world live to Railway.
+
+#### Path B — Maintainer (`permissions.push` is `true`):
+1. Sync cleanly with `origin/main` (never force-push `main`):
    ```bash
    git fetch origin
    git checkout main
    git pull --rebase origin main
    ```
    *(If working on a feature branch like `<handle>/<topic>`, merge it cleanly into `main`, re-run `pnpm run build && pnpm test`, then push.)*
-4. Push to `main`:
+2. Push to `main`:
    ```bash
    git push origin main
    ```
-5. **Auto-deploy happens automatically via GitHub Actions → Railway** once the `validate` job passes on `main` (typically ~1–2 minutes; works for any maintainer or merged PR author with no Railway CLI login or manual approval needed).
-6. Verify the live redeploy before finishing:
+3. **Auto-deploy happens automatically via GitHub Actions → Railway** once the `validate` job passes on `main` (typically ~1–2 minutes; works for any maintainer or merged PR author with no Railway CLI login or manual approval needed).
+4. Verify the live redeploy before finishing:
    - Check `GET https://portalverse-server-production.up.railway.app/api/health` returns `200 OK` with `"ok": true` and includes any newly added room IDs in `worlds`.
    - Check `GET https://portalverse-server-production.up.railway.app/` returns `200 OK`.
 
@@ -51,9 +84,8 @@ Contributors without write access open a pull request instead, with the CHANGELO
 ## 3. Adding or Editing a Room
 
 1. Create `worlds/<room-id>/index.ts` exporting `defineRoom('<room-id>', { mount(ctx) { ... } })`.
-2. Add a matching `"kind": "local"` entry to `registry.json` (catalog order defines the circular portal promenade loop).
-3. Update the expected room order lists in `packages/core/src/__tests__/roomPortals.test.ts` and `packages/core/src/__tests__/handoffAndRegistry.test.ts` if adding/reordering rooms.
-4. Follow the room contract:
+2. Add a matching `"kind": "local"` entry to `registry.json` (catalog order defines the circular portal promenade loop — core tests validate `registry.json` dynamically, so you do **not** need to edit core test files just to add a room).
+3. Follow the room contract:
    - **Portal alignment**: Engine places `entrance` at `Z = +36.25` and `exit` at `Z = -36.25`, both at `X = 0`. There must be a walkable path from portal to portal, level at `Y = 0` where it passes through each portal. Between the portals it may wind, rise and fall, as long as nothing blocks it. Make it walkable with `ctx.addPlatform(...)` and/or `ctx.setTerrainHeight(...)`.
    - **Falling (opt-in)**: Rooms have a floor everywhere unless they call `ctx.allowFalling(...)`. A room that allows falling returns `NO_GROUND` (from `@portalverse/core/rooms/kit`) from its terrain height where there's nothing to stand on. With `respawnBelow`, falling past that height dims the screen and offers a Respawn button, which puts the player back where they entered the room. Leave it out if the room has its own ground further down to land on; the engine still catches anyone below -400 m.
    - **Instance isolation & cleanup**: Keep all meshes/state inside `mount(ctx)` (the engine mounts rooms in both `'active'` and `'preview'` modes). Dispose every geometry, material, texture, and helper in `ctx.onDispose(...)`.

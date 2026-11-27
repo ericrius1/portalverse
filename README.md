@@ -16,6 +16,8 @@ pnpm install
 pnpm dev
 ```
 
+*(Planning to submit a room? You can clone directly like above — `pnpm submit` will automatically create your GitHub fork and open a Pull Request when you're ready! Or start with `gh repo fork ericrius1/portalverse --clone`.)*
+
 The repo pins `pnpm@12.23.0` via `packageManager` in `package.json` (you can also run `npx pnpm@12.23.0 install` if your global `pnpm` is older). *(`npm run dev` also works once dependencies are installed.)*
 
 - **Client (Vite + WebGPU):** `http://localhost:5173` (proxies `/ws` and `/api` to the multiplayer server)
@@ -53,9 +55,15 @@ Anyone is welcome to contribute a room — by hand or with your favorite coding 
 
    Keep a walkable path between the entrance (`Z = +36.25`) and exit (`Z = -36.25`), level at `Y = 0` where it passes through each portal. Preview your room directly at `http://localhost:5173/?world=<your-room>`.
 
-3. **Register your room in `registry.json`** by adding a `"kind": "local"` entry (with your GitHub handle as `owner`), and update the room-order lists in `packages/core/src/__tests__/roomPortals.test.ts` and `packages/core/src/__tests__/handoffAndRegistry.test.ts`.
+3. **Register your room in `registry.json`** by adding a `"kind": "local"` entry (with your GitHub handle as `owner`). Core tests discover rooms directly from `registry.json`, so you don't need to edit core test files.
 4. **Keep loading smooth:** Rooms load while players walk through neighbors (~10 s sprinting, ~5 s boosting in flight) on the main thread. Break heavy setup into small slices with `await ctx.breathe()`, build static geometry/data once and reuse across mounts, and offload heavy pure math to Web Workers. See [Loading: about 10 seconds, in small pieces](./COLLAB.md#loading-about-10-seconds-in-small-pieces).
-5. **Validate & open a PR:** Run `pnpm run build && pnpm test` (which checks room asset budgets, types, bundle, and tests), add a short note to [CHANGELOG.md](./CHANGELOG.md), and open a Pull Request. Once merged to `main`, GitHub Actions automatically deploys your room live!
+5. **Validate & submit a PR:** Run `pnpm run build && pnpm test` (which checks room asset budgets, types, bundle, and tests), add a short note to [CHANGELOG.md](./CHANGELOG.md), commit your changes, and run:
+
+   ```bash
+   pnpm submit
+   ```
+
+   `pnpm submit` automatically creates your GitHub fork if you don't have one yet, pushes a feature branch, and opens a Pull Request against `ericrius1/portalverse`. Once a maintainer merges your PR to `main`, GitHub Actions automatically deploys your room live!
 
 See [COLLAB.md](./COLLAB.md#building-your-room) for the full room authoring contract, assets & budgets, falling/terrain APIs, and agent workflows.
 
@@ -129,6 +137,7 @@ pnpm check:rooms # Check room folders, side links, and asset sizes
 pnpm typecheck   # Strict TypeScript check
 pnpm test        # Run Vitest suite (server, protocol, handoff, registry, portals, room crossings)
 pnpm build       # Production build (check:rooms + typecheck + vite build)
+pnpm submit      # Auto-fork (if needed), push a feature branch, and open a PR to ericrius1/portalverse
 ```
 
 See [COLLAB.md](./COLLAB.md) for the full contributor guide, [AGENTS.md](./AGENTS.md) for agent/maintainer conventions, and [CHANGELOG.md](./CHANGELOG.md) for recent changes and engineering decisions.

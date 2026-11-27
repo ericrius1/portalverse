@@ -199,31 +199,19 @@ describe('WorldRegistry', () => {
   });
 
   it('accepts the real repo registry.json', () => {
-    const reg = new WorldRegistry(catalogForTour(registryJson as unknown as RegistryFile, ''), {});
-    expect(reg.getDefaultWorldId()).toBe('eric-world');
-    expect(reg.listWorlds().map((w) => w.id)).toEqual([
-      'eric-world',
-      'jp-world',
-      'jp-garden',
-      'fishpond',
-      'jp-reef',
-      'jp-loft',
-      'jp-abyss',
-      'jp-visages-synthesis',
-      'eric-palace-lagoon',
-      'laser-lab',
-      'alpine-sled',
-      'eric-biolum-grove',
-      'eric-sun-observatory',
-      'honey-hood',
-    ]);
+    const filtered = catalogForTour(registryJson as unknown as RegistryFile, '');
+    const reg = new WorldRegistry(filtered, {});
+    expect(reg.getDefaultWorldId()).toBe(filtered.defaultWorldId);
+    const ids = reg.listWorlds().map((w) => w.id);
+    expect(ids).toEqual(filtered.worlds.map((w) => w.id));
+    expect(ids).toContain(filtered.defaultWorldId);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const world of reg.listWorlds()) {
+      expect(world.name.trim().length).toBeGreaterThan(0);
+      expect(world.spawns.default).toBeDefined();
+    }
     expect(reg.getManifest('eric-world')?.name).toBe("Eric's Room");
     expect(reg.getManifest('jp-world')?.name).toBe("JP's Solarpunk Meadow");
-    expect(reg.getManifest('fishpond')?.name).toBe('Kāneʻohe Fishpond');
-    expect(reg.getManifest('laser-lab')?.name).toBe('Laser Forcefield Arena');
-    expect(reg.getManifest('alpine-sled')?.name).toBe('Alpine Snow Run');
-    expect(reg.getManifest('eric-biolum-grove')?.name).toBe('Bioluminescent Redwood Grove');
-    expect(reg.getManifest('eric-sun-observatory')?.name).toBe('Golden Cloud Observatory');
   });
 
   it('caches loaded modules and dedupes concurrent loads', async () => {

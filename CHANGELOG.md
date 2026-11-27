@@ -2,7 +2,23 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
-## Palace live portal projection — Unreleased (2026-11-26)
+## One-command fork & PR world submission (`pnpm submit`) + conflict-free room tests — Unreleased (2026-11-27)
+
+### Added
+
+- **Automatic fork & PR helper (`scripts/submit-world.mjs`, `pnpm submit`, `packages/core/src/__tests__/submitWorld.test.ts`)** — lets any community contributor (or their coding agent) submit a new world with one command even if they cloned `ericrius1/portalverse` directly with no fork yet and committed on `main`. Automatically checks `permissions.push`, moves commits off `main` onto `<handle>/<room-id>`, creates/reuses their GitHub fork non-interactively via `gh repo fork`, pushes the branch, and opens/updates a Pull Request against `ericrius1/portalverse`.
+- **Pull Request template (`.github/pull_request_template.md`)** — lightweight checklist for room submissions.
+
+### Changed
+
+- **Contributor & agent submission docs (`AGENTS.md`, `README.md`, `COLLAB.md`)** — added explicit Path A (external contributor fork + PR via `pnpm submit` or raw `gh` commands) alongside Path B (maintainer push to `main`), explicitly instructing agents never to stall on `403 Permission denied` or missing forks.
+- **Dynamic room catalog tests (`packages/core/src/__tests__/roomPortals.test.ts`, `handoffAndRegistry.test.ts`)** — validate circular portal links and registry invariants directly from `registry.json` instead of duplicating a hardcoded list of every room ID, eliminating unnecessary test failures and merge conflicts when multiple contributors add rooms concurrently.
+
+### Design & engineering decisions
+
+- **Automate the fork + PR path instead of assuming write access** — new contributors cloning `ericrius1/portalverse` hit GitHub `403` errors when their agent followed the old `git push origin main` instructions and stalled because no fork existed yet. Giving both humans and agents a single idempotent `pnpm submit` command (plus explicit fallback `gh` steps in `AGENTS.md`) removes manual browser forking and keeps `main` safe while GitHub Actions auto-deploys every merged PR to Railway.
+
+## Palace live portal projection — `bf18462` (2026-11-26)
 
 ### Fixed
 
