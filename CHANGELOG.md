@@ -2,6 +2,28 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Fully automated open PR validation, auto-merge & live deploy — Unreleased (2026-11-27)
+
+### Added
+
+- **Open PR validate, auto-merge & live Railway deploy workflow (`.github/workflows/pr-automerge.yml`, `.github/workflows/deploy.yml`, `.github/scripts/automerge-policy.mjs`)**:
+  - Automatically runs on every open non-draft PR targeting `main` via `pull_request_target` — including PRs from **first-time external fork contributors** — with no collaborator invite or manual maintainer "Approve and run" / "Merge" click required.
+  - Strictly isolates untrusted PR validation (`validate` job: read-only `contents: read`, `persist-credentials: false`, zero Actions secrets, no `main` pnpm cache writes, exact SHA merge check) from the trusted base-branch `gate` and serialized `merge` jobs.
+  - Blocks auto-merge on PRs touching `.github/` (protecting CI workflows, this policy module, and `RAILWAY_TOKEN`), draft PRs, PRs labeled `hold` / `do-not-merge` / `manual-merge` / `wip`, oversized PRs exceeding the GitHub files API pagination cap, and conflicting PRs — posting/updating a single sticky status comment with actionable fix or rebase instructions.
+  - Chains directly into the shared reusable Railway deploy workflow (`.github/workflows/deploy.yml`) after merging (working around GitHub's restriction where `GITHUB_TOKEN` merges do not trigger `on: push` workflows), re-validating merged `main` first if another PR landed concurrently.
+- **Unit test suite for auto-merge policy (`packages/core/src/__tests__/prAutomergePolicy.test.ts`)** covering allowed room/code PRs, `.github/` path & rename protection, hold labels, draft/non-main/head-moved guards, pagination caps, merge conflicts, and sticky comments.
+
+### Changed
+
+- **Refactored `.github/workflows/rooms.yml`** to focus on `push` / `workflow_dispatch` validation and call the shared `.github/workflows/deploy.yml` reusable workflow (eliminating duplicate PR runs and first-time-contributor "awaiting approval" banners).
+- **Enhanced `scripts/submit-world.mjs` (`pnpm submit`)** with read-only pre-flight merge conflict detection (`git merge-tree --write-tree`) against `upstream/main`, `--force-with-lease` on personal fork branches after rebases, `--branch main` guard, optional `--wait` / `-w` polling until auto-merge completes, and updated tests in `packages/core/src/__tests__/submitWorld.test.ts`.
+- **Updated contributor & agent docs (`AGENTS.md`, `README.md`, `COLLAB.md`, `.github/pull_request_template.md`)** so anyone finding the repo and their coding agents know they can add rooms or improve code and ship live automatically via `pnpm submit`.
+
+### Design & engineering decisions
+
+- **Why `pull_request_target` with strict job isolation instead of `pull_request` + `workflow_run`:** GitHub pauses `on: pull_request` workflows for first-time contributors from public forks until a maintainer manually clicks "Approve and run" (as happened on PR #7), and `GITHUB_TOKEN` cannot approve fork runs via API. Splitting `pull_request_target` into a zero-secret, read-only `validate` job (merging the exact verified `head_sha` with `persist-credentials: false` and no cache writes) plus base-branch-only `gate` / `merge` jobs and a separate reusable `deploy` job gives true zero-touch onboarding for strangers while keeping `RAILWAY_TOKEN` and `.github/` strictly isolated from untrusted PR code.
+- **Why reusable `deploy.yml` instead of relying on `on: push`:** Merges performed by `GITHUB_TOKEN` intentionally do not fire downstream `on: push` or `workflow_dispatch` events. Invoking `.github/workflows/deploy.yml` via `workflow_call` shares the exact `railway-production-deploy` concurrency group across both direct pushes and auto-merged PRs without requiring an extra Personal Access Token secret.
+
 ## Midnight Cassette Station (`doug-cassette-station`) — Unreleased (2026-11-27)
 
 ### Added

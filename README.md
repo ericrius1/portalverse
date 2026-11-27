@@ -1,9 +1,9 @@
 # Portalverse
 
-An open-source, community-built **Three.js WebGPU + TSL** portal metaverse where **anyone can clone the repo, build their own 3D room, and open a PR to join the shared portal loop**.
+An open-source, community-built **Three.js WebGPU + TSL** portal metaverse where **anyone (or their coding agent) can clone the repo, add a 3D room or improve the code, and run `pnpm submit` to automatically validate, merge, and go live** — no collaborator invite or manual PR merge required.
 
 - **Play Live:** [portalverse-server-production.up.railway.app](https://portalverse-server-production.up.railway.app)
-- **Add Your Room:** Fork or clone this repo, drop a folder in `worlds/<your-room>/`, register it in `registry.json`, and open a Pull Request!
+- **Add Your Room or Improve the Code:** Clone this repo, drop a folder in `worlds/<your-room>/` (or edit shared engine/UI code), and run `pnpm submit`! Passing PRs **auto-merge into `main` and deploy live in ~2 minutes**.
 
 Every contributed room is linked into one seamless circular promenade loop with live perspective-correct portal previews, real-time multiplayer presence, live portal linking, and federated portal handoffs between servers.
 
@@ -57,19 +57,19 @@ Anyone is welcome to contribute a room — by hand or with your favorite coding 
 
 3. **Register your room in `registry.json`** by adding a `"kind": "local"` entry (with your GitHub handle as `owner`). Core tests discover rooms directly from `registry.json`, so you don't need to edit core test files.
 4. **Keep loading smooth:** Rooms load while players walk through neighbors (~10 s sprinting, ~5 s boosting in flight) on the main thread. Break heavy setup into small slices with `await ctx.breathe()`, build static geometry/data once and reuse across mounts, and offload heavy pure math to Web Workers. See [Loading: about 10 seconds, in small pieces](./COLLAB.md#loading-about-10-seconds-in-small-pieces).
-5. **Validate & submit a PR:** Run `pnpm run build && pnpm test` (which checks room asset budgets, types, bundle, and tests), add a short note to [CHANGELOG.md](./CHANGELOG.md), commit your changes, and run:
+5. **Validate & ship live automatically:** Run `pnpm run build && pnpm test` (which checks room asset budgets, types, bundle, and tests), add a short note to [CHANGELOG.md](./CHANGELOG.md), commit your changes, and run:
 
    ```bash
-   pnpm submit
+   pnpm submit --wait
    ```
 
-   `pnpm submit` automatically creates your GitHub fork if you don't have one yet, pushes a feature branch, and opens a Pull Request against `ericrius1/portalverse`. Once a maintainer merges your PR to `main`, GitHub Actions automatically deploys your room live!
+   `pnpm submit` automatically creates your GitHub fork if you don't have one yet, checks for merge conflicts, pushes a feature branch, and opens a Pull Request against `ericrius1/portalverse`. As soon as CI (`pnpm run build && pnpm test`) passes, GitHub Actions **automatically merges your PR into `main` and deploys it live to Railway** — even for first-time contributors! *(Use `pnpm submit --draft` to open a WIP PR without auto-merging; `.github/` workflow edits still require maintainer review.)*
 
 See [COLLAB.md](./COLLAB.md#building-your-room) for the full room authoring contract, assets & budgets, falling/terrain APIs, and agent workflows.
 
 ## Community Rooms & Features
 
-- **Seamless Circular Portal Loop (`registry.json`)** — currently 13 community rooms and growing:
+- **Seamless Circular Portal Loop (`registry.json`)** — currently 14 community rooms and growing:
   1. **Eric's Room (`worlds/eric-world`)** — Cyan holographic studio (`ericrius1`).
   2. **JP's Solarpunk Meadow (`worlds/jp-world`)** — Sunlit meadow with 26,000 Bezier-elastica grass blades, California wildflowers, and solar arches (`jpwhitaker`).
   3. **Breezy Plant Garden (`worlds/jp-garden`)** — Giant flat-coloured tropical plants swaying in the breeze and bending away as you pass (`jpwhitaker`).
@@ -123,7 +123,7 @@ portalverse/
 │   └── server/              # Authoritative WebSocket room, presence & dynamic portal server
 ├── worlds/                  # One folder per community room — add yours here!
 │   ├── <your-room>/         # Your contributed room (index.ts + local assets)
-│   └── ...                  # 12 community rooms currently in the loop
+│   └── ...                  # 14 community rooms currently in the loop
 ├── registry.json            # World catalog, loop order & spawn manifest
 ├── COLLAB.md                # Full contributor & room authoring guide
 ├── AGENTS.md                # Coding agent conventions & deploy checklist
@@ -138,7 +138,7 @@ pnpm check:rooms # Check room folders, side links, and asset sizes
 pnpm typecheck   # Strict TypeScript check
 pnpm test        # Run Vitest suite (server, protocol, handoff, registry, portals, room crossings)
 pnpm build       # Production build (check:rooms + typecheck + vite build)
-pnpm submit      # Auto-fork (if needed), push a feature branch, and open a PR to ericrius1/portalverse
+pnpm submit      # Auto-fork (if needed), push a feature branch, and open an auto-merging PR (add --wait to watch it land)
 ```
 
 See [COLLAB.md](./COLLAB.md) for the full contributor guide, [AGENTS.md](./AGENTS.md) for agent/maintainer conventions, and [CHANGELOG.md](./CHANGELOG.md) for recent changes and engineering decisions.

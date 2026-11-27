@@ -1,0 +1,357 @@
+name: Open PR validate & auto-merge
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, unlabeled]
+
+# Strict least privilege: every job opts in only to the exact permissions it needs.
+permissions: {}
+
+jobs:
+  # 1. Trusted base-branch gate: inspects PR metadata & file list via API only (never runs PR code).
+  gate:
+    if: github.repository == 'ericrius1/portalverse'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pr-validate-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      eligible: ${{ steps.check.outputs.eligible }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
+      head_sha: ${{ steps.check.outputs.head_sha }}
+      base_sha: ${{ steps.check.outputs.base_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: .github/scripts
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Evaluate PR eligibility
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
+            const policy = await import(
+              pathToFileURL(path.join(process.cwd(), '.github/scripts/automerge-policy.mjs')).href
+            );
+
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+            const expectedHeadSha = context.payload.pull_request.head.sha;
+
+            async function upsertStickyComment(body) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: pull_number,
+                per_page: 100,
+              });
+              const existing = comments.find(
+                c => c.body && c.body.includes(policy.STICKY_COMMENT_MARKER),
+              );
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: pull_number, body });
+              }
+            }
+
+            // Wait briefly for GitHub to finish computing PR mergeability right after open/push.
+            let pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+            for (let attempt = 0; attempt < 4 && pr.state === 'open' && pr.mergeable === null; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100,
+            });
+            const decision = policy.evaluatePullRequest({ pr, files, expectedHeadSha });
+
+            if (!decision.eligible) {
+              core.info(`Skipping auto-merge for PR #${pull_number}: ${decision.reason}`);
+              if (decision.comment) {
+                await upsertStickyComment(decision.comment);
+              }
+              core.setOutput('eligible', 'false');
+              return;
+            }
+
+            const mainBranch = (
+              await github.rest.repos.getBranch({ owner, repo, branch: policy.TARGET_BASE_BRANCH })
+            ).data;
+
+            core.setOutput('eligible', 'true');
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('base_sha', mainBranch.commit.sha);
+
+  # 2. Isolated validation: read-only token, zero secrets, no cache writes to `main`, exact SHA merge.
+  validate:
+    needs: gate
+    if: needs.gate.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pr-validate-${{ needs.gate.outputs.pr_number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test-merge exact PR commit onto main
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        run: |
+          git config user.name "portalverse-ci"
+          git config user.email "portalverse-ci@users.noreply.github.com"
+          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
+          FETCHED_SHA="$(git rev-parse FETCH_HEAD)"
+          if [ "$FETCHED_SHA" != "$HEAD_SHA" ]; then
+            echo "PR head moved from $HEAD_SHA to $FETCHED_SHA; deferring to newer run."
+            exit 1
+          fi
+          git merge --no-ff --no-edit "$HEAD_SHA"
+      # Installs the pnpm version pinned by `packageManager` in package.json.
+      # Intentionally omits `cache: pnpm` so untrusted PRs cannot poison `main`'s Actions cache.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm test
+
+  # 3. Helpful feedback comment if validation fails on the current PR commit.
+  notify-failure:
+    needs: [gate, validate]
+    if: always() && needs.gate.outputs.eligible == 'true' && needs.validate.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: .github/scripts
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Comment validation failure link
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
+            const policy = await import(
+              pathToFileURL(path.join(process.cwd(), '.github/scripts/automerge-policy.mjs')).href
+            );
+
+            const { owner, repo } = context.repo;
+            const pull_number = Number(process.env.PR_NUMBER);
+            const headSha = process.env.HEAD_SHA;
+            const runUrl = process.env.RUN_URL;
+
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+            if (pr.state !== 'open' || pr.head.sha !== headSha) {
+              core.info('PR closed or superseded by newer push; skipping stale failure comment.');
+              return;
+            }
+
+            const body = policy.buildFailureComment({ runUrl, headSha });
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pull_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              c => c.body && c.body.includes(policy.STICKY_COMMENT_MARKER),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pull_number, body });
+            }
+
+  # 4. Serialized auto-merge: re-verifies all invariants & pins exact validated SHA (no PR code executed).
+  merge:
+    needs: [gate, validate]
+    if: needs.gate.outputs.eligible == 'true' && needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: portalverse-main-merge
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      merged: ${{ steps.do-merge.outputs.merged }}
+      merge_sha: ${{ steps.do-merge.outputs.merge_sha }}
+      needs_recheck: ${{ steps.do-merge.outputs.needs_recheck }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: .github/scripts
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Re-verify and auto-merge PR
+        id: do-merge
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
+        with:
+          script: |
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
+            const policy = await import(
+              pathToFileURL(path.join(process.cwd(), '.github/scripts/automerge-policy.mjs')).href
+            );
+
+            const { owner, repo } = context.repo;
+            const pull_number = Number(process.env.PR_NUMBER);
+            const expectedHeadSha = process.env.HEAD_SHA;
+            const validatedBaseSha = process.env.BASE_SHA;
+
+            async function upsertStickyComment(body) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: pull_number,
+                per_page: 100,
+              });
+              const existing = comments.find(
+                c => c.body && c.body.includes(policy.STICKY_COMMENT_MARKER),
+              );
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: pull_number, body });
+              }
+            }
+
+            let pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+            for (let attempt = 0; attempt < 3 && pr.state === 'open' && pr.mergeable === null; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              pr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100,
+            });
+            const decision = policy.evaluatePullRequest({ pr, files, expectedHeadSha });
+            if (!decision.eligible) {
+              core.info(`Aborted auto-merge for PR #${pull_number}: ${decision.reason}`);
+              if (decision.comment) {
+                await upsertStickyComment(decision.comment);
+              }
+              core.setOutput('merged', 'false');
+              return;
+            }
+
+            const currentMain = (
+              await github.rest.repos.getBranch({ owner, repo, branch: policy.TARGET_BASE_BRANCH })
+            ).data;
+            const needsRecheck = currentMain.commit.sha !== validatedBaseSha;
+
+            let mergeResult = null;
+            let lastError = null;
+            for (const merge_method of policy.PREFERRED_MERGE_METHODS) {
+              try {
+                mergeResult = await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number,
+                  sha: expectedHeadSha,
+                  merge_method,
+                });
+                break;
+              } catch (err) {
+                lastError = err;
+                const msg = String(err?.message || '');
+                // Retry another merge method only when the repo disabled this specific method.
+                if (err?.status === 405 && /not allowed on this repository/i.test(msg)) {
+                  continue;
+                }
+                break;
+              }
+            }
+
+            if (!mergeResult) {
+              const status = lastError?.status;
+              const msg = String(lastError?.message || lastError);
+              core.warning(`Merge attempt failed (HTTP ${status ?? 'unknown'}): ${msg}`);
+              if (status === 405 || status === 409) {
+                const latestPr = (await github.rest.pulls.get({ owner, repo, pull_number })).data;
+                if (latestPr.state === 'open' && latestPr.head.sha === expectedHeadSha) {
+                  await upsertStickyComment(policy.buildConflictComment());
+                }
+                core.setOutput('merged', 'false');
+                return;
+              }
+              throw lastError;
+            }
+
+            const mergeSha = mergeResult.data.sha;
+            core.info(`Auto-merged PR #${pull_number} as ${mergeSha} (needs_recheck=${needsRecheck})`);
+            await upsertStickyComment(policy.buildMergedComment({ mergeSha }));
+
+            core.setOutput('merged', 'true');
+            core.setOutput('merge_sha', mergeSha);
+            core.setOutput('needs_recheck', String(needsRecheck));
+
+  # 5. If another PR landed on `main` while this PR was validating, re-validate the combined `main` before deploying.
+  validate-merged:
+    needs: [gate, merge]
+    if: needs.merge.outputs.merged == 'true' && needs.merge.outputs.needs_recheck == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge.outputs.merge_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm test
+
+  # 6. Deploy the newly merged `main` directly to Railway (since GITHUB_TOKEN merges do not trigger `on: push`).
+  deploy:
+    needs: [merge, validate-merged]
+    if: always() && needs.merge.outputs.merged == 'true' && (needs.validate-merged.result == 'success' || needs.validate-merged.result == 'skipped')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ref: main
+      commit_sha: ${{ needs.merge.outputs.merge_sha }}
+    secrets:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

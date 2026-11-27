@@ -1,0 +1,41 @@
+name: Deploy to Railway
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: main
+      commit_sha:
+        type: string
+        default: ''
+    secrets:
+      RAILWAY_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.repository == 'ericrius1/portalverse'
+    runs-on: ubuntu-latest
+    container: ghcr.io/railwayapp/cli:latest
+    concurrency:
+      group: railway-production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::warning::RAILWAY_TOKEN Actions secret is not set yet. Add a Railway project token for portalverse/production in Settings -> Secrets -> Actions so pushes and auto-merged PRs deploy live."
+            exit 0
+          fi
+          DEPLOY_SHA="${COMMIT_SHA:-$GITHUB_SHA}"
+          railway up --detach --service portalverse-server --message "GitHub Actions deploy ${DEPLOY_SHA:0:7} by ${GITHUB_ACTOR}"

@@ -1,6 +1,6 @@
 # Portalverse — Agent & Collaboration Guide
 
-Portalverse is an open-source, community-built **Three.js WebGPU + TSL** portal metaverse. Contributors each build their own rooms, and the shared engine links them into one loop. Maintainers merge to `main` and deploy; anyone else contributes through pull requests.
+Portalverse is an open-source, community-built **Three.js WebGPU + TSL** portal metaverse. **Anyone** — no collaborator invite needed — can clone the repo, build rooms, or improve shared code with their coding agent and ship it live via `pnpm submit`. Pull requests targeting `main` are **automatically validated, merged into `main`, and deployed live to Railway** once CI passes.
 
 ## 1. Push & Auto-Deploy (Live Production)
 
@@ -32,18 +32,20 @@ First, always complete steps 1–2 locally:
    gh api repos/ericrius1/portalverse --jq '.permissions.push'
    ```
 
-#### Path A — External contributor (`permissions.push` is `false`, or `git push origin main` is denied):
-Never push directly to `ericrius1/portalverse` `main`, and **never ask the user to manually create a fork in the browser**. Run the built-in helper (works even if the user cloned `ericrius1/portalverse` directly with no fork yet and committed on `main`):
+#### Path A — Anyone without direct push access (fully automated Fork → PR → Auto-Merge → Live Deploy):
+Never push directly to `ericrius1/portalverse` `main`, and **never ask the user to manually create a fork or wait for a maintainer to add them as a collaborator**. Run the built-in helper (works even if the user cloned `ericrius1/portalverse` directly with no fork yet and committed on `main`):
 
 ```bash
-pnpm submit
+pnpm submit        # forks if needed, checks for conflicts, pushes branch, opens PR
+pnpm submit --wait # same, and waits until CI auto-merges into main & triggers deploy
 ```
 
 `pnpm submit` (`scripts/submit-world.mjs`) automatically:
-1. Moves commits off `main` onto a feature branch (`<github-handle>/<room-id>`), keeping local `main` clean.
-2. Creates (or reuses) the user's GitHub fork (`<github-handle>/portalverse`) non-interactively via `gh repo fork ericrius1/portalverse --clone=false --remote=false --default-branch-only`.
-3. Adds/updates the `fork` git remote and pushes the feature branch.
-4. Opens (or updates) a Pull Request against `ericrius1/portalverse` `main` and prints the clickable PR URL.
+1. Fetches latest `main` and checks for merge conflicts before pushing (if `main` moved ahead, rebase with `git rebase upstream/main`, re-run `pnpm run build && pnpm test`, and re-run `pnpm submit`).
+2. Moves commits off `main` onto a feature branch (`<github-handle>/<room-id>`), keeping local `main` clean.
+3. Creates (or reuses) the user's GitHub fork (`<github-handle>/portalverse`) non-interactively via `gh repo fork ericrius1/portalverse --clone=false --remote=false --default-branch-only`.
+4. Adds/updates the `fork` git remote and pushes the feature branch (`--force-with-lease` on personal forks so post-rebase resubmits work seamlessly).
+5. Opens (or updates) a Pull Request against `ericrius1/portalverse` `main` and prints the clickable PR URL.
 
 *(If running the steps manually instead of `pnpm submit`:)*
 ```bash
@@ -51,11 +53,20 @@ HANDLE=$(gh api user --jq .login)
 git checkout -b "${HANDLE}/<room-id>"                    # if commits are currently on main
 gh repo fork ericrius1/portalverse --clone=false --remote=false --default-branch-only
 git remote add fork "https://github.com/${HANDLE}/portalverse.git" 2>/dev/null || git remote set-url fork "https://github.com/${HANDLE}/portalverse.git"
-git push -u fork HEAD
+git push --force-with-lease -u fork HEAD
 gh pr create --repo ericrius1/portalverse --base main --head "${HANDLE}:$(git rev-parse --abbrev-ref HEAD)" --fill
 ```
 
-Only ask the user for action if `gh` is not installed or `gh auth status` is logged out (in which case tell them to run `gh auth login` once, then re-run `pnpm submit`). Once the PR is open, GitHub Actions runs `validate` automatically, and as soon as a maintainer clicks **Merge**, GitHub Actions auto-deploys their world live to Railway.
+Only ask the user for action if `gh` is not installed or `gh auth status` is logged out (in which case tell them to run `gh auth login` once, then re-run `pnpm submit`).
+
+**What happens after the PR opens (`.github/workflows/pr-automerge.yml`):**
+- GitHub Actions runs immediately — **even for first-time contributors** (no manual maintainer workflow approval needed!).
+- It validates the PR in an isolated read-only job (`pnpm install --frozen-lockfile && pnpm run build && pnpm test`).
+- As soon as checks pass, GitHub Actions **automatically merges the PR into `main` and deploys it live to Railway** (~1–2 minutes).
+- **Opt-outs & safety guardrails:**
+  - Open a **Draft PR** (`pnpm submit --draft`) or add a `hold` / `do-not-merge` / `wip` label to pause auto-merge.
+  - PRs touching `.github/` (CI/workflows/deploy scripts) are protected and require manual maintainer merge.
+  - If validation fails or another PR caused a merge conflict, the bot posts a status comment with exact fix/sync steps; pushing a fix automatically re-runs and merges.
 
 #### Path B — Maintainer (`permissions.push` is `true`):
 1. Sync cleanly with `origin/main` (never force-push `main`):

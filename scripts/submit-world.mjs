@@ -3,11 +3,12 @@
  * Zero-friction PR submission helper for Portalverse contributors (and coding agents).
  *
  * Works even if you cloned `ericrius1/portalverse` directly with no fork yet and committed on `main`:
- *   1. Verifies working tree is clean and ahead of upstream `main`.
+ *   1. Verifies working tree is clean and ahead of upstream `main` with no merge conflicts.
  *   2. Moves commits off `main` onto a feature branch (`<github-handle>/<room-id>`) if needed.
  *   3. Checks whether you have direct push access to `ericrius1/portalverse`; if not, creates or
  *      reuses your GitHub fork (`<github-handle>/portalverse`) non-interactively via `gh repo fork`.
  *   4. Pushes your branch and opens (or updates) a Pull Request against `ericrius1/portalverse`.
+ *   5. Optionally (`--wait`) polls until CI validates, auto-merges into `main`, and triggers deploy.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
@@ -18,14 +19,16 @@ export const UPSTREAM_OWNER = 'ericrius1';
 export const UPSTREAM_REPO = 'portalverse';
 export const UPSTREAM_SLUG = `${UPSTREAM_OWNER}/${UPSTREAM_REPO}`;
 export const UPSTREAM_BASE = 'main';
+export const LIVE_SITE_URL = 'https://portalverse-server-production.up.railway.app';
 
 export function parseArgs(argv) {
-  const opts = { branch: '', title: '', body: '', draft: false, dryRun: false, help: false };
+  const opts = { branch: '', title: '', body: '', draft: false, dryRun: false, wait: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') opts.help = true;
     else if (arg === '--dry-run') opts.dryRun = true;
     else if (arg === '--draft') opts.draft = true;
+    else if (arg === '--wait' || arg === '-w') opts.wait = true;
     else if (arg === '--branch' && argv[i + 1]) opts.branch = argv[++i];
     else if (arg.startsWith('--branch=')) opts.branch = arg.slice('--branch='.length);
     else if (arg === '--title' && argv[i + 1]) opts.title = argv[++i];
@@ -57,7 +60,13 @@ export function sanitizeBranchSegment(value) {
 }
 
 export function chooseBranchName({ currentBranch, login, touchedRooms, shortSha, explicitBranch }) {
-  if (explicitBranch) return explicitBranch;
+  if (explicitBranch) {
+    const trimmed = explicitBranch.trim();
+    if (trimmed === UPSTREAM_BASE) {
+      throw new Error(`--branch cannot be "${UPSTREAM_BASE}". Choose a feature branch name instead.`);
+    }
+    return trimmed;
+  }
   if (currentBranch && currentBranch !== UPSTREAM_BASE && currentBranch !== 'HEAD') {
     return currentBranch;
   }
@@ -75,6 +84,62 @@ export function buildForkUrl(login, protocol = 'https') {
   return `https://github.com/${login}/${UPSTREAM_REPO}.git`;
 }
 
+export function buildPushArgs({ pushRemote, targetBranch, isFork }) {
+  if (!targetBranch || targetBranch === UPSTREAM_BASE) {
+    throw new Error(`Refusing to push directly to "${UPSTREAM_BASE}" via submit helper.`);
+  }
+  const args = ['push'];
+  if (isFork) args.push('--force-with-lease');
+  args.push('-u', pushRemote, `HEAD:refs/heads/${targetBranch}`);
+  return args;
+}
+
+export function parseMergeTreeConflicts(output) {
+  const conflicts = new Set();
+  for (const line of String(output || '').split(/\r?\n/)) {
+    const match = /^CONFLICT \([^)]+\): .*? in (.+)$/.exec(line.trim());
+    if (match) conflicts.add(match[1].trim());
+  }
+  return [...conflicts].sort();
+}
+
+export function classifyPrWaitStatus(pr) {
+  if (!pr || typeof pr !== 'object') return { done: false, ok: false, message: 'Waiting for PR status...' };
+  if (pr.mergedAt || pr.state === 'MERGED') {
+    const sha = pr.mergeCommit?.oid ? pr.mergeCommit.oid.slice(0, 7) : 'main';
+    return {
+      done: true,
+      ok: true,
+      message: `Auto-merged into ${UPSTREAM_BASE} (${sha})! Railway is deploying live to ${LIVE_SITE_URL} (~1–2 min).`,
+    };
+  }
+  if (pr.state === 'CLOSED') {
+    return { done: true, ok: false, message: 'Pull Request was closed without being merged.' };
+  }
+  if (pr.mergeable === 'CONFLICTING') {
+    return {
+      done: true,
+      ok: false,
+      message: 'Pull Request has merge conflicts with main. Run `git fetch upstream main && git rebase upstream/main`, resolve conflicts, and re-run `pnpm submit`.',
+    };
+  }
+  const checks = Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : [];
+  const failed = checks.find(check => {
+    const conclusion = String(check?.conclusion || '').toUpperCase();
+    return conclusion === 'FAILURE' || conclusion === 'TIMED_OUT' || conclusion === 'ACTION_REQUIRED';
+  });
+  if (failed) {
+    const name = failed.name || failed.context || 'CI check';
+    const url = failed.detailsUrl || failed.targetUrl || '';
+    return {
+      done: true,
+      ok: false,
+      message: `CI check failed (${name})${url ? `: ${url}` : ''}`,
+    };
+  }
+  return { done: false, ok: false, message: 'Waiting for CI validation and auto-merge...' };
+}
+
 function run(cmd, args, { allowFail = false, cwd } = {}) {
   try {
     return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -87,8 +152,62 @@ function run(cmd, args, { allowFail = false, cwd } = {}) {
   }
 }
 
+function detectMergeConflicts(cwd, baseRef) {
+  const behindRaw = run('git', ['rev-list', '--count', `HEAD..${baseRef}`], { allowFail: true, cwd });
+  const behind = Number(behindRaw ?? '0');
+  if (!behind || Number.isNaN(behind)) return [];
+
+  try {
+    execFileSync('git', ['merge-tree', '--write-tree', baseRef, 'HEAD'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return [];
+  } catch (err) {
+    const stdout = err && typeof err === 'object' && 'stdout' in err ? String(err.stdout || '') : '';
+    const stderr = err && typeof err === 'object' && 'stderr' in err ? String(err.stderr || '') : '';
+    // Older Git (<2.38) does not support `git merge-tree --write-tree`; skip check gracefully.
+    if (/unknown option|usage:\s*git merge-tree/i.test(stderr)) return [];
+    const combined = `${stdout}\n${stderr}`;
+    const parsed = parseMergeTreeConflicts(combined);
+    if (parsed.length > 0) return parsed;
+    if (/CONFLICT/i.test(combined)) return ['(conflict detected; run `git rebase` to inspect)'];
+    return [];
+  }
+}
+
 function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function waitForAutoMerge(root, prUrl) {
+  console.log('Waiting for CI validation and auto-merge (Ctrl+C to stop waiting; CI continues in the background)...');
+  const maxAttempts = 36; // ~6 minutes at 10s intervals
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const raw = run(
+      'gh',
+      ['pr', 'view', prUrl, '--json', 'state,mergedAt,mergeCommit,mergeable,statusCheckRollup'],
+      { allowFail: true, cwd: root },
+    );
+    if (raw) {
+      try {
+        const status = classifyPrWaitStatus(JSON.parse(raw));
+        if (status.done) {
+          if (status.ok) {
+            console.log(status.message);
+            return;
+          }
+          console.error(status.message);
+          process.exit(1);
+        }
+      } catch {
+        // Ignore transient JSON parse failures and retry
+      }
+    }
+    sleepMs(10_000);
+  }
+  console.log(`Still waiting after 6 minutes. Check PR status at: ${prUrl}`);
 }
 
 function findUpstreamRemote(cwd) {
@@ -149,14 +268,16 @@ function defaultPrCopy(root, touchedRooms, latestSubject) {
 function printHelp() {
   console.log(`Usage: pnpm submit [options]
 
-Submit your Portalverse world or changes as a Pull Request to ${UPSTREAM_SLUG}.
-Automatically forks the repo if you do not have direct push access.
+Submit your Portalverse world or code changes as a Pull Request to ${UPSTREAM_SLUG}.
+Automatically forks the repo if you do not have direct push access. Once CI checks
+pass, non-draft PRs automatically merge into ${UPSTREAM_BASE} and deploy live to Railway.
 
 Options:
   --branch <name>  Branch name to push (default: current branch, or <handle>/<room-id> if on main)
   --title <text>   Pull Request title
   --body <text>    Pull Request description
-  --draft          Create the Pull Request as a draft
+  --draft          Create the Pull Request as a draft (pauses auto-merge)
+  --wait, -w       Wait for CI validation and auto-merge to complete
   --dry-run        Print planned actions without changing git remotes or opening a PR
   -h, --help       Show this help message`);
 }
@@ -209,7 +330,19 @@ export function main(argv = process.argv.slice(2)) {
   const aheadRaw = run('git', ['rev-list', '--count', `${baseRef}..HEAD`], { allowFail: true, cwd: root });
   const ahead = Number(aheadRaw ?? '0');
   if (!ahead || Number.isNaN(ahead)) {
-    console.error(`No commits ahead of ${baseRef}. Commit your world changes first, then run \`pnpm submit\`.`);
+    console.error(`No commits ahead of ${baseRef}. Commit your changes first, then run \`pnpm submit\`.`);
+    process.exit(1);
+  }
+
+  // 3b. Pre-flight merge conflict check against latest upstream/main
+  const conflicts = detectMergeConflicts(root, baseRef);
+  if (conflicts.length > 0) {
+    console.error(`Your branch conflicts with latest ${baseRef} in:`);
+    for (const file of conflicts) console.error(`  - ${file}`);
+    console.error(`\nSync with ${baseRef}, resolve conflicts, verify build/tests, and re-run \`pnpm submit\`:`);
+    console.error(`  git rebase ${baseRef}`);
+    console.error('  pnpm run build && pnpm test');
+    console.error('  pnpm submit');
     process.exit(1);
   }
 
@@ -251,8 +384,9 @@ export function main(argv = process.argv.slice(2)) {
   // 6. Push to fork (for external contributors) or upstream branch (for maintainers)
   let pushRemote = upstream.name;
   let prHead = targetBranch;
+  const isFork = !canPushUpstream;
 
-  if (!canPushUpstream) {
+  if (isFork) {
     const forkSlug = `${login}/${UPSTREAM_REPO}`;
     const hasFork = run('gh', ['repo', 'view', forkSlug, '--json', 'url'], { allowFail: true, cwd: root }) !== null;
     if (!hasFork) {
@@ -288,11 +422,12 @@ export function main(argv = process.argv.slice(2)) {
     prHead = `${login}:${targetBranch}`;
   }
 
+  const pushArgs = buildPushArgs({ pushRemote, targetBranch, isFork });
   if (opts.dryRun) {
-    console.log(`[dry-run] git push -u ${pushRemote} HEAD:refs/heads/${targetBranch}`);
+    console.log(`[dry-run] git ${pushArgs.join(' ')}`);
   } else {
     console.log(`Pushing ${targetBranch} to ${pushRemote}...`);
-    run('git', ['push', '-u', pushRemote, `HEAD:refs/heads/${targetBranch}`], { cwd: root });
+    run('git', pushArgs, { cwd: root });
   }
 
   // 7. Create or report existing Pull Request against ericrius1/portalverse
@@ -304,6 +439,12 @@ export function main(argv = process.argv.slice(2)) {
 
   if (existingPr) {
     console.log(`Updated existing Pull Request: ${existingPr}`);
+    if (opts.draft) {
+      console.log('Draft PRs pause auto-merge until marked Ready for review.');
+    } else {
+      console.log(`CI will re-validate your changes, auto-merge into ${UPSTREAM_BASE}, and deploy live to ${LIVE_SITE_URL} (~1–2 min)!`);
+      if (opts.wait && !opts.dryRun) waitForAutoMerge(root, existingPr);
+    }
     return;
   }
 
@@ -335,7 +476,12 @@ export function main(argv = process.argv.slice(2)) {
 
   const prUrl = run('gh', prArgs, { cwd: root });
   console.log(`Pull Request created: ${prUrl}`);
-  console.log('CI will validate your room automatically; once merged to main, Railway deploys it live!');
+  if (opts.draft) {
+    console.log('Draft PRs pause auto-merge until marked Ready for review.');
+  } else {
+    console.log(`CI will validate your changes automatically, auto-merge into ${UPSTREAM_BASE}, and deploy live to ${LIVE_SITE_URL} (~1–2 min)!`);
+    if (opts.wait) waitForAutoMerge(root, prUrl);
+  }
 }
 
 const isDirectRun = (() => {

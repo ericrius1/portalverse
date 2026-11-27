@@ -5,8 +5,7 @@ Portalverse is an open-source, community-built portal metaverse. Each contributo
 ## 1. File Ownership (No Merge Hell)
 
 - **Your rooms**: build freely in your own room folders under `worlds/`. Each room's `owner` in `registry.json` says whose it is; ask the owner before changing someone else's room. Starting folder names with your handle (as in `worlds/eric-world/` and `worlds/jp-abyss/`) makes them easy to tell apart.
-- **Shared code (`packages/core/`, `packages/server/`, `app/`, `registry.json`)**: change it through short, tested pull requests, or in a shared T3 Code session.
-- **Without write access?** Commit your room changes, verify `pnpm run build && pnpm test`, and run `pnpm submit`. It automatically creates your GitHub fork (if you don't have one yet), moves commits off `main` onto a `<handle>/<room-id>` branch, pushes to your fork, and opens a Pull Request against `ericrius1/portalverse`. Once a maintainer merges your PR, GitHub Actions deploys it live to Railway automatically.
+- **Open contribution (no collaborator invite needed):** Anyone can add rooms or improve shared code (`packages/core/`, `packages/server/`, `app/`, `registry.json`). Commit your changes, verify `pnpm run build && pnpm test`, and run `pnpm submit` (or `pnpm submit --wait`). It automatically creates your GitHub fork (if you don't have one yet), checks for merge conflicts against `main`, pushes a feature branch, and opens a Pull Request against `ericrius1/portalverse`. Once CI passes, GitHub Actions **automatically merges your PR into `main` and deploys it live to Railway** — even for first-time contributors! *(Open a Draft PR or add a `hold` / `do-not-merge` label to pause auto-merge; edits to `.github/` automation files require manual maintainer review.)*
 
 ### Building your room
 
@@ -130,14 +129,14 @@ Pick the workflow that fits your session:
 
 ## 4. Playing Together & Auto-Deploying (Railway)
 
-Portalverse runs full-stack (Vite WebGPU frontend + authoritative `/ws` multiplayer server on one origin) on **Railway** and **auto-deploys whenever a maintainer pushes or merges to `main`**:
+Portalverse runs full-stack (Vite WebGPU frontend + authoritative `/ws` multiplayer server on one origin) on **Railway** and **auto-deploys whenever a passing PR auto-merges into `main` or a maintainer pushes to `main`**:
 
 - **Live Main URL:** `https://portalverse-server-production.up.railway.app`
 - **Health / Presence API:** `https://portalverse-server-production.up.railway.app/api/health`
 - **Share a room:** `https://portalverse-server-production.up.railway.app/?world=eric-world`
 - **Share any room, arriving at its far end:** `https://portalverse-server-production.up.railway.app/?world=fishpond&spawn=exit`
 
-To deploy changes, a maintainer runs `pnpm run build && pnpm test`, merges cleanly into `main`, and runs `git push origin main`. Railway automatically rebuilds and redeploys within ~1 minute (no Railway CLI login or Vercel account required). See [AGENTS.md](./AGENTS.md) for the full agent checklist.
+To ship changes, run `pnpm run build && pnpm test`, commit, and run `pnpm submit --wait` (no collaborator invite needed — CI validates, auto-merges into `main`, and deploys live to Railway in ~1–2 minutes!). Maintainers can also push directly to `main`. See [AGENTS.md](./AGENTS.md) for the full agent checklist.
 
 The Rooms menu (`M`) copies a link to every room.
 
