@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three/webgpu';
-import catalog from '../../../../registry.json';
-import type { PortalDefinition, PortalHandoffPayload, PortalVisualHandle, RegistryFile, WorldContext, WorldModule } from '../types';
+import { sessionCatalog } from '../portal/sessionCatalog';
+import type { PortalDefinition, PortalHandoffPayload, PortalVisualHandle, WorldContext, WorldModule } from '../types';
 import { PORTAL_CENTER_Y, PORTAL_RADIUS, ROUTE_LENGTH, routeGates, threshold } from '../portal/roomLayout';
 import { defineRoom } from '../portal/defineRoom';
 import { createReturnPortalFromHandoff, placeHandoffArrival } from '../portal/handoff';
@@ -18,7 +18,7 @@ import {
   viewerSide,
 } from '../engine/portalCrossing';
 
-const rooms = (catalog as unknown as RegistryFile).worlds.filter(room => room.kind === 'local');
+const rooms = sessionCatalog.worlds.filter(room => room.kind === 'local');
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 function gate(roomId: string, end: 'entrance' | 'exit'): PortalVisualHandle {

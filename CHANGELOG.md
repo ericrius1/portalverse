@@ -2,6 +2,22 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Final Avenue of Visages, winning eyes and local tuning — Unreleased (2026-11-26)
+
+### Changed
+
+- Promoted the synthesis to **Avenue of Visages**, using the blind comparison's winning A eye treatment (Claude's black moon-mirror eyes) across every avenue head. Its stable room ID remains `jp-visages-synthesis`.
+- The normal portal loop now runs **Abyss → Avenue of Visages → Palace Lagoon**. The three earlier rooms are marked `comparisonOnly`: they stay tracked and accessible through `?tour=visages`, but no longer appear in the normal directory, route or preview window. The optional A–D eye study keeps all four original eye treatments.
+
+### Added
+
+- Development-only Visages panel with room brightness, blood brightness, blood hue and a color picker, plus reset. Changes update lights and shader uniforms immediately; blood color also updates the face trails while retaining darker pool interiors. Settings persist in this browser's local storage. The panel mounts only for the active room and its module is excluded from production builds.
+
+### Design & engineering decisions
+
+- Preserve the experiments before promoting the winner: commit `ac5acb0` contains all four room implementations, and `8bdac66` records the darker weathering and blind A–D study, on feature branch `jp/visages-final`.
+- Use the same eye-material factory for A and the final room so the chosen treatment stays exact. Retain comparison access without making visitors walk through abandoned alternatives. Keep tuning local and development-only so experiments never rewrite shared production defaults or affect other rooms.
+
 ## Visages: blind A–D eye comparison — Unreleased (2026-11-26)
 
 ### Added

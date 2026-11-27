@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three/webgpu';
-import catalog from '../../../../registry.json';
-import type { RegistryFile, WorldModule } from '../types';
+import { sessionCatalog } from '../portal/sessionCatalog';
+import type { WorldModule } from '../types';
 import { defineRoom } from '../portal/defineRoom';
 import { PortalPreviews } from '../engine/PortalPreviews';
 import { PortalRipplePass } from '../engine/PortalRipplePass';
@@ -225,7 +225,7 @@ describe('preparing a room as it loads', () => {
 });
 
 /** Catalog ids in loop order; `at(0)` is the first room and negative steps wrap. */
-const order = (catalog as unknown as RegistryFile).worlds.filter(w => w.kind === 'local').map(w => w.id);
+const order = sessionCatalog.worlds.filter(w => w.kind === 'local').map(w => w.id);
 const at = (step: number) => order[(step + order.length) % order.length];
 
 /** Previews whose rooms record when they load and unload. */

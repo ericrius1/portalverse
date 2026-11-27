@@ -14,6 +14,7 @@ import { readRouteFromLocation } from '../portal/handoff';
 import { framePortal, portalPixels, PortalPreviews } from '../engine/PortalPreviews';
 import { WorldRegistry } from '../portal/registry';
 import catalog from '../../../../registry.json';
+import { catalogForTour } from '../portal/roomTour';
 
 describe('room modules', () => {
   it('loads every local catalog entry and matches every room folder to its manifest', async () => {
@@ -125,7 +126,7 @@ describe('portal perspective', () => {
 });
 
 it('links the rooms in catalog order and back to the start', () => {
-  const rooms = (catalog as unknown as RegistryFile).worlds;
+  const rooms = catalogForTour(catalog as unknown as RegistryFile, '').worlds;
   const order = [
     'eric-world',
     'jp-world',
@@ -134,9 +135,6 @@ it('links the rooms in catalog order and back to the start', () => {
     'jp-reef',
     'jp-loft',
     'jp-abyss',
-    'jp-visages',
-    'jp-visages-claude',
-    'jp-visages-codex',
     'jp-visages-synthesis',
     'eric-palace-lagoon',
     'laser-lab',

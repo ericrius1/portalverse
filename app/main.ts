@@ -262,14 +262,15 @@ async function boot(): Promise<void> {
   }
 
   function combinedDynamicPortals(): PortalDefinition[] {
+    const available = latestDynamicPortals.filter(portal => portal.remoteUrl || registry.getManifest(portal.targetWorldId));
     if (isVisagesTour) {
-      return latestDynamicPortals.filter(portal => !portal.remoteUrl && registry.getManifest(portal.targetWorldId));
+      return available.filter(portal => !portal.remoteUrl);
     }
     if (returnPortalFromHandoff && activeWorldId === initialWorldId) {
       // First, so a room full of player portals never crowds out the way home.
-      return [returnPortalFromHandoff, ...latestDynamicPortals];
+      return [returnPortalFromHandoff, ...available];
     }
-    return latestDynamicPortals;
+    return available;
   }
 
   let hudSyncTimer = 0;

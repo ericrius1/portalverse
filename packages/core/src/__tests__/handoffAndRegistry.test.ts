@@ -12,6 +12,7 @@ import {
 import { WorldRegistry } from '../portal/registry';
 import { MultiplayerClient } from '../net/multiplayerClient';
 import registryJson from '../../../../registry.json';
+import { catalogForTour } from '../portal/roomTour';
 
 const payload: PortalHandoffPayload = {
   version: 1,
@@ -198,7 +199,7 @@ describe('WorldRegistry', () => {
   });
 
   it('accepts the real repo registry.json', () => {
-    const reg = new WorldRegistry(registryJson as unknown as RegistryFile, {});
+    const reg = new WorldRegistry(catalogForTour(registryJson as unknown as RegistryFile, ''), {});
     expect(reg.getDefaultWorldId()).toBe('eric-world');
     expect(reg.listWorlds().map((w) => w.id)).toEqual([
       'eric-world',
@@ -208,9 +209,6 @@ describe('WorldRegistry', () => {
       'jp-reef',
       'jp-loft',
       'jp-abyss',
-      'jp-visages',
-      'jp-visages-claude',
-      'jp-visages-codex',
       'jp-visages-synthesis',
       'eric-palace-lagoon',
       'laser-lab',

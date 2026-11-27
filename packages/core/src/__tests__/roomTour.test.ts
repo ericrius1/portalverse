@@ -20,10 +20,20 @@ describe('Visages comparison tour', () => {
     const tour = catalogForTour(fullCatalog, '?tour=visages&world=jp-visages-synthesis');
     expect(tour.worlds.map(room => room.id)).toEqual(VISAGES_TOUR);
     expect(tour.defaultWorldId).toBe('jp-visages');
-    expect(tour.worlds.map(room => room.name).join(' ')).toMatch(/Neon.*Claude.*Codex.*Synthesis/);
+    expect(tour.worlds.map(room => room.name).join(' ')).toMatch(/Neon.*Claude.*Codex.*Avenue of Visages/);
     expect(JSON.stringify(fullCatalog)).toBe(original);
-    expect(catalogForTour(fullCatalog, '')).toBe(fullCatalog);
-    expect(catalogForTour(fullCatalog, '?tour=unknown')).toBe(fullCatalog);
+    expect(catalogForTour(fullCatalog, '?tour=unknown')).toEqual(catalogForTour(fullCatalog, ''));
+  });
+
+  it('puts only the winner between Abyss and Palace in the normal loop', () => {
+    const normal = catalogForTour(fullCatalog, '');
+    expect(normal.worlds.filter(room => room.id.startsWith('jp-visages')).map(room => room.id))
+      .toEqual(['jp-visages-synthesis']);
+    expect(routeGates('jp-abyss', normal.worlds)[1].targetWorldId).toBe('jp-visages-synthesis');
+    expect(routeGates('jp-visages-synthesis', normal.worlds).map(g => g.targetWorldId))
+      .toEqual(['jp-abyss', 'eric-palace-lagoon']);
+    expect(routeGates('eric-palace-lagoon', normal.worlds)[0].targetWorldId).toBe('jp-visages-synthesis');
+    expect(fullCatalog.worlds.filter(room => room.comparisonOnly)).toHaveLength(3);
   });
 
   it('closes the four-room loop in both directions and preloads only the other tour variants', () => {
@@ -70,25 +80,26 @@ describe('Visages comparison tour', () => {
     expect(tourShareBase('http://localhost:5173/?eyes=unknown')).toBe('http://localhost:5173/');
   });
 
-  it('mounts the engine-owned gates using the same tour as the directory and previews', async () => {
-    vi.stubGlobal('window', { location: { search: '?tour=visages' } });
+  it.each(['', '?tour=visages'])('mounts gates using the same catalog as the directory and previews (%s)', async search => {
+    vi.stubGlobal('window', { location: { search } });
     vi.resetModules();
     const { sessionCatalog } = await import('../portal/sessionCatalog');
     const { RoomInstance } = await import('../engine/RoomInstance');
     const { PortalPreviews } = await import('../engine/PortalPreviews');
     const renderer = {} as THREE.WebGPURenderer;
     const previews = new PortalPreviews(renderer, async () => undefined!);
-    const count = VISAGES_TOUR.length;
+    const expected = search ? [...VISAGES_TOUR] : fullCatalog.worlds.filter(room => !room.comparisonOnly).map(room => room.id);
+    const count = expected.length;
     try {
-      expect(sessionCatalog.worlds.map(room => room.id)).toEqual(VISAGES_TOUR);
+      expect(sessionCatalog.worlds.map(room => room.id)).toEqual(expected);
       // Verify the real default preview order; an explicit test order would hide
       // a regression where the directory changed but prefetch still used all rooms.
-      expect((previews as unknown as { order: string[] }).order).toEqual(VISAGES_TOUR);
+      expect((previews as unknown as { order: string[] }).order).toEqual(expected);
       for (const [i, manifest] of sessionCatalog.worlds.entries()) {
         const room = await RoomInstance.mount({ manifest, mount() {} }, renderer);
         try {
           expect(room.portals.map(handle => handle.portal.targetWorldId))
-            .toEqual([VISAGES_TOUR[(i - 1 + count) % count], VISAGES_TOUR[(i + 1) % count]]);
+            .toEqual([expected[(i - 1 + count) % count], expected[(i + 1) % count]]);
         } finally {
           room.dispose();
         }

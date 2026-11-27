@@ -124,6 +124,7 @@
     },
     {
       "id": "jp-visages",
+      "comparisonOnly": true,
       "name": "Avenue of Visages — Neon",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
@@ -140,6 +141,7 @@
     },
     {
       "id": "jp-visages-claude",
+      "comparisonOnly": true,
       "name": "Visages (Claude variant)",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
@@ -156,6 +158,7 @@
     },
     {
       "id": "jp-visages-codex",
+      "comparisonOnly": true,
       "name": "The Unending Witnesses — Codex",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
@@ -172,10 +175,10 @@
     },
     {
       "id": "jp-visages-synthesis",
-      "name": "Visages — Synthesis (Neon)",
+      "name": "Avenue of Visages",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
-      "description": "Synthesized fourth Visages corridor uniting single-layer cobblestones, uneven dirt verges, integrated crimson pools, asymmetric recessed face cracks, weeping blood trails, moonlit clouds, ruined monoliths, and endless glossy-eyed colossi.",
+      "description": "A forgotten avenue of colossal weathered faces, black moon-mirroring eyes, broken monuments and dark crimson pools, stretching endlessly into the night.",
       "accentColor": "#d11824",
       "kind": "local",
       "allowFlight": true,

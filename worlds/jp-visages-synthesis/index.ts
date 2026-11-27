@@ -12,8 +12,8 @@
  *  - Claude's convincingly recessed and asymmetrically patchy face cracks, thin blood trails
  *    weeping down the cheeks, moon-and-cloud night sky, and textured uneven dirt beside
  *    the cobbled road (without triangular snow particles).
- *  - Codex's truly endless procession stretching nearly 400 m past both portals into dark
- *    fog with two-tier head LOD and crisp HDR environment reflections in the obsidian eyes.
+ *  - Codex's endless procession with two-tier head LOD, and the selected A-style
+ *    moon-mirror eyes. Earlier eye treatments remain in the optional blind study.
  */
 import * as THREE from 'three/webgpu';
 import {
@@ -58,6 +58,7 @@ import {
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { breathe } from '@portalverse/core/rooms/kit';
 import headUrl from './assets/female_human_head_game.glb?url';
+import { createWinningEyes } from './eyes';
 import {
   EYE_STUDY_HEADS, EYE_STUDY_KEY, EYE_STUDY_LABELS,
   eyeStudyCollider, studyEyeMaterial, studyReflectionMap,
@@ -313,6 +314,12 @@ export default defineRoom('jp-visages-synthesis', {
     const layout = await sharedSynthesisLayout();
     const root = new THREE.Group();
     ctx.scene.add(root);
+    const roomBrightness = uniform(1);
+    const bloodBrightness = uniform(1);
+    const bloodShallow = uniform(new THREE.Color('#961018'));
+    const bloodDeep = uniform(new THREE.Color('#340206'));
+    const bloodGlow = uniform(new THREE.Color('#52060c'));
+    const bloodTrail = uniform(new THREE.Color('#5c0407'));
 
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
@@ -418,7 +425,7 @@ export default defineRoom('jp-visages-synthesis', {
       const moonHalo = pow(towardMoon, 260).mul(0.38).add(pow(towardMoon, 14).mul(0.08));
       const cloudLit = mix(color('#152634'), color('#294156'), pow(towardMoon, 3).mul(0.75));
       ctx.scene.backgroundNode = mix(skyBase, cloudLit, clouds.mul(0.78))
-        .add(color('#d8e8ff').mul(moonDisc.add(moonHalo)));
+        .add(color('#d8e8ff').mul(moonDisc.add(moonHalo))).mul(roomBrightness);
     }
 
     // Exponential fog swallows the 392 m rows seamlessly before the 450 m far plane.
@@ -551,9 +558,7 @@ export default defineRoom('jp-visages-synthesis', {
         stoneNoiseTex,
         p.xz.mul(0.21).add(vec2(time.mul(0.011), time.mul(-0.008))),
       ).r;
-      const shallowRed = color('#961018');
-      const deepRed = color('#340206');
-      const liquidBase = mix(shallowRed, deepRed, poolDepth.mul(0.84).add(liquidShimmer.mul(0.16)));
+      const liquidBase = mix(bloodShallow, bloodDeep, poolDepth.mul(0.84).add(liquidShimmer.mul(0.16))).mul(bloodBrightness);
 
       // Dual ambient ripples + live concentric ripples around the walking player's feet.
       const rippleA = texture(stoneNoiseTex, p.xz.mul(0.26).add(vec2(time.mul(0.022), time.mul(0.016)))).g;
@@ -588,7 +593,7 @@ export default defineRoom('jp-visages-synthesis', {
       // Mirror sky/moon reflection & subtle arterial depth luminance on the wet red liquid.
       const poolFresnel = schlickFresnel(normalView as Vec3Node, 0.045);
       const poolMirror = mirroredSky(reflectVector as Vec3Node).mul(poolFresnel).mul(0.6);
-      const arterialGlow = color('#52060c').mul(float(0.07).add(float(1).sub(poolDepth).mul(0.045)));
+      const arterialGlow = bloodGlow.mul(float(0.07).add(float(1).sub(poolDepth).mul(0.045))).mul(bloodBrightness);
 
       groundMat.colorNode = mix(dampGround, liquidBase, poolMask).mul(keepVis);
       // Ultra-matte cobbles (0.95) & dirt (0.98), damp wet rims (0.42), mirror-glossy crimson pools (0.05).
@@ -717,7 +722,7 @@ export default defineRoom('jp-visages-synthesis', {
       skinColor = mix(skinColor, deepCrevice, crack.mul(0.9)) as Vec3Node;
       const baseGrime = float(1).sub(smoothstep(0.0, 6.2, positionWorld.y));
       skinColor = mix(skinColor, color('#1c212a'), baseGrime.mul(0.66)) as Vec3Node;
-      skinColor = mix(skinColor, color('#5c0407'), bloodTrails) as Vec3Node;
+      skinColor = mix(skinColor, bloodTrail.mul(bloodBrightness), bloodTrails) as Vec3Node;
 
       // Subtle cold moonlight rim along silhouettes so distant visages read before vanishing into fog.
       const rim = pow(float(1).sub(clamp(dot(normalView, positionViewDirection), 0, 1)), 3.2);
@@ -768,27 +773,8 @@ export default defineRoom('jp-visages-synthesis', {
       addHeadBatch(skinFar, layout.farHeads, layout.farHeadMatrices);
       await ctx.breathe();
 
-      // 2b. Glossy obsidian-black eyeballs combining Codex's HDR environment reflections
-      //     with Claude's razor-sharp mirror moon glint & Fresnel sheen.
-      const eyeMat = ownMat(
-        new THREE.MeshPhysicalNodeMaterial({
-          roughness: 0.03,
-          metalness: 0.14,
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.015,
-          envMap: reflectionEnv,
-          envMapIntensity: 2.35,
-        }),
-      );
-
-      const eyeFresnel = schlickFresnel(normalView as Vec3Node, 0.065);
-      const eyeMirror = mirroredSky(reflectVector as Vec3Node).mul(eyeFresnel);
-      // Faint crimson under-glint catching the blood pools below on the lower curve of each eyeball.
-      const reflWorld = reflectVector as Vec3Node;
-      const crimsonUnderGlint = pow(max(dot(reflWorld, vec3(0, -0.78, 0.62).normalize()), 0), 22).mul(0.28);
-
-      eyeMat.colorNode = color('#010204');
-      eyeMat.emissiveNode = eyeMirror.add(color('#b8141c').mul(crimsonUnderGlint)).mul(keepVis);
+      // The blind-study winner A is now used by every avenue head.
+      const eyeMat = ownMat(createWinningEyes(MOON_DIR));
 
       const eyeMesh = new THREE.InstancedMesh(
         ownGeo(copyOfGeometry(eyes)),
@@ -802,6 +788,28 @@ export default defineRoom('jp-visages-synthesis', {
       root.add(eyeMesh);
 
       if (eyeStudy) {
+        // 2b. Glossy obsidian-black eyeballs combining Codex's HDR environment reflections
+        //     with Claude's razor-sharp mirror moon glint & Fresnel sheen.
+        const studySynthesisMat = ownMat(
+          new THREE.MeshPhysicalNodeMaterial({
+            roughness: 0.03,
+            metalness: 0.14,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.015,
+            envMap: reflectionEnv,
+            envMapIntensity: 2.35,
+          }),
+        );
+
+        const eyeFresnel = schlickFresnel(normalView as Vec3Node, 0.065);
+        const eyeMirror = mirroredSky(reflectVector as Vec3Node).mul(eyeFresnel);
+        // Faint crimson under-glint catching the blood pools below on the lower curve of each eyeball.
+        const reflWorld = reflectVector as Vec3Node;
+        const crimsonUnderGlint = pow(max(dot(reflWorld, vec3(0, -0.78, 0.62).normalize()), 0), 22).mul(0.28);
+
+        studySynthesisMat.colorNode = color('#010204');
+        studySynthesisMat.emissiveNode = eyeMirror.add(color('#b8141c').mul(crimsonUnderGlint)).mul(keepVis);
+
         // A compact frontal lineup in the real avenue. All four skins share exactly
         // the same attributes and material, so weathering cannot bias the eye choice.
         const matrices = EYE_STUDY_HEADS.map(h => new THREE.Matrix4().compose(
@@ -814,8 +822,8 @@ export default defineRoom('jp-visages-synthesis', {
         const plinthGeo = ownGeo(new THREE.BoxGeometry(6.0, 1.6, 6.0));
         const plinthMat = ownMat(new THREE.MeshStandardNodeMaterial({ color: '#30383e', roughness: 0.98 }));
         for (const [i, h] of EYE_STUDY_HEADS.entries()) {
-          const selected = studyEyeMaterial(EYE_STUDY_KEY[i], eyeMat, studyEnv, MOON_DIR, RIM_DIR);
-          if (selected !== eyeMat) ownMat(selected);
+          const selected = studyEyeMaterial(EYE_STUDY_KEY[i], studySynthesisMat, studyEnv, MOON_DIR, RIM_DIR);
+          if (selected !== studySynthesisMat) ownMat(selected);
           const sampleEyes = new THREE.InstancedMesh(eyeGeo, selected, 1);
           sampleEyes.setMatrixAt(0, matrices[i]);
           sampleEyes.instanceMatrix.needsUpdate = true;
@@ -949,6 +957,46 @@ export default defineRoom('jp-visages-synthesis', {
         im.frustumCulled = false;
         root.add(im);
       });
+    }
+
+    // Include analytic reflections and rim accents in room brightness, not just
+    // direct lights, so the slider doesn't leave bright self-lit surfaces behind.
+    for (const material of materials) {
+      if (material instanceof THREE.MeshStandardNodeMaterial && material.emissiveNode) {
+        material.emissiveNode = (material.emissiveNode as Vec3Node).mul(roomBrightness);
+      }
+    }
+    if (import.meta.env.DEV) {
+      const { readTuning, mountDevControls } = await import('./devControls');
+      const lights: Array<{ light: THREE.Light; base: number }> = [];
+      root.traverse(object => {
+        if (object instanceof THREE.Light) lights.push({ light: object, base: object.intensity });
+      });
+      const reflective = materials.filter((m): m is THREE.MeshStandardNodeMaterial =>
+        m instanceof THREE.MeshStandardNodeMaterial && m.envMap !== null,
+      ).map(material => ({ material, base: material.envMapIntensity }));
+      const baseHue = new THREE.Color('#961018').getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
+      const tinted = [
+        { node: bloodDeep, base: new THREE.Color('#340206') },
+        { node: bloodGlow, base: new THREE.Color('#52060c') },
+        { node: bloodTrail, base: new THREE.Color('#5c0407') },
+      ];
+      let tuning = readTuning();
+      const apply = (next: typeof tuning) => {
+        tuning = { ...next };
+        roomBrightness.value = next.roomBrightness;
+        bloodBrightness.value = next.bloodBrightness;
+        for (const { light, base } of lights) light.intensity = base * next.roomBrightness;
+        for (const { material, base } of reflective) material.envMapIntensity = base * next.roomBrightness;
+        bloodShallow.value.set(next.bloodColor);
+        const hue = bloodShallow.value.getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
+        for (const { node, base } of tinted) {
+          const hsl = base.getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
+          node.value.setHSL(hsl.h + hue.h - baseHue.h, hsl.s + hue.s - baseHue.s, hsl.l, THREE.SRGBColorSpace);
+        }
+      };
+      apply(tuning);
+      ctx.onActivate(() => mountDevControls(tuning, apply));
     }
 
     let lastX = 0;

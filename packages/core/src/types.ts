@@ -48,6 +48,8 @@ export interface WorldManifest {
   description: string;
   accentColor: string;
   kind: 'local' | 'remote';
+  /** Archived study available through an explicit comparison tour, outside the normal loop. */
+  comparisonOnly?: boolean;
   remoteUrl?: string;
   /** Allow toggling 3D free-flight in this world (default true). */
   allowFlight?: boolean;
