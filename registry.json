@@ -300,6 +300,22 @@
           "yaw": 0
         }
       }
+    },
+    {
+      "id": "frostfire-hollow",
+      "name": "Frostfire Hollow",
+      "owner": "simplesessions",
+      "author": "simplesessions",
+      "description": "A lava cave where a hilly path splits around a menacing horned lava monster who roars fire at you. Step on a switch to freeze the whole cavern to slippery ice, and back again.",
+      "accentColor": "#ff6a1a",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
     }
   ]
 }
