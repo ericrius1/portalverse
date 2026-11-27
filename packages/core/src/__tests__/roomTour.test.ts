@@ -15,6 +15,16 @@ afterEach(() => {
 });
 
 describe('Visages comparison tour', () => {
+  it('keeps retired rooms in the repository catalog but skips them in play', () => {
+    const normal = catalogForTour(fullCatalog, '');
+    for (const id of ['jp-garden', 'fishpond', 'jp-world']) {
+      expect(fullCatalog.worlds.some(room => room.id === id)).toBe(true);
+      expect(normal.worlds.some(room => room.id === id)).toBe(false);
+    }
+    expect(routeGates('eric-world', normal.worlds)[1].targetWorldId).toBe('jp-reef');
+    expect(routeGates('jp-reef', normal.worlds)[0].targetWorldId).toBe('eric-world');
+  });
+
   it('selects just the Visages variants, starting in Neon, without changing the full catalog', () => {
     const original = JSON.stringify(fullCatalog);
     const tour = catalogForTour(fullCatalog, '?tour=visages&world=jp-visages-synthesis');
@@ -88,7 +98,8 @@ describe('Visages comparison tour', () => {
     const { PortalPreviews } = await import('../engine/PortalPreviews');
     const renderer = {} as THREE.WebGPURenderer;
     const previews = new PortalPreviews(renderer, async () => undefined!);
-    const expected = search ? [...VISAGES_TOUR] : fullCatalog.worlds.filter(room => !room.comparisonOnly).map(room => room.id);
+    const expected = search ? [...VISAGES_TOUR] : fullCatalog.worlds
+      .filter(room => room.inRotation !== false && !room.comparisonOnly).map(room => room.id);
     const count = expected.length;
     try {
       expect(sessionCatalog.worlds.map(room => room.id)).toEqual(expected);

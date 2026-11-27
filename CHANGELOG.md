@@ -2,6 +2,30 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Visages pentagram response — Unreleased (2026-11-27)
+
+### Changed
+
+- Darkened the pentagram carving by 15%. Walking over it eases the purple floor glow up to half strength over 0.35 seconds, without the vertical ring glow.
+- Added a subtle flicker to the dim engraving and a smooth 0.35-second fade-out for the floor and rim. Re-entry blends from the current glow to avoid snapping during quick jumps or steps across the edge.
+- Full glow arrives after three seconds grounded within the carving, including while walking. The prayer prompt fades in one second later. Jumping or leaving resets the charge; movement within the pentagram preserves it.
+
+### Design & engineering decisions
+
+- Control the engraving and vertical rim separately: only the later charge raises the rim, with both effects easing to full strength over the final 0.45 seconds of the wait. Reuse the prompt's 0.35-second fade-in (respecting reduced-motion preferences), delayed until one second after full glow.
+
+## Room rotation and Abyss apparition fade — Unreleased (2026-11-27)
+
+### Changed
+
+- Removed Breezy Plant Garden, Kāneʻohe Fishpond, and JP's Solarpunk Meadow from the normal play rotation, directory, and portal previews; retained their source files and catalog metadata.
+- The Abyss shadow figure stays fully opaque through 75% of its spawn animation, then fades smoothly to zero opacity at 100%.
+
+### Design & engineering decisions
+
+- An optional `inRotation` catalog flag lets rooms leave the shared play loop without deleting their implementation or treating them as comparison studies.
+- Tie the apparition's fade to animation playback time so it disappears as the clip finishes, instead of lingering through an additional fade afterward. Preserve its once-per-landing trigger.
+
 ## Adventurers default to Platformer physics — Unreleased (2026-11-27)
 
 ### Changed

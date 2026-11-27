@@ -10,7 +10,7 @@ export const VISAGES_TOUR = [
 /** A tour changes this browser's route, never the persistent world catalog. */
 export function catalogForTour(catalog: RegistryFile, search: string): RegistryFile {
   if (new URLSearchParams(search).get('tour') !== 'visages') {
-    return { ...catalog, worlds: catalog.worlds.filter(room => !room.comparisonOnly) };
+    return { ...catalog, worlds: catalog.worlds.filter(room => room.inRotation !== false && !room.comparisonOnly) };
   }
   const worlds = VISAGES_TOUR.map(id => catalog.worlds.find(room => room.id === id && room.kind === 'local'));
   if (worlds.some(room => !room)) throw new Error('The Visages tour needs all Visages rooms installed.');
