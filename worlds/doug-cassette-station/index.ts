@@ -6,7 +6,13 @@ import {
   createStaticSkyMaterial,
   createWetStreetMaterial,
 } from './shaders';
-import { buildNeoTokyoCorner, createResourceBag } from './city';
+import {
+  buildNeoTokyoCorner,
+  createNeonRainEnvTexture,
+  createResourceBag,
+  disposeBlenderAssets,
+  loadBlenderAssets,
+} from './city';
 import { buildStreetLife, type TalkableNpc } from './characters';
 import { createNeoTokyoAudio, createNeoTokyoHud, type NeoTokyoAudio, type NeoTokyoHud } from './audioHud';
 import {
@@ -58,12 +64,20 @@ export default defineRoom('doug-cassette-station', {
     const res = createResourceBag();
     const rand = seededRandom(204909);
 
+    // Neon-Rain IBL Environment Map for photorealistic wet metallic & vinyl specular reflections!
+    const envTex = res.tex(createNeonRainEnvTexture());
+    ctx.scene.environment = envTex;
+
+    // Load all 5 Blender 5.3 sculpted PBR hero GLB assets in parallel
+    const blenderAssets = await loadBlenderAssets();
+    await ctx.breathe();
+
     // Dynamic lighting modulated by the day/night & rain cycle
-    const hemi = new THREE.HemisphereLight('#78b4f0', '#2b162a', 1.1);
-    const keyLight = new THREE.DirectionalLight('#93c5fd', 1.15);
+    const hemi = new THREE.HemisphereLight('#8bc5ff', '#3a1d35', 1.35);
+    const keyLight = new THREE.DirectionalLight('#a8d4ff', 1.25);
     keyLight.position.set(-22, 36, -24);
-    const neonBounce = new THREE.DirectionalLight('#ff7b9c', 0.85);
-    neonBounce.position.set(18, 12, 16);
+    const neonBounce = new THREE.DirectionalLight('#ff8da8', 1.0);
+    neonBounce.position.set(18, 14, 16);
     root.add(hemi, keyLight, neonBounce);
 
     // Fog-exempt Dead-Channel Static Sky Dome behind wispy rain clouds
@@ -79,13 +93,13 @@ export default defineRoom('doug-cassette-station', {
     const street = createWetStreetMaterial();
     res.mat(street.material);
 
-    const city = await buildNeoTokyoCorner(root, res, street.material);
+    const city = await buildNeoTokyoCorner(root, res, blenderAssets, street.material);
     ctx.setCollider(createStationCollider(city.solids.boxes, city.solids.cylinders));
 
     await ctx.breathe();
 
     // Living street population: shopkeepers, diners, commuters, future-punks, bio-hybrids & scooters
-    const streetLife = buildStreetLife(root, res);
+    const streetLife = buildStreetLife(root, res, blenderAssets);
 
     // 7 Floating Holographic Koi drifting high between the Neo-Tokyo corner towers
     const koiBodyGeo = res.geo(new THREE.SphereGeometry(0.24, 10, 8));
@@ -232,8 +246,8 @@ export default defineRoom('doug-cassette-station', {
       // 2. Step Rare Electro-Punk Trolley running PERPENDICULAR (East -> West along X) + Polygon Dissolve!
       stepTrolley(trolleyState, safeDt);
       city.trolley.group.position.set(trolleyState.x, 0, TROLLEY_TRACK_Z);
-      city.trolley.doorLeft.position.x = -0.45 - trolleyState.doorOpen * 0.62;
-      city.trolley.doorRight.position.x = 0.45 + trolleyState.doorOpen * 0.62;
+      if (city.trolley.doorLeft) city.trolley.doorLeft.position.x = -0.44 - trolleyState.doorOpen * 0.62;
+      if (city.trolley.doorRight) city.trolley.doorRight.position.x = 0.44 + trolleyState.doorOpen * 0.62;
       const trolleyDissolve = trolleyState.phase === 'OFFSCREEN'
         ? { solidOpacity: 0, wireOpacity: 0, visible: false }
         : computeDissolveFactors(trolleyState.x);
@@ -295,9 +309,6 @@ export default defineRoom('doug-cassette-station', {
           sp.baseZ + Math.cos(elapsed * 1.5 + sp.phase) * 0.09,
         );
         sp.mesh.scale.setScalar(0.5 + Math.sin(cyc * Math.PI) * 1.25);
-      }
-      for (const l of city.lanternPivots) {
-        l.pivot.rotation.z = Math.sin(elapsed * 1.8 + l.phase) * 0.09;
       }
       city.holoOptics.forEach((eye, i) => {
         eye.rotation.y = -Math.PI / 2 + Math.sin(elapsed * 1.3 + i) * 0.45;
@@ -424,7 +435,9 @@ export default defineRoom('doug-cassette-station', {
     ctx.onUpdate(update);
 
     ctx.onDispose(() => {
+      ctx.scene.environment = null;
       ctx.scene.remove(root);
+      disposeBlenderAssets(blenderAssets);
       res.dispose();
     });
   },

@@ -19,17 +19,8 @@ import {
   type ShopId,
   type TrolleyState,
 } from './worldState';
-import {
-  createCurvedVisorGeo,
-  createOrganicTailGeo,
-  createScooterFairingGeo,
-  createSculptedArmGeo,
-  createSculptedHeadGeo,
-  createSculptedLegGeo,
-  createSculptedTorsoGeo,
-  createStormCollarGeo,
-} from './models';
-import type { ResourceBag } from './city';
+import { createOrganicTailGeo } from './models';
+import { createVolumetricConeTex, type BlenderAssetPack, type ResourceBag } from './city';
 
 export type CharacterSpecies = 'future-punk' | 'kitsune-hybrid' | 'neko-hybrid' | 'okami-hybrid' | 'usagi-hybrid';
 
@@ -45,201 +36,172 @@ export interface CharacterPalette {
 
 export interface CharacterRig {
   group: THREE.Group;
-  leftLeg: THREE.Group;
-  rightLeg: THREE.Group;
-  leftArm: THREE.Group;
-  rightArm: THREE.Group;
+  leftLeg: THREE.Object3D;
+  rightLeg: THREE.Object3D;
+  leftArm: THREE.Object3D;
+  rightArm: THREE.Object3D;
   tail: THREE.Mesh | null;
   umbrella: THREE.Group;
   applyDissolve: (factors: DissolveFactors) => void;
 }
 
-/** Shared sculpted body geometries built once per mount for fast instanced-feel rendering. */
-interface SharedCharGeos {
-  head: THREE.BufferGeometry;
-  neck: THREE.BufferGeometry;
-  torso: THREE.BufferGeometry;
-  collar: THREE.BufferGeometry;
-  leg: THREE.BufferGeometry;
-  arm: THREE.BufferGeometry;
-  visor: THREE.BufferGeometry;
-  boot: THREE.BufferGeometry;
+interface SharedTailGeos {
   foxTail: THREE.BufferGeometry;
   catTail: THREE.BufferGeometry;
   wolfTail: THREE.BufferGeometry;
-  scooterFairing: THREE.BufferGeometry;
 }
 
-function createSharedGeos(res: ResourceBag): SharedCharGeos {
+function createSharedTailGeos(res: ResourceBag): SharedTailGeos {
   return {
-    head: res.geo(createSculptedHeadGeo()),
-    neck: res.geo(new THREE.CylinderGeometry(0.055, 0.068, 0.14, 10)),
-    torso: res.geo(createSculptedTorsoGeo()),
-    collar: res.geo(createStormCollarGeo()),
-    leg: res.geo(createSculptedLegGeo()),
-    arm: res.geo(createSculptedArmGeo()),
-    visor: res.geo(createCurvedVisorGeo()),
-    boot: res.geo(new THREE.BoxGeometry(0.13, 0.13, 0.26)),
     foxTail: res.geo(createOrganicTailGeo(0.76, 0.12, 0.9)),
     catTail: res.geo(createOrganicTailGeo(0.68, 0.048, 1.2)),
     wolfTail: res.geo(createOrganicTailGeo(0.58, 0.105, 0.5)),
-    scooterFairing: res.geo(createScooterFairingGeo()),
   };
 }
 
 /**
- * Builds a life-like, anatomically sculpted Cyberpunk Future-Punk or Bio-Engineered Animal-Hybrid
- * using smooth-shaded LatheGeometry anatomy, tailored storm-collar coat, curved LED visor,
- * sculpted species ears & organic TubeGeometry curved tails, ribbed translucent umbrella,
- * and a dual-layer glowing triangulated polygon-wireframe dissolve shell!
+ * Instantiates a Blender-sculpted Cyberpunk Trenchcoat Human (`cyber_human.glb`),
+ * tints its wet-vinyl trenchcoat, skin, pants & glowing neon trim per character,
+ * attaches species-specific bio-hybrid ears/tails (kitsune, neko, okami, usagi) or
+ * future-punk mohawks + ribbed translucent neon umbrella, and adds a synchronized
+ * translucent glowing polygon-wireframe dissolve shell!
  */
 export function buildCharacterModel(
   res: ResourceBag,
-  geos: SharedCharGeos,
+  assets: BlenderAssetPack,
+  tails: SharedTailGeos,
   palette: CharacterPalette,
 ): CharacterRig {
   const group = new THREE.Group();
   const solidMats: THREE.Material[] = [];
-  const wireMats: THREE.MeshBasicMaterial[] = [];
+  const wireMat = res.mat(new THREE.MeshBasicMaterial({
+    color: palette.wireColor,
+    wireframe: true,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  }));
+  const wireClones: THREE.Object3D[] = [];
 
-  const registerMat = <T extends THREE.Material>(m: T): T => {
-    m.transparent = true;
-    solidMats.push(m);
-    return res.mat(m);
-  };
+  // Clone the Blender articulated figure & customize PBR material colors cleanly
+  const solidRoot = assets.human.scene.clone(true);
+  const accentColor = new THREE.Color(palette.accent);
+  const coatColor = new THREE.Color(palette.jacket);
+  const skinColor = new THREE.Color(palette.skin);
+  const pantsColor = new THREE.Color(palette.pants);
 
-  const skinMat = registerMat(new THREE.MeshStandardMaterial({ color: palette.skin, roughness: 0.65 }));
-  const jacketMat = registerMat(new THREE.MeshStandardMaterial({ color: palette.jacket, roughness: 0.48, metalness: 0.18 }));
-  const accentMat = registerMat(new THREE.MeshStandardMaterial({
+  const solidMeshes: THREE.Mesh[] = [];
+  solidRoot.traverse(child => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh) solidMeshes.push(mesh);
+  });
+
+  for (const mesh of solidMeshes) {
+    const src = mesh.material as THREE.MeshStandardMaterial;
+    const mat = src.clone();
+    mat.transparent = true;
+    mat.envMapIntensity = 1.55;
+    if (src.name === 'TrenchCoat') mat.color.copy(coatColor);
+    else if (src.name === 'HumanSkin') mat.color.copy(skinColor);
+    else if (src.name === 'TechPants') mat.color.copy(pantsColor);
+    else if (src.name === 'NeonAccent') {
+      mat.color.copy(accentColor);
+      mat.emissive.copy(accentColor);
+      mat.emissiveIntensity = 2.0;
+    }
+    res.mat(mat);
+    mesh.material = mat;
+    solidMats.push(mat);
+
+    // Attach a co-animated glowing wireframe clone to each limb mesh so dissolve tracks stride!
+    const wMesh = new THREE.Mesh(mesh.geometry, wireMat);
+    wMesh.scale.setScalar(1.028);
+    wMesh.visible = false;
+    mesh.add(wMesh);
+    wireClones.push(wMesh);
+  }
+  group.add(solidRoot);
+
+  const headPivot = solidRoot.getObjectByName('Head') ?? solidRoot;
+  const torsoPivot = solidRoot.getObjectByName('Torso') ?? solidRoot;
+  const leftLeg = solidRoot.getObjectByName('LegL') ?? new THREE.Group();
+  const rightLeg = solidRoot.getObjectByName('LegR') ?? new THREE.Group();
+  const leftArm = solidRoot.getObjectByName('ArmL') ?? new THREE.Group();
+  const rightArm = solidRoot.getObjectByName('ArmR') ?? new THREE.Group();
+
+  // Species-specific bio-hybrid ears, organic curved tails & future-punk mohawks
+  const hairMat = res.mat(new THREE.MeshStandardMaterial({ color: palette.hair, roughness: 0.52, transparent: true, envMapIntensity: 1.3 }));
+  const innerEarMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fda4af', roughness: 0.68, transparent: true }));
+  const accentMat = res.mat(new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
-    emissiveIntensity: 1.75,
-    roughness: 0.22,
+    emissiveIntensity: 1.9,
+    transparent: true,
   }));
-  const pantsMat = registerMat(new THREE.MeshStandardMaterial({ color: palette.pants, roughness: 0.72 }));
-  const hairMat = registerMat(new THREE.MeshStandardMaterial({ color: palette.hair, roughness: 0.58 }));
-  const innerEarMat = registerMat(new THREE.MeshStandardMaterial({ color: '#fda4af', roughness: 0.72 }));
-  const chromeMat = registerMat(new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.9, roughness: 0.18 }));
+  const chromeMat = res.mat(new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.92, roughness: 0.16, transparent: true, envMapIntensity: 1.6 }));
+  solidMats.push(hairMat, innerEarMat, accentMat, chromeMat);
 
-  const addDualPart = (
-    parent: THREE.Object3D,
-    geo: THREE.BufferGeometry,
-    mat: THREE.Material,
-    pos: [number, number, number],
-    rot?: [number, number, number],
-    scale?: [number, number, number],
-  ) => {
+  const addBioPart = (parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, pos: [number, number, number], rot?: [number, number, number]) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(pos[0], pos[1], pos[2]);
     if (rot) m.rotation.set(rot[0], rot[1], rot[2]);
-    if (scale) m.scale.set(scale[0], scale[1], scale[2]);
+    const wm = new THREE.Mesh(geo, wireMat);
+    wm.scale.setScalar(1.03);
+    wm.visible = false;
+    m.add(wm);
+    wireClones.push(wm);
     parent.add(m);
-
-    const wMat = res.mat(new THREE.MeshBasicMaterial({
-      color: palette.wireColor,
-      wireframe: true,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }));
-    const wm = new THREE.Mesh(geo, wMat);
-    wm.position.copy(m.position);
-    wm.rotation.copy(m.rotation);
-    wm.scale.copy(m.scale).multiplyScalar(1.028);
-    parent.add(wm);
-    wireMats.push(wMat);
     return m;
   };
 
-  // Sculpted Anatomical Torso + Tailored Storm Collar + Belt + Glowing Lapels & Tech Pack
-  addDualPart(group, geos.torso, jacketMat, [0, 1.13, 0]);
-  addDualPart(group, geos.collar, jacketMat, [0, 1.38, -0.01]);
-  addDualPart(group, res.geo(new THREE.TorusGeometry(0.165, 0.018, 6, 16).rotateX(Math.PI / 2)), accentMat, [0, 1.49, -0.01]);
-  addDualPart(group, res.geo(new THREE.CylinderGeometry(0.168, 0.168, 0.055, 14)), chromeMat, [0, 0.96, 0], undefined, [1.08, 1, 0.7]);
-  addDualPart(group, res.geo(new THREE.BoxGeometry(0.22, 0.3, 0.12)), jacketMat, [0, 1.18, -0.17]);
-  addDualPart(group, res.geo(new THREE.BoxGeometry(0.18, 0.05, 0.13)), accentMat, [0, 1.24, -0.18]);
-
-  // Sculpted Neck + Anatomical Head + Curved Wrap-Around LED Visor
-  addDualPart(group, geos.neck, skinMat, [0, 1.46, 0]);
-  addDualPart(group, geos.head, skinMat, [0, 1.62, 0.01]);
-  addDualPart(group, geos.visor, accentMat, [0, 1.64, 0.02]);
-
-  // Sculpted Articulated Legs + Cyber Platform Boots with Neon Sole Trim
-  const leftLeg = new THREE.Group();
-  leftLeg.position.set(-0.11, 0.85, 0);
-  addDualPart(leftLeg, geos.leg, pantsMat, [0, 0, 0]);
-  addDualPart(leftLeg, geos.boot, jacketMat, [0, -0.78, 0.04]);
-  addDualPart(leftLeg, res.geo(new THREE.BoxGeometry(0.135, 0.032, 0.265)), accentMat, [0, -0.83, 0.04]);
-  const rightLeg = new THREE.Group();
-  rightLeg.position.set(0.11, 0.85, 0);
-  addDualPart(rightLeg, geos.leg, pantsMat, [0, 0, 0]);
-  addDualPart(rightLeg, geos.boot, jacketMat, [0, -0.78, 0.04]);
-  addDualPart(rightLeg, res.geo(new THREE.BoxGeometry(0.135, 0.032, 0.265)), accentMat, [0, -0.83, 0.04]);
-  group.add(leftLeg, rightLeg);
-
-  // Sculpted Articulated Arms (Future-Punks sport a gleaming articulated chrome cyber-arm + wrist ring!)
-  const leftArm = new THREE.Group();
-  leftArm.position.set(-0.27, 1.36, 0);
-  addDualPart(leftArm, geos.arm, jacketMat, [0, 0, 0]);
-  const rightArm = new THREE.Group();
-  rightArm.position.set(0.27, 1.36, 0);
-  addDualPart(rightArm, geos.arm, palette.species === 'future-punk' ? chromeMat : jacketMat, [0, 0, 0]);
-  if (palette.species === 'future-punk') {
-    addDualPart(rightArm, res.geo(new THREE.TorusGeometry(0.052, 0.014, 6, 12).rotateX(Math.PI / 2)), accentMat, [0, -0.45, 0]);
-  }
-  group.add(leftArm, rightArm);
-
-  // Sculpted Species Hair, Ears & Organic Curved Tails!
   let tail: THREE.Mesh | null = null;
   if (palette.species === 'future-punk') {
-    // Layered swept cyber-mohawk crest
     for (let s = 0; s < 5; s++) {
-      addDualPart(
-        group,
+      addBioPart(
+        headPivot,
         res.geo(new THREE.ConeGeometry(0.048, 0.22 - s * 0.014, 6)),
         s % 2 === 0 ? accentMat : hairMat,
-        [0, 1.81 - s * 0.018, 0.08 - s * 0.058],
+        [0, 0.34 - s * 0.016, 0.07 - s * 0.055],
         [-0.35 + s * 0.16, 0, 0],
       );
     }
   } else if (palette.species === 'kitsune-hybrid') {
-    // Sculpted tufted fox ears with inner pinna + sinuous curved fox tail
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.068, 0.28, 7)), hairMat, [-0.1, 1.84, 0.01], [0.08, 0, 0.24]);
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.036, 0.18, 5)), innerEarMat, [-0.1, 1.82, 0.035], [0.08, 0, 0.24]);
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.068, 0.28, 7)), hairMat, [0.1, 1.84, 0.01], [0.08, 0, -0.24]);
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.036, 0.18, 5)), innerEarMat, [0.1, 1.82, 0.035], [0.08, 0, -0.24]);
-    tail = addDualPart(group, geos.foxTail, hairMat, [0, 0.88, -0.14]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.068, 0.28, 7)), hairMat, [-0.1, 0.35, 0.01], [0.08, 0, 0.24]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.036, 0.18, 5)), innerEarMat, [-0.1, 0.33, 0.035], [0.08, 0, 0.24]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.068, 0.28, 7)), hairMat, [0.1, 0.35, 0.01], [0.08, 0, -0.24]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.036, 0.18, 5)), innerEarMat, [0.1, 0.33, 0.035], [0.08, 0, -0.24]);
+    tail = addBioPart(torsoPivot, tails.foxTail, hairMat, [0, -0.14, -0.16]);
   } else if (palette.species === 'neko-hybrid') {
-    // Perky sculpted cat ears + glowing choker bell + graceful S-curved feline tail
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.058, 0.19, 6)), hairMat, [-0.1, 1.8, 0.02], [0.12, 0, 0.3]);
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.032, 0.13, 5)), innerEarMat, [-0.1, 1.79, 0.04], [0.12, 0, 0.3]);
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.058, 0.19, 6)), hairMat, [0.1, 1.8, 0.02], [0.12, 0, -0.3]);
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.032, 0.13, 5)), innerEarMat, [0.1, 1.79, 0.04], [0.12, 0, -0.3]);
-    tail = addDualPart(group, geos.catTail, hairMat, [0, 0.88, -0.14]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.058, 0.19, 6)), hairMat, [-0.1, 0.32, 0.02], [0.12, 0, 0.3]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.032, 0.13, 5)), innerEarMat, [-0.1, 0.31, 0.04], [0.12, 0, 0.3]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.058, 0.19, 6)), hairMat, [0.1, 0.32, 0.02], [0.12, 0, -0.3]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.032, 0.13, 5)), innerEarMat, [0.1, 0.31, 0.04], [0.12, 0, -0.3]);
+    tail = addBioPart(torsoPivot, tails.catTail, hairMat, [0, -0.14, -0.16]);
   } else if (palette.species === 'okami-hybrid') {
-    // Tall wolf ears + tactical courier straps + thick curved wolf tail
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.064, 0.24, 6)), hairMat, [-0.1, 1.82, 0.0], [-0.06, 0, 0.16]);
-    addDualPart(group, res.geo(new THREE.ConeGeometry(0.064, 0.24, 6)), hairMat, [0.1, 1.82, 0.0], [-0.06, 0, -0.16]);
-    tail = addDualPart(group, geos.wolfTail, hairMat, [0, 0.88, -0.14]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.064, 0.24, 6)), hairMat, [-0.1, 0.34, 0], [-0.06, 0, 0.16]);
+    addBioPart(headPivot, res.geo(new THREE.ConeGeometry(0.064, 0.24, 6)), hairMat, [0.1, 0.34, 0], [-0.06, 0, -0.16]);
+    tail = addBioPart(torsoPivot, tails.wolfTail, hairMat, [0, -0.14, -0.16]);
   } else {
-    // Usagi bio-hybrid: articulated long sculpted bunny ears (one playfully cocked!) + cotton tail
-    addDualPart(group, res.geo(new THREE.CapsuleGeometry(0.038, 0.34, 5, 8)), hairMat, [-0.085, 1.97, 0], [-0.1, 0, 0.16]);
-    addDualPart(group, res.geo(new THREE.CapsuleGeometry(0.038, 0.34, 5, 8)), hairMat, [0.095, 1.95, 0.03], [0.22, 0, -0.26]);
-    tail = addDualPart(group, res.geo(new THREE.SphereGeometry(0.11, 10, 8)), hairMat, [0, 0.86, -0.18]);
+    addBioPart(headPivot, res.geo(new THREE.CapsuleGeometry(0.038, 0.34, 5, 8)), hairMat, [-0.085, 0.48, 0], [-0.1, 0, 0.16]);
+    addBioPart(headPivot, res.geo(new THREE.CapsuleGeometry(0.038, 0.34, 5, 8)), hairMat, [0.095, 0.46, 0.03], [0.22, 0, -0.26]);
+    tail = addBioPart(torsoPivot, res.geo(new THREE.SphereGeometry(0.11, 10, 8)), hairMat, [0, -0.16, -0.18]);
   }
 
-  // Translucent Ribbed Neon Umbrella (with metallic shaft, ribs & glowing rim ring!)
+  // Translucent Ribbed Neon Rain Umbrella
   const umbrella = new THREE.Group();
   const umbShaft = new THREE.Mesh(res.geo(new THREE.CylinderGeometry(0.013, 0.013, 0.94, 6)), chromeMat);
   umbShaft.position.y = 0.47;
-  const umbDomeMat = registerMat(new THREE.MeshStandardMaterial({
+  const umbDomeMat = res.mat(new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
-    emissiveIntensity: 0.45,
+    emissiveIntensity: 0.48,
     roughness: 0.12,
+    transparent: true,
+    opacity: 0.38,
     side: THREE.DoubleSide,
   }));
+  solidMats.push(umbDomeMat);
   const umbDome = new THREE.Mesh(res.geo(new THREE.ConeGeometry(0.64, 0.24, 12, 1, true)), umbDomeMat);
   umbDome.position.y = 0.86;
   const umbRim = new THREE.Mesh(res.geo(new THREE.TorusGeometry(0.635, 0.012, 5, 16).rotateX(Math.PI / 2)), accentMat);
@@ -258,27 +220,27 @@ export function buildCharacterModel(
     umbrella,
     applyDissolve(f: DissolveFactors) {
       group.visible = f.visible;
+      const showSolid = f.solidOpacity > 0.02;
       for (const m of solidMats) {
         m.opacity = m === umbDomeMat ? f.solidOpacity * 0.38 : f.solidOpacity;
-        m.visible = f.solidOpacity > 0.02;
+        m.visible = showSolid;
       }
-      for (const wm of wireMats) {
-        wm.opacity = f.wireOpacity;
-        wm.visible = f.wireOpacity > 0.02;
-      }
+      const showWire = f.wireOpacity > 0.02;
+      wireMat.opacity = f.wireOpacity;
+      for (const wc of wireClones) wc.visible = showWire;
     },
   };
 }
 
 /**
- * Builds an Akira-inspired Sculpted Neo-Futuristic Cyber-Scooter (oriented forward along +X
- * for the perpendicular East–West boulevard!), complete with curved monocoque fairing,
- * hubless glowing gyro-wheels, telescopic front fork, handlebars, volumetric headlight cone,
- * courier tail box, seated leaning rider, and matching polygon-wireframe dissolve!
+ * Instantiates a Blender-sculpted Neo-Futuristic Cyber-Scooter (`cyber_scooter.glb`)
+ * oriented along +X for the perpendicular East–West boulevard, with custom neon accents,
+ * sweeping volumetric headlight cone, seated Blender rider & synchronized polygon dissolve!
  */
 export function buildCyberScooter(
   res: ResourceBag,
-  geos: SharedCharGeos,
+  assets: BlenderAssetPack,
+  tails: SharedTailGeos,
   riderPalette: CharacterPalette,
 ): {
   group: THREE.Group;
@@ -286,102 +248,83 @@ export function buildCyberScooter(
 } {
   const group = new THREE.Group();
   const solidMats: THREE.Material[] = [];
-  const wireMats: THREE.MeshBasicMaterial[] = [];
+  const wireMat = res.mat(new THREE.MeshBasicMaterial({
+    color: riderPalette.wireColor,
+    wireframe: true,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  }));
 
-  const reg = <T extends THREE.Material>(m: T): T => {
-    m.transparent = true;
-    solidMats.push(m);
-    return res.mat(m);
-  };
-  const bodyMat = reg(new THREE.MeshStandardMaterial({ color: '#182235', roughness: 0.24, metalness: 0.82 }));
-  const tireMat = reg(new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.85 }));
-  const chromeMat = reg(new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.2, metalness: 0.9 }));
-  const neonMat = reg(new THREE.MeshStandardMaterial({ color: riderPalette.accent, emissive: riderPalette.accent, emissiveIntensity: 2.3 }));
-  const tailMat = reg(new THREE.MeshStandardMaterial({ color: '#f43f5e', emissive: '#e11d48', emissiveIntensity: 2.3 }));
+  const scooterSolid = assets.scooter.scene.clone(true);
+  const accentColor = new THREE.Color(riderPalette.accent);
+  const bodyColor = new THREE.Color(riderPalette.jacket).offsetHSL(0, 0, 0.08);
+  scooterSolid.traverse(child => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const src = mesh.material as THREE.MeshStandardMaterial;
+    const mat = src.clone();
+    mat.transparent = true;
+    mat.envMapIntensity = 1.7;
+    if (src.name === 'ScooterBody') mat.color.copy(bodyColor);
+    else if (src.name === 'ScooterAccent') {
+      mat.color.copy(accentColor);
+      mat.emissive.copy(accentColor);
+      mat.emissiveIntensity = 2.4;
+    }
+    res.mat(mat);
+    mesh.material = mat;
+    solidMats.push(mat);
+  });
+  group.add(scooterSolid);
+
+  const scooterWire = assets.scooter.scene.clone(true);
+  scooterWire.scale.setScalar(1.022);
+  scooterWire.traverse(child => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh) mesh.material = wireMat;
+  });
+  scooterWire.visible = false;
+  group.add(scooterWire);
+
+  // Soft gradient-faded volumetric road headlight beam (bright at headlamp, vanishing cleanly into rain)
   const beamMat = res.mat(new THREE.MeshBasicMaterial({
     color: riderPalette.accent,
+    map: res.tex(createVolumetricConeTex()),
     transparent: true,
-    opacity: 0.14,
+    opacity: 0.22,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
   }));
-
-  const addPart = (geo: THREE.BufferGeometry, mat: THREE.Material, pos: [number, number, number], rot?: [number, number, number]) => {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(pos[0], pos[1], pos[2]);
-    if (rot) m.rotation.set(rot[0], rot[1], rot[2]);
-    group.add(m);
-    const wm = res.mat(new THREE.MeshBasicMaterial({
-      color: riderPalette.wireColor,
-      wireframe: true,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }));
-    const wMesh = new THREE.Mesh(geo, wm);
-    wMesh.position.copy(m.position);
-    wMesh.rotation.copy(m.rotation);
-    wMesh.scale.setScalar(1.03);
-    group.add(wMesh);
-    wireMats.push(wm);
-  };
-
-  // Sculpted curved monocoque fairing (points forward along +X!)
-  addPart(geos.scooterFairing, bodyMat, [0, 0.04, 0]);
-  // Telescopic chrome front fork & handlebars
-  addPart(res.geo(new THREE.CylinderGeometry(0.032, 0.028, 0.72, 8)), chromeMat, [0.7, 0.56, 0.14], [0, 0, 0.34]);
-  addPart(res.geo(new THREE.CylinderGeometry(0.032, 0.028, 0.72, 8)), chromeMat, [0.7, 0.56, -0.14], [0, 0, 0.34]);
-  addPart(res.geo(new THREE.CylinderGeometry(0.024, 0.024, 0.68, 8).rotateX(Math.PI / 2)), chromeMat, [0.54, 0.94, 0]);
-  // Hubless thick rubber tires + inner glowing neon gyro rims!
-  const tireGeo = res.geo(new THREE.TorusGeometry(0.28, 0.085, 10, 20));
-  const rimGeo = res.geo(new THREE.TorusGeometry(0.21, 0.028, 8, 20));
-  for (const wx of [0.84, -0.76]) {
-    addPart(tireGeo, tireMat, [wx, 0.32, 0]);
-    addPart(rimGeo, neonMat, [wx, 0.32, 0]);
-  }
-  // Headlight bar + volumetric road beam + red LED tail strip + compact rear courier box
-  addPart(res.geo(new THREE.BoxGeometry(0.12, 0.1, 0.44)), neonMat, [0.94, 0.58, 0]);
-  addPart(res.geo(new THREE.BoxGeometry(0.1, 0.1, 0.42)), tailMat, [-0.9, 0.62, 0]);
-  addPart(res.geo(new THREE.BoxGeometry(0.38, 0.34, 0.44)), bodyMat, [-0.66, 0.88, 0]);
-  const beam = new THREE.Mesh(res.geo(new THREE.ConeGeometry(0.68, 3.6, 12, 1, true).rotateZ(Math.PI / 2)), beamMat);
-  beam.position.set(2.7, 0.42, 0);
+  const beam = new THREE.Mesh(res.geo(new THREE.ConeGeometry(0.58, 3.6, 20, 1, true).rotateZ(Math.PI / 2)), beamMat);
+  beam.position.set(2.82, 0.48, 0);
   group.add(beam);
 
-  // Seated cyber-rider rotated to face +X, leaning smoothly into the handlebars
-  const rider = buildCharacterModel(res, geos, riderPalette);
+  const rider = buildCharacterModel(res, assets, tails, riderPalette);
   rider.umbrella.visible = false;
   rider.group.rotation.y = Math.PI / 2;
-  rider.group.position.set(-0.08, 0.16, 0);
+  rider.group.position.set(-0.1, 0.2, 0);
   rider.leftLeg.rotation.x = -0.92;
   rider.rightLeg.rotation.x = -0.92;
-  rider.leftArm.rotation.x = -1.02;
-  rider.rightArm.rotation.x = -1.02;
+  rider.leftArm.rotation.x = -1.04;
+  rider.rightArm.rotation.x = -1.04;
   group.add(rider.group);
 
   return {
     group,
     applyDissolve(f: DissolveFactors) {
       group.visible = f.visible;
-      for (const m of solidMats) {
-        m.opacity = f.solidOpacity;
-        m.visible = f.solidOpacity > 0.02;
-      }
-      for (const wm of wireMats) {
-        wm.opacity = f.wireOpacity;
-        wm.visible = f.wireOpacity > 0.02;
-      }
-      beamMat.opacity = f.solidOpacity * 0.14;
+      scooterSolid.visible = f.solidOpacity > 0.02;
+      for (const m of solidMats) m.opacity = f.solidOpacity;
+      scooterWire.visible = f.wireOpacity > 0.02;
+      wireMat.opacity = f.wireOpacity;
+      beamMat.opacity = f.solidOpacity * 0.22;
       rider.applyDissolve(f);
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Living Street Population: 4-Corner Shopkeepers, Diners, Bus-Stop Commuters,
-// Perpendicular E-W & N-S Strolling Pedestrians, and Perpendicular Cyber-Scooters!
-// ---------------------------------------------------------------------------
 
 export interface TalkableNpc {
   id: string;
@@ -399,16 +342,16 @@ export interface StreetLifeHandle {
   update: (dt: number, elapsed: number, cycle: CycleSnapshot, trolley: TrolleyState) => void;
 }
 
-export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLifeHandle {
+export function buildStreetLife(root: THREE.Group, res: ResourceBag, assets: BlenderAssetPack): StreetLifeHandle {
   const rand = seededRandom(204977);
-  const geos = createSharedGeos(res);
+  const tails = createSharedTailGeos(res);
   const npcs: TalkableNpc[] = [];
 
   // 1. Named Shopkeepers Attached to Each Corner Shop
-  const chefKenta = buildCharacterModel(res, geos, {
+  const chefKenta = buildCharacterModel(res, assets, tails, {
     species: 'future-punk',
     skin: '#e0b899',
-    jacket: '#f8fafc',
+    jacket: '#e2e8f0',
     accent: '#ef4444',
     pants: '#1e293b',
     hair: '#334155',
@@ -434,10 +377,10 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     ],
   });
 
-  const drSable = buildCharacterModel(res, geos, {
+  const drSable = buildCharacterModel(res, assets, tails, {
     species: 'kitsune-hybrid',
     skin: '#f1d2be',
-    jacket: '#0f172a',
+    jacket: '#172554',
     accent: '#22d3ee',
     pants: '#1e293b',
     hair: '#f97316',
@@ -464,10 +407,10 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     ],
   });
 
-  const mina9 = buildCharacterModel(res, geos, {
+  const mina9 = buildCharacterModel(res, assets, tails, {
     species: 'future-punk',
     skin: '#e8c4b0',
-    jacket: '#3b0764',
+    jacket: '#4c1d95',
     accent: '#f472b6',
     pants: '#0f172a',
     hair: '#22d3ee',
@@ -494,7 +437,7 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     ],
   });
 
-  const baku = buildCharacterModel(res, geos, {
+  const baku = buildCharacterModel(res, assets, tails, {
     species: 'okami-hybrid',
     skin: '#d9b092',
     jacket: '#1e3a5f',
@@ -524,14 +467,14 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     ],
   });
 
-  // 2. Seated Noodle Bar Patrons at White Dragon
+  // 2. Seated Blade Runner Noodle Bar Patrons
   const seatedSpecs: Array<{ name: string; species: CharacterSpecies; speciesLabel: string; seatIdx: number; jacket: string; accent: string; hair: string; lines: string[] }> = [
     {
       name: 'Nyx',
       species: 'neko-hybrid',
       speciesLabel: 'Neko Bio-Hybrid',
       seatIdx: 1,
-      jacket: '#1e1b4b',
+      jacket: '#312e81',
       accent: '#38bdf8',
       hair: '#e2e8f0',
       lines: [
@@ -544,7 +487,7 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
       species: 'usagi-hybrid',
       speciesLabel: 'Usagi Bio-Hybrid',
       seatIdx: 4,
-      jacket: '#3f1d38',
+      jacket: '#701a75',
       accent: '#5eead4',
       hair: '#fbcfe8',
       lines: [
@@ -555,7 +498,7 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
   ];
   const seatedRigs: CharacterRig[] = [];
   for (const s of seatedSpecs) {
-    const rig = buildCharacterModel(res, geos, {
+    const rig = buildCharacterModel(res, assets, tails, {
       species: s.species,
       skin: '#eccab4',
       jacket: s.jacket,
@@ -566,7 +509,7 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     });
     rig.umbrella.visible = false;
     const sz = NOODLE_BAR_POS.z - 2.6 + s.seatIdx * 1.04;
-    const sx = NOODLE_BAR_POS.x + 2.68;
+    const sx = NOODLE_BAR_POS.x + 2.72;
     rig.group.position.set(sx, stationHeight(sx, sz) + 0.08, sz);
     rig.group.rotation.y = -Math.PI / 2;
     rig.leftLeg.rotation.x = -1.25;
@@ -586,7 +529,7 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     });
   }
 
-  // 3. NE Bus Stop Waiting Commuters (step South into the perpendicular East–West Electro-Punk Trolley!)
+  // 3. NE Bus Stop Waiting Commuters
   interface Commuter {
     rig: CharacterRig;
     waitX: number;
@@ -596,10 +539,10 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
   }
   const commuters: Commuter[] = [
     {
-      rig: buildCharacterModel(res, geos, {
+      rig: buildCharacterModel(res, assets, tails, {
         species: 'usagi-hybrid',
         skin: '#f3d6c4',
-        jacket: '#172554',
+        jacket: '#1e3a8a',
         accent: '#f472b6',
         pants: '#1e293b',
         hair: '#f8fafc',
@@ -611,10 +554,10 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
       timer: 0,
     },
     {
-      rig: buildCharacterModel(res, geos, {
+      rig: buildCharacterModel(res, assets, tails, {
         species: 'future-punk',
         skin: '#d9ae90',
-        jacket: '#1f2937',
+        jacket: '#334155',
         accent: '#34d399',
         pants: '#0f172a',
         hair: '#fde047',
@@ -628,7 +571,7 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
   ];
   for (const c of commuters) {
     c.rig.group.position.set(c.waitX, stationHeight(c.waitX, c.waitZ), c.waitZ);
-    c.rig.group.rotation.y = 0; // facing +Z toward the perpendicular tram rails!
+    c.rig.group.rotation.y = 0;
     root.add(c.rig.group);
   }
   npcs.push({
@@ -645,7 +588,7 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     ],
   });
 
-  // 4. 14 Strolling Street Pedestrians (8 along the perpendicular East–West boulevard sidewalks + 6 along the N–S alley!)
+  // 4. 14 Strolling Pedestrians along BOTH East–West Boulevard & North–South Pedestrian Alley
   interface Walker {
     rig: CharacterRig;
     axis: 'x' | 'z';
@@ -660,17 +603,17 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
   }
   const walkerPalettes: Array<CharacterPalette & { name: string; speciesLabel: string; line: string }> = [
     { species: 'future-punk', skin: '#e6be9e', jacket: '#1e293b', accent: '#22d3ee', pants: '#0f172a', hair: '#f43f5e', wireColor: '#22d3ee', name: 'Vex', speciesLabel: 'Future-Punk', line: 'Rain\'s warm tonight — good night for chrome boots and synth-bass.' },
-    { species: 'kitsune-hybrid', skin: '#f3d1bc', jacket: '#31102f', accent: '#fb923c', pants: '#1e293b', hair: '#fb923c', wireColor: '#fb923c', name: 'Kiko', speciesLabel: 'Kitsune Bio-Hybrid', line: 'If you hear buzzing overhead, that\'s just the static sky bleeding through.' },
-    { species: 'neko-hybrid', skin: '#e8c3ac', jacket: '#0f292e', accent: '#5eead4', pants: '#0f172a', hair: '#c084fc', wireColor: '#5eead4', name: 'Tama', speciesLabel: 'Neko Bio-Hybrid', line: 'Watch the edge of the boulevard — everyone turns to polygons past the towers!' },
-    { species: 'okami-hybrid', skin: '#cfa488', jacket: '#27272a', accent: '#fde047', pants: '#18181b', hair: '#64748b', wireColor: '#fde047', name: 'Fen', speciesLabel: 'Okami Bio-Hybrid', line: 'Heading to White Dragon before Kenta sells out of spicy miso.' },
-    { species: 'usagi-hybrid', skin: '#f4d8c8', jacket: '#1e1b4b', accent: '#f472b6', pants: '#1e293b', hair: '#e0f2fe', wireColor: '#f472b6', name: 'Yuki-B', speciesLabel: 'Usagi Bio-Hybrid', line: 'My bio-ears fold back automatically when the rain hits downpour mode.' },
-    { species: 'future-punk', skin: '#d8ad8e', jacket: '#064e3b', accent: '#34d399', pants: '#0f172a', hair: '#38bdf8', wireColor: '#34d399', name: 'Zero', speciesLabel: 'Future-Punk', line: 'Saw a holographic koi swim straight through the static cloud layer!' },
+    { species: 'kitsune-hybrid', skin: '#f3d1bc', jacket: '#581c87', accent: '#fb923c', pants: '#1e293b', hair: '#fb923c', wireColor: '#fb923c', name: 'Kiko', speciesLabel: 'Kitsune Bio-Hybrid', line: 'If you hear buzzing overhead, that\'s just the static sky bleeding through.' },
+    { species: 'neko-hybrid', skin: '#e8c3ac', jacket: '#134e4a', accent: '#5eead4', pants: '#0f172a', hair: '#c084fc', wireColor: '#5eead4', name: 'Tama', speciesLabel: 'Neko Bio-Hybrid', line: 'Watch the edge of the boulevard — everyone turns to polygons past the towers!' },
+    { species: 'okami-hybrid', skin: '#cfa488', jacket: '#374151', accent: '#fde047', pants: '#18181b', hair: '#64748b', wireColor: '#fde047', name: 'Fen', speciesLabel: 'Okami Bio-Hybrid', line: 'Heading to White Dragon before Kenta sells out of spicy miso.' },
+    { species: 'usagi-hybrid', skin: '#f4d8c8', jacket: '#312e81', accent: '#f472b6', pants: '#1e293b', hair: '#e0f2fe', wireColor: '#f472b6', name: 'Yuki-B', speciesLabel: 'Usagi Bio-Hybrid', line: 'My bio-ears fold back automatically when the rain hits downpour mode.' },
+    { species: 'future-punk', skin: '#d8ad8e', jacket: '#065f46', accent: '#34d399', pants: '#0f172a', hair: '#38bdf8', wireColor: '#34d399', name: 'Zero', speciesLabel: 'Future-Punk', line: 'Saw a holographic koi swim straight through the static cloud layer!' },
   ];
 
   const walkers: Walker[] = [];
   for (let i = 0; i < 14; i++) {
     const p = walkerPalettes[i % walkerPalettes.length];
-    const rig = buildCharacterModel(res, geos, p);
+    const rig = buildCharacterModel(res, assets, tails, p);
     const axis: 'x' | 'z' = i < 8 ? 'x' : 'z';
     const side = i % 2 === 0 ? -1 : 1;
     const lane = axis === 'x' ? side * (6.75 + (i % 3) * 0.45) : side * (4.15 + (i % 2) * 0.45);
@@ -706,30 +649,30 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     }
   }
 
-  // 5. Six Neo-Futuristic Cyber-Scooters cruising PERPENDICULAR East <-> West across the boulevard!
+  // 5. Six Blender-Sculpted Neo-Futuristic Cyber-Scooters cruising PERPENDICULAR East <-> West!
   interface ScooterUnit {
     mesh: { group: THREE.Group; applyDissolve: (f: DissolveFactors) => void };
     x: number;
     z: number;
-    dir: number; // +1 = Eastbound (+X), -1 = Westbound (-X)
+    dir: number;
     speed: number;
   }
   const scooters: ScooterUnit[] = [];
   const scooterPalettes: CharacterPalette[] = [
-    { species: 'future-punk', skin: '#e6be9e', jacket: '#0f172a', accent: '#22d3ee', pants: '#1e293b', hair: '#f43f5e', wireColor: '#22d3ee' },
-    { species: 'kitsune-hybrid', skin: '#f3d1bc', jacket: '#2e1065', accent: '#f472b6', pants: '#0f172a', hair: '#fb923c', wireColor: '#f472b6' },
-    { species: 'neko-hybrid', skin: '#ecc6b0', jacket: '#083344', accent: '#fde047', pants: '#1e293b', hair: '#5eead4', wireColor: '#fde047' },
-    { species: 'usagi-hybrid', skin: '#f4d8c8', jacket: '#3b0764', accent: '#34d399', pants: '#0f172a', hair: '#f8fafc', wireColor: '#34d399' },
-    { species: 'okami-hybrid', skin: '#cfa488', jacket: '#1f2937', accent: '#fb923c', pants: '#0f172a', hair: '#94a3b8', wireColor: '#fb923c' },
-    { species: 'future-punk', skin: '#e6be9e', jacket: '#172554', accent: '#38bdf8', pants: '#0f172a', hair: '#f472b6', wireColor: '#38bdf8' },
+    { species: 'future-punk', skin: '#e6be9e', jacket: '#1e293b', accent: '#22d3ee', pants: '#1e293b', hair: '#f43f5e', wireColor: '#22d3ee' },
+    { species: 'kitsune-hybrid', skin: '#f3d1bc', jacket: '#4c1d95', accent: '#f472b6', pants: '#0f172a', hair: '#fb923c', wireColor: '#f472b6' },
+    { species: 'neko-hybrid', skin: '#ecc6b0', jacket: '#155e75', accent: '#fde047', pants: '#1e293b', hair: '#5eead4', wireColor: '#fde047' },
+    { species: 'usagi-hybrid', skin: '#f4d8c8', jacket: '#581c87', accent: '#34d399', pants: '#0f172a', hair: '#f8fafc', wireColor: '#34d399' },
+    { species: 'okami-hybrid', skin: '#cfa488', jacket: '#334155', accent: '#fb923c', pants: '#0f172a', hair: '#94a3b8', wireColor: '#fb923c' },
+    { species: 'future-punk', skin: '#e6be9e', jacket: '#1e3a8a', accent: '#38bdf8', pants: '#0f172a', hair: '#f472b6', wireColor: '#38bdf8' },
   ];
   for (let i = 0; i < 6; i++) {
     const dir = i % 2 === 0 ? -1 : 1;
     const sz = dir < 0 ? SCOOTER_LANE_WEST_Z : SCOOTER_LANE_EAST_Z;
-    const sc = buildCyberScooter(res, geos, scooterPalettes[i]);
+    const sc = buildCyberScooter(res, assets, tails, scooterPalettes[i]);
     const sx = -31 + i * 11;
     sc.group.position.set(sx, 0, sz);
-    sc.group.rotation.y = dir > 0 ? 0 : Math.PI; // forward nose along +X or -X!
+    sc.group.rotation.y = dir > 0 ? 0 : Math.PI;
     root.add(sc.group);
     scooters.push({ mesh: sc, x: sx, z: sz, dir, speed: 6.4 + (i % 3) * 1.15 });
   }
@@ -738,7 +681,6 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
     const safeDt = Math.min(dt, 0.1);
     const openUmbrellas = cycle.rainIntensity > 0.32;
 
-    // 1. Shopkeepers' scheduled animations
     const kentaSpeed = cycle.period === 'MIDNIGHT' || cycle.period === 'DUSK' ? 5.2 : 2.6;
     chefKenta.rightArm.rotation.x = -0.9 + Math.sin(elapsed * kentaSpeed) * 0.35;
     chefKenta.leftArm.rotation.x = -0.7 + Math.cos(elapsed * kentaSpeed * 0.8) * 0.2;
@@ -765,7 +707,6 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
       if (r.tail) r.tail.rotation.y = Math.sin(elapsed * 2.8 + idx) * 0.35;
     });
 
-    // 2. Bus Stop Commuters stepping South (+Z) into the open perpendicular Electro-Punk Trolley!
     commuters.forEach((c, idx) => {
       c.rig.umbrella.visible = openUmbrellas && c.state !== 'GONE';
       if (trolley.arrivedEvent && c.state === 'WAITING') {
@@ -822,7 +763,6 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
       }
     });
 
-    // 3. Strolling Pedestrians along BOTH the East–West Boulevard & North–South Pedestrian Alley
     for (const w of walkers) {
       w.pos += w.dir * w.speed * safeDt;
       if (w.pos > 33.2) w.pos = -33.2;
@@ -843,11 +783,9 @@ export function buildStreetLife(root: THREE.Group, res: ResourceBag): StreetLife
       w.rig.umbrella.visible = openUmbrellas;
       if (w.rig.tail) w.rig.tail.rotation.y = Math.sin(elapsed * 3.8 + w.phase) * 0.35;
 
-      // Smoothly dissolve into glowing translucent polygon wireframe near rendering edge!
       w.rig.applyDissolve(computeDissolveFactors(w.pos));
     }
 
-    // 4. Perpendicular East <-> West Neo-Futuristic Scooters dissolving into polygon meshes at |x| > 18.5 m!
     for (const s of scooters) {
       s.x += s.dir * s.speed * safeDt;
       if (s.x > 33.8) s.x = -33.8;

@@ -1,5 +1,7 @@
+/// <reference types="vite/client" />
 import * as THREE from 'three/webgpu';
-import { breathe, seededRandom } from '@portalverse/core/rooms/kit';
+import { breathe, disposeObject, loadGLB, seededRandom } from '@portalverse/core/rooms/kit';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import {
   ANALOG_SHOP_POS,
   BUS_STOP_POS,
@@ -13,8 +15,40 @@ import {
   type SolidCylinder,
 } from './terrain';
 import { createHoloRibbonMaterial } from './shaders';
-import { createTrolleyHullGeo } from './models';
 import type { DissolveFactors, ShopId } from './worldState';
+
+import noodleBarUrl from './assets/white_dragon_noodle_bar.glb?url';
+import towerUrl from './assets/neo_tokyo_tower.glb?url';
+import trolleyUrl from './assets/electro_trolley.glb?url';
+import scooterUrl from './assets/cyber_scooter.glb?url';
+import humanUrl from './assets/cyber_human.glb?url';
+
+export interface BlenderAssetPack {
+  noodleBar: GLTF;
+  tower: GLTF;
+  trolley: GLTF;
+  scooter: GLTF;
+  human: GLTF;
+}
+
+export async function loadBlenderAssets(): Promise<BlenderAssetPack> {
+  const [noodleBar, tower, trolley, scooter, human] = await Promise.all([
+    loadGLB(noodleBarUrl),
+    loadGLB(towerUrl),
+    loadGLB(trolleyUrl),
+    loadGLB(scooterUrl),
+    loadGLB(humanUrl),
+  ]);
+  return { noodleBar, tower, trolley, scooter, human };
+}
+
+export function disposeBlenderAssets(pack: BlenderAssetPack): void {
+  disposeObject(pack.noodleBar.scene);
+  disposeObject(pack.tower.scene);
+  disposeObject(pack.trolley.scene);
+  disposeObject(pack.scooter.scene);
+  disposeObject(pack.human.scene);
+}
 
 export interface ResourceBag {
   geo: <T extends THREE.BufferGeometry>(g: T) => T;
@@ -46,6 +80,76 @@ export function createResourceBag(): ResourceBag {
       for (const t of texs) t.dispose();
     },
   };
+}
+
+/**
+ * Generates a rich procedural Blade Runner Neon-Rain Equirectangular Environment Map
+ * so every metallic chrome counter, wet vinyl trenchcoat, beveled steel building,
+ * scooter fairing, and trolley hull catches realistic warm-amber & cyan nighttime reflections!
+ */
+export function createNeonRainEnvTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    // Moody blue-violet wet night sky gradient down to warm neon-lit wet street bounce
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0.0, '#101528');
+    grad.addColorStop(0.35, '#1d223f');
+    grad.addColorStop(0.5, '#3b243c');
+    grad.addColorStop(0.62, '#1f293d');
+    grad.addColorStop(1.0, '#0c101a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 256);
+
+    // Bright specular neon reflection strips (warm noodle amber, crimson, electric cyan, soft magenta)
+    const strips: Array<[number, number, number, number, string]> = [
+      [35, 96, 95, 38, 'rgba(255, 168, 72, 0.85)'],
+      [148, 86, 82, 42, 'rgba(244, 63, 94, 0.78)'],
+      [252, 92, 92, 36, 'rgba(34, 211, 238, 0.85)'],
+      [372, 88, 98, 40, 'rgba(244, 114, 182, 0.75)'],
+      [110, 42, 290, 22, 'rgba(186, 230, 253, 0.35)'],
+      [60, 165, 140, 28, 'rgba(251, 191, 36, 0.42)'],
+      [260, 168, 160, 28, 'rgba(56, 189, 248, 0.44)'],
+    ];
+    for (const [x, y, w, h, col] of strips) {
+      ctx.fillStyle = col;
+      ctx.filter = 'blur(10px)';
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.filter = 'none';
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Smooth vertical alpha-gradient texture for volumetric rain-mist light cones
+ * (scooter headlights, trolley beams, overhead sodium streetlamps) so cones
+ * dissolve softly into the rainy night air with zero hard geometric edges!
+ */
+export function createVolumetricConeTex(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    // In ConeGeometry UV, V=1 (top of canvas y=0) is the sharp lamp apex, V=0 (bottom y=128) is the open wide base
+    const grad = ctx.createLinearGradient(0, 0, 0, 128);
+    grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.95)');
+    grad.addColorStop(0.28, 'rgba(255, 255, 255, 0.42)');
+    grad.addColorStop(0.68, 'rgba(255, 255, 255, 0.10)');
+    grad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 128);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
 }
 
 function makeCanvasTexture(
@@ -116,31 +220,6 @@ function createVendingTex(title: string, headerCol: string, cans: string[]): THR
   });
 }
 
-function createBuildingFacadeTexture(seed: number, accentA: string, accentB: string): THREE.CanvasTexture {
-  const rand = seededRandom(seed);
-  return makeCanvasTexture(256, 512, (ctx, w, h) => {
-    ctx.fillStyle = '#0b0e1a';
-    ctx.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 24) {
-      ctx.fillStyle = '#151b2e';
-      ctx.fillRect(0, y, w, 4);
-      for (let x = 10; x < w - 12; x += 22) {
-        const lit = rand();
-        if (lit < 0.36) {
-          ctx.fillStyle = lit < 0.14 ? accentA : lit < 0.26 ? accentB : '#fef3c7';
-          ctx.globalAlpha = 0.4 + rand() * 0.55;
-          ctx.fillRect(x, y + 6, 13, 13);
-        } else {
-          ctx.fillStyle = '#101524';
-          ctx.globalAlpha = 1;
-          ctx.fillRect(x, y + 6, 13, 13);
-        }
-      }
-    }
-    ctx.globalAlpha = 1;
-  });
-}
-
 export function createCrtTextures(): THREE.CanvasTexture[] {
   const ch0 = makeCanvasTexture(256, 192, (ctx, w, h) => {
     ctx.fillStyle = '#090d1a';
@@ -202,10 +281,24 @@ export function createCrtTextures(): THREE.CanvasTexture[] {
   return [ch0, ch1, ch2, ch3];
 }
 
+/** Boosts PBR envMapIntensity on imported Blender StandardMaterials for rich wet-night sheen. */
+function enhancePbrSheen(obj: THREE.Object3D, envIntensity = 1.45): void {
+  obj.traverse(child => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const m of mats) {
+      if (m instanceof THREE.MeshStandardMaterial) {
+        m.envMapIntensity = envIntensity;
+      }
+    }
+  });
+}
+
 export interface ElectroTrolleyRig {
   group: THREE.Group;
-  doorLeft: THREE.Mesh;
-  doorRight: THREE.Mesh;
+  doorLeft: THREE.Object3D | null;
+  doorRight: THREE.Object3D | null;
   sparkMesh: THREE.Mesh;
   applyDissolve: (factors: DissolveFactors) => void;
 }
@@ -217,7 +310,6 @@ export interface CityBuildResult {
   busSignTex: THREE.CanvasTexture;
   shopSignMats: Record<ShopId, THREE.MeshBasicMaterial>;
   steamPuffs: Array<{ mesh: THREE.Mesh; baseX: number; baseY: number; baseZ: number; phase: number; speed: number }>;
-  lanternPivots: Array<{ pivot: THREE.Group; phase: number }>;
   holoOptics: THREE.Group[];
   opticsDrone: THREE.Group;
   mainCrtScreen: THREE.Mesh;
@@ -230,19 +322,16 @@ export interface CityBuildResult {
 }
 
 /**
- * Builds the dense Perpendicular Neo-Tokyo Blade Runner Street Corner:
- * - Wet East–West Boulevard (with gleaming tram rails & Shibuya zebra crosswalk along Z)
- * - NW Corner: White Dragon Open-Air Noodle Bar (facing the intersection & crosswalk!)
- * - NE Corner: Covered Electro-Punk Bus Stop (right beside the perpendicular tram tracks) + Kuro Cyber-Optics
- * - SW Corner: Analog Ghost 90s CRT & Cassette Shop
- * - SE Corner: Gekko Mart 24H Conbini & Illuminated Vending Alcove + Bio-Cat Mochi-X
- * - Sculpted, beveled Electro-Punk Trolley running East -> West with scissor pantograph, interior seats,
- *   volumetric headlights, bogies, sliding doors & translucent cyan polygon-wireframe dissolve shell
- * - Towering vertical Neo-Tokyo megastructures with exterior AC units, conduits, neon blade signs & cables
+ * Builds the Blade Runner / Neo-Tokyo Street Corner powered by Blender 5.3 GLB Hero Assets:
+ * - `white_dragon_noodle_bar.glb` bathed in warm golden-amber Blade Runner counter lighting
+ * - 8 instanced `neo_tokyo_tower.glb` brutalist megastructures with 3D balconies, ACs, pipes & beacons
+ * - `electro_trolley.glb` gliding perpendicular East -> West with real animated doors & wireframe dissolve
+ * - Kuro Cyber-Optics, Analog Ghost CRT Shrine, Gekko Mart 24H Conbini, Covered Bus Stop & 5 Easter Eggs
  */
 export async function buildNeoTokyoCorner(
   root: THREE.Group,
   res: ResourceBag,
+  assets: BlenderAssetPack,
   streetMat: THREE.MeshBasicNodeMaterial,
 ): Promise<CityBuildResult> {
   const rand = seededRandom(204911);
@@ -260,11 +349,22 @@ export async function buildNeoTokyoCorner(
   floorMesh.name = 'neo-tokyo-intersection';
   root.add(floorMesh);
 
-  // Shared materials
-  const darkSteelMat = res.mat(new THREE.MeshStandardMaterial({ color: '#1b2232', roughness: 0.42, metalness: 0.74 }));
-  const concreteMat = res.mat(new THREE.MeshStandardMaterial({ color: '#222838', roughness: 0.86 }));
-  const darkWoodMat = res.mat(new THREE.MeshStandardMaterial({ color: '#3b251e', roughness: 0.76 }));
-  const chromeMat = res.mat(new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.2, metalness: 0.92 }));
+  // Moody Local Blade Runner PointLights bathing wet metal, leather stools, concrete, and NPCs!
+  const noodleWarmLight = new THREE.PointLight('#ff9e4a', 18, 20, 1.5);
+  noodleWarmLight.position.set(NOODLE_BAR_POS.x + 2.4, 2.7, NOODLE_BAR_POS.z);
+  const opticsCyanLight = new THREE.PointLight('#22d3ee', 12, 18, 1.5);
+  opticsCyanLight.position.set(BUS_STOP_POS.x, 2.8, BUS_STOP_POS.z + 1.2);
+  const analogPinkLight = new THREE.PointLight('#f472b6', 11, 16, 1.5);
+  analogPinkLight.position.set(ANALOG_SHOP_POS.x + 2.5, 2.6, ANALOG_SHOP_POS.z);
+  const conbiniGoldLight = new THREE.PointLight('#fde047', 12, 17, 1.5);
+  conbiniGoldLight.position.set(CONBINI_POS.x - 2.4, 2.7, CONBINI_POS.z);
+  const crosswalkSodium = new THREE.PointLight('#ffcf96', 14, 24, 1.4);
+  crosswalkSodium.position.set(0, 6.2, 0);
+  root.add(noodleWarmLight, opticsCyanLight, analogPinkLight, conbiniGoldLight, crosswalkSodium);
+
+  const darkSteelMat = res.mat(new THREE.MeshStandardMaterial({ color: '#1b2232', roughness: 0.36, metalness: 0.78, envMapIntensity: 1.4 }));
+  const concreteMat = res.mat(new THREE.MeshStandardMaterial({ color: '#222838', roughness: 0.78, envMapIntensity: 1.1 }));
+  const chromeMat = res.mat(new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.16, metalness: 0.94, envMapIntensity: 1.6 }));
   const glassMat = res.mat(new THREE.MeshStandardMaterial({
     color: '#93c5fd',
     transparent: true,
@@ -272,14 +372,14 @@ export async function buildNeoTokyoCorner(
     roughness: 0.12,
     side: THREE.DoubleSide,
   }));
-  const cyanNeonMat = res.mat(new THREE.MeshStandardMaterial({ color: '#a5f3fc', emissive: '#22d3ee', emissiveIntensity: 2.2 }));
-  const pinkNeonMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fbcfe8', emissive: '#f43f5e', emissiveIntensity: 2.1 }));
-  const amberNeonMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fef3c7', emissive: '#f59e0b', emissiveIntensity: 2.0 }));
+  const cyanNeonMat = res.mat(new THREE.MeshStandardMaterial({ color: '#a5f3fc', emissive: '#22d3ee', emissiveIntensity: 2.3 }));
+  const pinkNeonMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fbcfe8', emissive: '#f43f5e', emissiveIntensity: 2.2 }));
+  const amberNeonMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fef3c7', emissive: '#f59e0b', emissiveIntensity: 2.1 }));
   const emeraldNeonMat = res.mat(new THREE.MeshStandardMaterial({ color: '#a7f3d0', emissive: '#10b981', emissiveIntensity: 2.0 }));
 
   const steamPuffs: CityBuildResult['steamPuffs'] = [];
-  const steamGeo = res.geo(new THREE.SphereGeometry(0.12, 8, 6));
-  const steamMat = res.mat(new THREE.MeshBasicMaterial({ color: '#e2e8f0', transparent: true, opacity: 0.22, depthWrite: false }));
+  const steamGeo = res.geo(new THREE.SphereGeometry(0.13, 8, 6));
+  const steamMat = res.mat(new THREE.MeshBasicMaterial({ color: '#f1f5f9', transparent: true, opacity: 0.24, depthWrite: false }));
   const addSteamEmitter = (parent: THREE.Object3D, bx: number, by: number, bz: number, count = 4, speed = 0.55) => {
     for (let i = 0; i < count; i++) {
       const m = new THREE.Mesh(steamGeo, steamMat);
@@ -288,14 +388,13 @@ export async function buildNeoTokyoCorner(
     }
   };
 
-  // Raised Gleaming Chrome Tram Rails running PERPENDICULAR East–West along Z = TROLLEY_TRACK_Z!
+  // Raised Chrome East–West Tram Rails + Overhead Electrified Catenary Wire
   const railGeo = res.geo(new THREE.BoxGeometry(74, 0.04, 0.08));
   for (const rz of [TROLLEY_TRACK_Z - 0.65, TROLLEY_TRACK_Z + 0.65]) {
     const rail = new THREE.Mesh(railGeo, chromeMat);
     rail.position.set(0, 0.02, rz);
     root.add(rail);
   }
-  // Overhead electrified East–West trolley contact wire + cross-suspensions!
   const catenary = new THREE.Mesh(res.geo(new THREE.CylinderGeometry(0.024, 0.024, 74, 6).rotateZ(Math.PI / 2)), darkSteelMat);
   catenary.position.set(0, 4.3, TROLLEY_TRACK_Z);
   root.add(catenary);
@@ -303,127 +402,88 @@ export async function buildNeoTokyoCorner(
   await breathe();
 
   // =========================================================================
-  // 2. NW CORNER — WHITE DRAGON NOODLE BAR (Iconic Blade Runner open counter!)
+  // 2. NW CORNER — BLENDER HERO: WHITE DRAGON NOODLE BAR (`white_dragon_noodle_bar.glb`)
   // =========================================================================
   const noodleY = stationHeight(NOODLE_BAR_POS.x, NOODLE_BAR_POS.z);
   const noodleGroup = new THREE.Group();
   noodleGroup.position.set(NOODLE_BAR_POS.x, noodleY, NOODLE_BAR_POS.z);
 
-  const kitchenBox = new THREE.Mesh(res.geo(new THREE.BoxGeometry(3.4, 4.4, 7.6)), concreteMat);
-  kitchenBox.position.set(-1.3, 2.2, 0);
-  const kitchenGlow = new THREE.Mesh(
-    res.geo(new THREE.PlaneGeometry(6.4, 1.95)),
-    res.mat(new THREE.MeshBasicMaterial({ color: '#ffedd5' })),
-  );
-  kitchenGlow.position.set(0.42, 2.08, 0);
-  kitchenGlow.rotation.y = Math.PI / 2;
+  const noodleModel = assets.noodleBar.scene.clone(true);
+  enhancePbrSheen(noodleModel, 1.65);
+  noodleGroup.add(noodleModel);
 
-  // Open outdoor chrome & dark-cedar noodle counter facing +X toward the pedestrian crosswalk!
-  const counterBase = new THREE.Mesh(res.geo(new THREE.BoxGeometry(1.08, 1.02, 7.0)), darkWoodMat);
-  counterBase.position.set(1.75, 0.51, 0);
-  const counterTop = new THREE.Mesh(res.geo(new THREE.BoxGeometry(1.26, 0.08, 7.2)), chromeMat);
-  counterTop.position.set(1.78, 1.05, 0);
-  const footRail = new THREE.Mesh(res.geo(new THREE.CylinderGeometry(0.03, 0.03, 7.0, 8).rotateX(Math.PI / 2)), chromeMat);
-  footRail.position.set(2.35, 0.2, 0);
-
-  // Overhanging corrugated neon rain canopy sheltering seated diners
-  const noodleCanopy = new THREE.Mesh(res.geo(new THREE.BoxGeometry(4.8, 0.18, 8.2)), darkSteelMat);
-  noodleCanopy.position.set(1.4, 3.45, 0);
-  noodleCanopy.rotation.z = -0.14;
-  const canopyTrim = new THREE.Mesh(res.geo(new THREE.BoxGeometry(0.1, 0.12, 8.2)), pinkNeonMat);
-  canopyTrim.position.set(3.72, 3.1, 0);
-  noodleGroup.add(kitchenBox, kitchenGlow, counterBase, counterTop, footRail, noodleCanopy, canopyTrim);
-
-  // Dual-sided WHITE DRAGON signage (facing +X into alley AND +Z across the perpendicular boulevard!)
+  // Dual glowing Blade Runner WHITE DRAGON neon signboards mounted cleanly on the Blender sign frame
   const noodleSignTex = res.tex(createNeonSign(512, 192, '#14080e', '#f43f5e', [
     { text: '龍 麺   WHITE DRAGON', color: '#fb7185', size: 42, y: 66 },
     { text: 'NOODLE BAR • TWO! TWO! FOUR!', color: '#fde047', size: 22, y: 132 },
   ]));
   const noodleSignMat = res.mat(new THREE.MeshBasicMaterial({ map: noodleSignTex }));
-  const noodleSignEast = new THREE.Mesh(res.geo(new THREE.PlaneGeometry(4.8, 1.65)), noodleSignMat);
-  noodleSignEast.position.set(3.78, 4.15, 0);
+  const noodleSignEast = new THREE.Mesh(res.geo(new THREE.PlaneGeometry(5.0, 1.65)), noodleSignMat);
+  noodleSignEast.position.set(3.76, 4.15, 0);
   noodleSignEast.rotation.y = Math.PI / 2;
-  const noodleSignSouth = new THREE.Mesh(res.geo(new THREE.PlaneGeometry(4.4, 1.5)), noodleSignMat);
-  noodleSignSouth.position.set(1.4, 4.15, 4.12);
-  noodleGroup.add(noodleSignEast, noodleSignSouth);
+  const noodleSignSouth = new THREE.Mesh(res.geo(new THREE.PlaneGeometry(4.2, 1.45)), noodleSignMat);
+  noodleSignSouth.position.set(0.65, 4.18, 3.88);
+  // Warm illuminated Japanese wall menu board mounted flush on the South concrete wall
+  const menuWallTex = res.tex(createNeonSign(256, 320, '#140c08', '#f59e0b', [
+    { text: '本日メニュー', color: '#fde047', size: 28, y: 48 },
+    { text: '特製味噌 ¥880', color: '#fb7185', size: 26, y: 112 },
+    { text: '黒ニンニク ¥920', color: '#f8fafc', size: 24, y: 168 },
+    { text: '合成豚骨 ¥960', color: '#f8fafc', size: 24, y: 222 },
+    { text: 'OPEN 24H', color: '#22d3ee', size: 22, y: 278 },
+  ]));
+  const menuWallMesh = new THREE.Mesh(
+    res.geo(new THREE.PlaneGeometry(1.18, 1.48)),
+    res.mat(new THREE.MeshBasicMaterial({ map: menuWallTex })),
+  );
+  menuWallMesh.position.set(-0.55, 1.82, 3.86);
+  // Illuminated kitchen back-wall menu calligraphy strip behind Chef Kenta
+  const kitchenMenuTex = res.tex(createNeonSign(512, 128, '#26140a', '#fbbf24', [
+    { text: '龍麺 • 味噌 • 醤油 • 塩 • 辛味 • 餃子 • 清酒', color: '#fef3c7', size: 28, y: 66 },
+  ]));
+  const kitchenMenuMesh = new THREE.Mesh(
+    res.geo(new THREE.PlaneGeometry(5.2, 0.72)),
+    res.mat(new THREE.MeshBasicMaterial({ map: kitchenMenuTex })),
+  );
+  kitchenMenuMesh.position.set(0.02, 2.02, 0);
+  kitchenMenuMesh.rotation.y = Math.PI / 2;
+  noodleGroup.add(noodleSignEast, noodleSignSouth, menuWallMesh, kitchenMenuMesh);
 
-  // 6 Detailed Chrome Pedestal Counter Stools + Steaming Bowls + Condiment Jars!
-  const stoolSeatMat = res.mat(new THREE.MeshStandardMaterial({ color: '#e11d48', emissive: '#9f1239', emissiveIntensity: 0.48, roughness: 0.28 }));
-  const stoolSeatGeo = res.geo(new THREE.CylinderGeometry(0.24, 0.22, 0.11, 16));
-  const stoolStemGeo = res.geo(new THREE.CylinderGeometry(0.04, 0.048, 0.68, 10));
-  const stoolBaseGeo = res.geo(new THREE.CylinderGeometry(0.2, 0.22, 0.04, 14));
-  const bowlGeo = res.geo(new THREE.CylinderGeometry(0.16, 0.09, 0.13, 14));
-  const bowlMat = res.mat(new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.28 }));
-  const brothMat = res.mat(new THREE.MeshStandardMaterial({ color: '#f59e0b', emissive: '#b45309', emissiveIntensity: 0.4 }));
-
-  for (let i = 0; i < 6; i++) {
-    const sz = -2.6 + i * 1.04;
-    const base = new THREE.Mesh(stoolBaseGeo, chromeMat);
-    base.position.set(2.68, 0.02, sz);
-    const stem = new THREE.Mesh(stoolStemGeo, chromeMat);
-    stem.position.set(2.68, 0.36, sz);
-    const seat = new THREE.Mesh(stoolSeatGeo, stoolSeatMat);
-    seat.position.set(2.68, 0.72, sz);
-    noodleGroup.add(base, stem, seat);
-
-    if (i === 1 || i === 3 || i === 4) {
-      const bowl = new THREE.Mesh(bowlGeo, bowlMat);
-      bowl.position.set(1.98, 1.15, sz);
-      const broth = new THREE.Mesh(res.geo(new THREE.CircleGeometry(0.14, 12).rotateX(-Math.PI / 2)), brothMat);
-      broth.position.set(1.98, 1.21, sz);
-      noodleGroup.add(bowl, broth);
-      addSteamEmitter(noodleGroup, 1.98, 1.28, sz, 3, 0.62);
-    }
+  // Rising atmospheric steam billowing from the Blender copper stockpots & counter ramen bowls!
+  addSteamEmitter(noodleGroup, 0.95, 1.46, -0.4, 5, 0.72);
+  addSteamEmitter(noodleGroup, 0.95, 1.46, 0.7, 4, 0.65);
+  for (const sy of [-1.56, 0.52, 1.56]) {
+    addSteamEmitter(noodleGroup, 1.98, 1.28, sy, 3, 0.58);
   }
 
-  // Sizzling copper broth cauldron behind the counter
-  const wok = new THREE.Mesh(res.geo(new THREE.CylinderGeometry(0.46, 0.35, 0.38, 16)), res.mat(new THREE.MeshStandardMaterial({ color: '#b45309', metalness: 0.82, roughness: 0.28 })));
-  wok.position.set(0.95, 1.14, -0.4);
-  noodleGroup.add(wok);
-  addSteamEmitter(noodleGroup, 0.95, 1.42, -0.4, 5, 0.75);
-
+  // Interactive Player Noodle Bowl (appears when you step up to order!)
   const playerNoodleBowl = new THREE.Group();
-  const pBowl = new THREE.Mesh(bowlGeo, res.mat(new THREE.MeshStandardMaterial({ color: '#e11d48', roughness: 0.25 })));
-  const pBroth = new THREE.Mesh(res.geo(new THREE.CircleGeometry(0.14, 12).rotateX(-Math.PI / 2)), brothMat);
+  const bowlGeo = res.geo(new THREE.CylinderGeometry(0.16, 0.09, 0.13, 16));
+  const pBowl = new THREE.Mesh(bowlGeo, res.mat(new THREE.MeshStandardMaterial({ color: '#e11d48', roughness: 0.22 })));
+  const pBroth = new THREE.Mesh(
+    res.geo(new THREE.CircleGeometry(0.14, 14).rotateX(-Math.PI / 2)),
+    res.mat(new THREE.MeshStandardMaterial({ color: '#f59e0b', emissive: '#b45309', emissiveIntensity: 0.55 })),
+  );
   pBroth.position.y = 0.06;
   const chop = new THREE.Mesh(res.geo(new THREE.CylinderGeometry(0.008, 0.006, 0.34, 6)), amberNeonMat);
   chop.position.set(0.05, 0.1, 0.04);
   chop.rotation.z = 0.45;
   playerNoodleBowl.add(pBowl, pBroth, chop);
-  playerNoodleBowl.position.set(1.98, 1.15, -0.52);
+  playerNoodleBowl.position.set(1.98, 1.16, -0.52);
   playerNoodleBowl.visible = false;
   noodleGroup.add(playerNoodleBowl);
 
-  // Swaying ribbed red chōchin lanterns
-  const lanternPivots: CityBuildResult['lanternPivots'] = [];
-  const lanternGeo = res.geo(new THREE.SphereGeometry(0.23, 12, 10));
-  const redLanternMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fecdd3', emissive: '#ef4444', emissiveIntensity: 2.0 }));
-  for (let i = 0; i < 5; i++) {
-    const piv = new THREE.Group();
-    piv.position.set(3.4, 3.04, -2.8 + i * 1.4);
-    const l = new THREE.Mesh(lanternGeo, redLanternMat);
-    l.scale.set(0.84, 1.28, 0.84);
-    l.position.y = -0.32;
-    const cap = new THREE.Mesh(res.geo(new THREE.CylinderGeometry(0.1, 0.1, 0.06, 8)), darkSteelMat);
-    cap.position.y = -0.05;
-    piv.add(l, cap);
-    noodleGroup.add(piv);
-    lanternPivots.push({ pivot: piv, phase: i * 0.9 });
-  }
   root.add(noodleGroup);
-  solids.boxes.push({ minX: NOODLE_BAR_POS.x - 3.0, maxX: NOODLE_BAR_POS.x + 2.35, minZ: NOODLE_BAR_POS.z - 3.8, maxZ: NOODLE_BAR_POS.z + 3.8, maxY: 4.2 });
+  solids.boxes.push({ minX: NOODLE_BAR_POS.x - 3.0, maxX: NOODLE_BAR_POS.x + 2.38, minZ: NOODLE_BAR_POS.z - 3.8, maxZ: NOODLE_BAR_POS.z + 3.8, maxY: 4.3 });
 
   await breathe();
 
   // =========================================================================
-  // 3. NE CORNER — COVERED ELECTRO-PUNK BUS STOP (Facing Perpendicular Tracks!)
-  //    & KURO'S CYBER-OPTICS CLINIC right behind it
+  // 3. NE CORNER — COVERED BUS STOP & KURO'S CYBER-OPTICS CLINIC
   // =========================================================================
   const busY = stationHeight(BUS_STOP_POS.x, BUS_STOP_POS.z);
   const busGroup = new THREE.Group();
   busGroup.position.set(BUS_STOP_POS.x, busY, BUS_STOP_POS.z);
 
-  // Sleek cantilevered glass-and-steel shelter facing +Z toward the East–West trolley rails!
   const busRoof = new THREE.Mesh(res.geo(new THREE.BoxGeometry(5.8, 0.15, 2.5)), darkSteelMat);
   busRoof.position.set(0, 3.05, 0);
   const busRoofGlow = new THREE.Mesh(res.geo(new THREE.BoxGeometry(5.8, 0.09, 0.09)), cyanNeonMat);
@@ -443,7 +503,6 @@ export async function buildNeoTokyoCorner(
   busBeacon.position.set(-2.95, 3.3, 0.8);
   busGroup.add(busRoof, busRoofGlow, busBackGlass, busBench, busPole, busBeacon);
 
-  // Live dynamic countdown display facing straight out toward the player & crosswalk (+Z)!
   const busSignCanvas = document.createElement('canvas');
   busSignCanvas.width = 512;
   busSignCanvas.height = 192;
@@ -458,7 +517,7 @@ export async function buildNeoTokyoCorner(
   root.add(busGroup);
   solids.boxes.push({ minX: BUS_STOP_POS.x - 2.8, maxX: BUS_STOP_POS.x + 2.8, minZ: BUS_STOP_POS.z - 1.25, maxZ: BUS_STOP_POS.z - 0.8, maxY: 3.1 });
 
-  // Kuro's Cyber-Optics & Bio-Mod Clinic (`黒目義体`) right behind the NE plaza
+  // Kuro's Cyber-Optics & Bio-Mod Clinic
   const opticsY = stationHeight(OPTICS_SHOP_POS.x, OPTICS_SHOP_POS.z);
   const opticsGroup = new THREE.Group();
   opticsGroup.position.set(OPTICS_SHOP_POS.x, opticsY, OPTICS_SHOP_POS.z);
@@ -509,7 +568,7 @@ export async function buildNeoTokyoCorner(
   solids.boxes.push({ minX: OPTICS_SHOP_POS.x - 1.25, maxX: OPTICS_SHOP_POS.x + 2.8, minZ: OPTICS_SHOP_POS.z - 3.2, maxZ: OPTICS_SHOP_POS.z + 3.2, maxY: 4.4 });
 
   // =========================================================================
-  // 4. SW CORNER — ANALOG GHOST CRT & CASSETTE SHOP (`磁気幽霊`)
+  // 4. SW CORNER — ANALOG GHOST CRT & CASSETTE SHOP
   // =========================================================================
   const analogY = stationHeight(ANALOG_SHOP_POS.x, ANALOG_SHOP_POS.z);
   const analogGroup = new THREE.Group();
@@ -534,7 +593,7 @@ export async function buildNeoTokyoCorner(
 
   const crtTextures = createCrtTextures();
   crtTextures.forEach(t => res.tex(t));
-  const crateMat = res.mat(new THREE.MeshStandardMaterial({ color: '#1d4ed8', roughness: 0.72 }));
+  const crateMat = res.mat(new THREE.MeshStandardMaterial({ color: '#1d4ed8', roughness: 0.65 }));
   for (const cz of [-1.2, 0, 1.2]) {
     const crate = new THREE.Mesh(res.geo(new THREE.BoxGeometry(0.9, 0.42, 0.9)), crateMat);
     crate.position.set(1.5, 0.21, cz);
@@ -566,7 +625,7 @@ export async function buildNeoTokyoCorner(
   solids.boxes.push({ minX: ANALOG_SHOP_POS.x - 2.7, maxX: ANALOG_SHOP_POS.x + 2.05, minZ: ANALOG_SHOP_POS.z - 3.2, maxZ: ANALOG_SHOP_POS.z + 3.2, maxY: 4.2 });
 
   // =========================================================================
-  // 5. SE CORNER — GEKKO MART 24H CONBINI & VENDING ALCOVE (`月光マート`)
+  // 5. SE CORNER — GEKKO MART 24H CONBINI & VENDING ALCOVE
   // =========================================================================
   const conbiniY = stationHeight(CONBINI_POS.x, CONBINI_POS.z);
   const conbiniGroup = new THREE.Group();
@@ -628,91 +687,60 @@ export async function buildNeoTokyoCorner(
   await breathe();
 
   // =========================================================================
-  // 6. SCULPTED HIGH-DETAIL ELECTRO-PUNK TROLLEY (Running PERPENDICULAR East -> West!)
+  // 6. BLENDER HERO: ELECTRO-PUNK TROLLEY (`electro_trolley.glb`) + WIREFRAME DISSOLVE
   // =========================================================================
   const trolleyGroup = new THREE.Group();
   trolleyGroup.position.set(34.5, 0, TROLLEY_TRACK_Z);
+
+  const trolleySolid = assets.trolley.scene.clone(true);
   const tSolidMats: THREE.Material[] = [];
-  const tWireMats: THREE.MeshBasicMaterial[] = [];
+  trolleySolid.traverse(child => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const cloned = (mesh.material as THREE.Material).clone();
+    cloned.transparent = true;
+    if (cloned instanceof THREE.MeshStandardMaterial) cloned.envMapIntensity = 1.65;
+    res.mat(cloned);
+    mesh.material = cloned;
+    tSolidMats.push(cloned);
+  });
+  const doorLeft = trolleySolid.getObjectByName('DoorLeft') ?? null;
+  const doorRight = trolleySolid.getObjectByName('DoorRight') ?? null;
+  trolleyGroup.add(trolleySolid);
 
-  const addTrolleyPart = (geo: THREE.BufferGeometry, mat: THREE.Material, pos: [number, number, number], rot?: [number, number, number], wireColor = '#22d3ee') => {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(pos[0], pos[1], pos[2]);
-    if (rot) m.rotation.set(rot[0], rot[1], rot[2]);
-    trolleyGroup.add(m);
-    if (!tSolidMats.includes(mat)) {
-      mat.transparent = true;
-      tSolidMats.push(mat);
-    }
-    const wMat = res.mat(new THREE.MeshBasicMaterial({
-      color: wireColor,
-      wireframe: true,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }));
-    const wm = new THREE.Mesh(geo, wMat);
-    wm.position.copy(m.position);
-    wm.rotation.copy(m.rotation);
-    wm.scale.setScalar(1.015);
-    trolleyGroup.add(wm);
-    tWireMats.push(wMat);
-    return m;
-  };
+  // Matching translucent glowing cyan polygon-wireframe dissolve shell!
+  const tWireMat = res.mat(new THREE.MeshBasicMaterial({
+    color: '#22d3ee',
+    wireframe: true,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  }));
+  const trolleyWire = assets.trolley.scene.clone(true);
+  trolleyWire.scale.setScalar(1.012);
+  trolleyWire.traverse(child => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh) mesh.material = tWireMat;
+  });
+  trolleyGroup.add(trolleyWire);
 
-  const tBodyMat = res.mat(new THREE.MeshStandardMaterial({ color: '#1b2436', roughness: 0.3, metalness: 0.76 }));
-  const tStripeMat = res.mat(new THREE.MeshStandardMaterial({ color: '#f43f5e', emissive: '#e11d48', emissiveIntensity: 1.6 }));
-  const tCyanMat = res.mat(new THREE.MeshStandardMaterial({ color: '#a5f3fc', emissive: '#22d3ee', emissiveIntensity: 2.1 }));
-  const tWinMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fef08a', emissive: '#f59e0b', emissiveIntensity: 1.45 }));
-  const tDoorMat = res.mat(new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0284c7', emissiveIntensity: 0.95 }));
-  const tBeamMat = res.mat(new THREE.MeshBasicMaterial({ color: '#fef3c7', transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-
-  // Sculpted beveled rounded-roof tram hull (length along X!)
-  addTrolleyPart(res.geo(createTrolleyHullGeo()), tBodyMat, [0, 0.08, 0], undefined, '#22d3ee');
-  // Neon lower racing trim & upper roofline cyan light tubes
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(8.95, 0.2, 2.52)), tStripeMat, [0, 0.85, 0], undefined, '#f43f5e');
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(8.95, 0.12, 2.48)), tCyanMat, [0, 2.7, 0], undefined, '#22d3ee');
-  // 5 Framed Illuminated Passenger Window Bays on both sides (+Z and -Z)
-  for (let w = -2; w <= 2; w++) {
-    if (w === 0) continue; // middle bay is the sliding bi-parting doors!
-    addTrolleyPart(res.geo(new THREE.BoxGeometry(1.38, 0.96, 2.54)), tWinMat, [w * 1.72, 1.85, 0], undefined, '#fde047');
-  }
-  // Westbound (-X) front panoramic LED headsign + dual projector headlamps + volumetric light beam!
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(0.16, 0.36, 1.75)), tCyanMat, [-4.54, 2.46, 0], undefined, '#22d3ee');
-  for (const lz of [-0.72, 0.72]) {
-    addTrolleyPart(res.geo(new THREE.CylinderGeometry(0.14, 0.14, 0.14, 12).rotateZ(Math.PI / 2)), tWinMat, [-4.54, 0.92, lz], undefined, '#fde047');
-    const cone = new THREE.Mesh(res.geo(new THREE.ConeGeometry(0.85, 4.6, 12, 1, true).rotateZ(-Math.PI / 2)), tBeamMat);
-    cone.position.set(-6.85, 0.78, lz);
+  // Sweeping soft-faded volumetric headlight beams projecting westward (-X) across the wet crosswalk!
+  const coneFadeTex = res.tex(createVolumetricConeTex());
+  const tBeamMat = res.mat(new THREE.MeshBasicMaterial({
+    color: '#fef3c7',
+    map: coneFadeTex,
+    transparent: true,
+    opacity: 0.24,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }));
+  for (const lz of [-0.76, 0.76]) {
+    const cone = new THREE.Mesh(res.geo(new THREE.ConeGeometry(0.95, 5.2, 20, 1, true).rotateZ(-Math.PI / 2)), tBeamMat);
+    cone.position.set(-7.1, 0.84, lz);
     trolleyGroup.add(cone);
   }
-  // Rear (+X) red brake light bar
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(0.14, 0.2, 1.9)), tStripeMat, [4.54, 0.95, 0], undefined, '#f43f5e');
-
-  // Underbody steel rail bogies & 4 wheelsets riding cleanly on the East–West rails!
-  const wheelGeo = res.geo(new THREE.CylinderGeometry(0.32, 0.32, 0.16, 14).rotateX(Math.PI / 2));
-  for (const bx of [-2.8, 2.8]) {
-    addTrolleyPart(res.geo(new THREE.BoxGeometry(1.85, 0.32, 1.65)), darkSteelMat, [bx, 0.34, 0], undefined, '#38bdf8');
-    for (const wx of [-0.62, 0.62]) {
-      for (const wz of [-0.66, 0.66]) {
-        addTrolleyPart(wheelGeo, chromeMat, [bx + wx, 0.32, wz], undefined, '#22d3ee');
-      }
-    }
-  }
-
-  // Rooftop capacitor pods + articulated Diamond Scissor Pantograph reaching overhead wire!
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(1.8, 0.36, 1.4)), darkSteelMat, [-2.2, 3.02, 0], undefined, '#22d3ee');
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(1.8, 0.36, 1.4)), darkSteelMat, [2.2, 3.02, 0], undefined, '#22d3ee');
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(0.09, 1.0, 0.09)), chromeMat, [-0.24, 3.32, 0], [0, 0, -0.45], '#22d3ee');
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(0.09, 1.0, 0.09)), chromeMat, [0.24, 3.32, 0], [0, 0, 0.45], '#22d3ee');
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(0.09, 1.0, 0.09)), chromeMat, [-0.24, 3.92, 0], [0, 0, 0.45], '#22d3ee');
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(0.09, 1.0, 0.09)), chromeMat, [0.24, 3.92, 0], [0, 0, -0.45], '#22d3ee');
-  addTrolleyPart(res.geo(new THREE.BoxGeometry(0.24, 0.1, 1.65)), tCyanMat, [0, 4.28, 0], undefined, '#22d3ee');
-
-  // Bi-parting sliding electro-doors on the North (-Z) side facing the Bus Stop!
-  const doorGeo = res.geo(new THREE.BoxGeometry(0.86, 2.02, 0.14));
-  const doorLeft = addTrolleyPart(doorGeo, tDoorMat, [-0.45, 1.46, -1.24], undefined, '#5eead4');
-  const doorRight = addTrolleyPart(doorGeo, tDoorMat, [0.45, 1.46, -1.24], undefined, '#5eead4');
 
   const sparkMesh = new THREE.Mesh(
     res.geo(new THREE.OctahedronGeometry(0.36, 0)),
@@ -729,60 +757,41 @@ export async function buildNeoTokyoCorner(
     sparkMesh,
     applyDissolve(f: DissolveFactors) {
       trolleyGroup.visible = f.visible;
-      for (const m of tSolidMats) {
-        m.opacity = f.solidOpacity;
-        m.visible = f.solidOpacity > 0.02;
-      }
-      for (const wm of tWireMats) {
-        wm.opacity = f.wireOpacity;
-        wm.visible = f.wireOpacity > 0.02;
-      }
-      tBeamMat.opacity = f.solidOpacity * 0.14;
+      trolleySolid.visible = f.solidOpacity > 0.02;
+      for (const m of tSolidMats) m.opacity = f.solidOpacity;
+      trolleyWire.visible = f.wireOpacity > 0.02;
+      tWireMat.opacity = f.wireOpacity;
+      tBeamMat.opacity = f.solidOpacity * 0.24;
     },
   };
 
   await breathe();
 
   // =========================================================================
-  // 7. TOWERING BLADE RUNNER CORNER MEGABUILDINGS + EXTERIOR GREEBLES (ACs, PIPES, NEON)
+  // 7. BLENDER HERO: 8 LAYERED NEO-TOKYO MEGABUILDING TOWERS (`neo_tokyo_tower.glb`)
   // =========================================================================
-  const facadeMats = [
-    res.mat(new THREE.MeshBasicMaterial({ map: res.tex(createBuildingFacadeTexture(101, '#22d3ee', '#f43f5e')) })),
-    res.mat(new THREE.MeshBasicMaterial({ map: res.tex(createBuildingFacadeTexture(202, '#fbbf24', '#c084fc')) })),
-    res.mat(new THREE.MeshBasicMaterial({ map: res.tex(createBuildingFacadeTexture(303, '#34d399', '#38bdf8')) })),
+  const towerSpecs: Array<{ x: number; z: number; sy: number; rotY: number; vSign?: [string, string, string] }> = [
+    { x: -17.8, z: -15.0, sy: 1.05, rotY: 0, vSign: ['龍麺', '#fb7185', '#fde047'] },
+    { x: 18.0, z: -16.8, sy: 1.12, rotY: Math.PI, vSign: ['義体', '#22d3ee', '#34d399'] },
+    { x: -17.8, z: 15.0, sy: 0.96, rotY: 0, vSign: ['記憶', '#f472b6', '#22d3ee'] },
+    { x: 18.0, z: 15.0, sy: 1.02, rotY: Math.PI, vSign: ['月光', '#fde047', '#f43f5e'] },
+    { x: -32.2, z: -13.5, sy: 0.92, rotY: 0 },
+    { x: -32.2, z: 13.5, sy: 1.0, rotY: Math.PI },
+    { x: 32.2, z: -13.5, sy: 0.98, rotY: Math.PI },
+    { x: 32.2, z: 13.5, sy: 0.88, rotY: 0 },
   ];
 
-  // Frame ALL FOUR corner quadrants cleanly (leaving both the N-S pedestrian alley AND E-W vehicle boulevard wide open!)
-  const buildingSpecs: Array<{ x: number; z: number; w: number; h: number; d: number; m: number; vSign?: [string, string, string] }> = [
-    // Inner 4 corner towers directly behind the 4 shops
-    { x: -17.5, z: -15.0, w: 11.5, h: 34, d: 13.5, m: 0, vSign: ['龍麺', '#fb7185', '#fde047'] },
-    { x: 17.8, z: -16.5, w: 11.5, h: 36, d: 13.5, m: 2, vSign: ['義体', '#22d3ee', '#34d399'] },
-    { x: -17.5, z: 15.0, w: 11.5, h: 30, d: 13.5, m: 1, vSign: ['記憶', '#f472b6', '#22d3ee'] },
-    { x: 17.8, z: 15.0, w: 11.5, h: 32, d: 13.5, m: 0, vSign: ['月光', '#fde047', '#f43f5e'] },
-    // Flanking canyon towers along the perpendicular East–West boulevard!
-    { x: -32.0, z: -13.5, w: 12.0, h: 28, d: 12.0, m: 2 },
-    { x: -32.0, z: 13.5, w: 12.0, h: 31, d: 12.0, m: 0 },
-    { x: 32.0, z: -13.5, w: 12.0, h: 30, d: 12.0, m: 1 },
-    { x: 32.0, z: 13.5, w: 12.0, h: 27, d: 12.0, m: 2 },
-  ];
+  for (const t of towerSpecs) {
+    const tMesh = assets.tower.scene.clone(true);
+    enhancePbrSheen(tMesh, 1.35);
+    tMesh.position.set(t.x, 0, t.z);
+    tMesh.scale.set(1, t.sy, 1);
+    tMesh.rotation.y = t.rotY;
+    root.add(tMesh);
 
-  const acUnitGeo = res.geo(new THREE.BoxGeometry(0.95, 0.7, 0.65));
-  for (const b of buildingSpecs) {
-    const mesh = new THREE.Mesh(res.geo(new THREE.BoxGeometry(b.w, b.h, b.d)), facadeMats[b.m]);
-    mesh.position.set(b.x, b.h * 0.5, b.z);
-    root.add(mesh);
-
-    // Exterior metal AC units & rooftop antenna spires for gritty Neo-Tokyo architectural density
-    const faceX = b.x + (b.x < 0 ? b.w * 0.5 + 0.3 : -(b.w * 0.5 + 0.3));
-    for (let u = 0; u < 3; u++) {
-      const ac = new THREE.Mesh(acUnitGeo, darkSteelMat);
-      ac.position.set(faceX, 6.5 + u * 4.2, b.z + (u - 1) * 3.2);
-      root.add(ac);
-    }
-
-    if (b.vSign) {
-      const [kanji, c1, c2] = b.vSign;
-      const signX = b.x + (b.x < 0 ? b.w * 0.5 + 1.15 : -(b.w * 0.5 + 1.15));
+    if (t.vSign) {
+      const [kanji, c1, c2] = t.vSign;
+      const signX = t.x + (t.x < 0 ? 6.6 : -6.6);
       const vTex = res.tex(createNeonSign(160, 448, '#090b16', c1, [
         { text: kanji[0] || '電', color: c1, size: 78, y: 115 },
         { text: kanji[1] || '脳', color: c2, size: 78, y: 235 },
@@ -792,12 +801,12 @@ export async function buildNeoTokyoCorner(
         res.geo(new THREE.BoxGeometry(0.24, 6.2, 2.0)),
         res.mat(new THREE.MeshBasicMaterial({ map: vTex })),
       );
-      vMesh.position.set(signX, 9.8, b.z + (b.z < 0 ? 3.5 : -3.5));
+      vMesh.position.set(signX, 9.8, t.z + (t.z < 0 ? 3.5 : -3.5));
       root.add(vMesh);
     }
   }
 
-  // Towering Blade Runner holographic sky-billboards overhanging the perpendicular boulevard!
+  // Towering Blade Runner holographic sky-billboards overhanging the corner
   const skyBillTexA = res.tex(createNeonSign(512, 256, '#05101f', '#22d3ee', [
     { text: 'OFF-WORLD COLONIES', color: '#22d3ee', size: 38, y: 80 },
     { text: 'A NEW LIFE AWAITS • SECTOR 09', color: '#f472b6', size: 22, y: 152 },
@@ -818,10 +827,20 @@ export async function buildNeoTokyoCorner(
   skyRibbon.position.set(0, 11.4, -15.5);
   root.add(skyRibbon);
 
-  // 4 Intersection Corner Streetlamps, Glowing Crosswalk Bollards, Traffic Signals & Overhead Cables!
+  // 4 Intersection Streetlamps, Soft Rain-Mist Light Cones, Glowing Crosswalk Bollards & Traffic Signals
   const trafficLights: CityBuildResult['trafficLights'] = [];
   const poleGeo = res.geo(new THREE.CylinderGeometry(0.09, 0.13, 6.4, 10));
   const bollardGeo = res.geo(new THREE.CylinderGeometry(0.11, 0.13, 0.88, 10));
+  const lampConeGeo = res.geo(new THREE.ConeGeometry(2.3, 5.8, 22, 1, true));
+  const lampConeMat = res.mat(new THREE.MeshBasicMaterial({
+    color: '#ffd699',
+    map: coneFadeTex,
+    transparent: true,
+    opacity: 0.13,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }));
   for (const [px, pz] of [[-5.0, -6.5], [5.0, -6.5], [-5.0, 6.5], [5.0, 6.5]] as const) {
     const py = stationHeight(px, pz);
     const pole = new THREE.Mesh(poleGeo, darkSteelMat);
@@ -830,10 +849,11 @@ export async function buildNeoTokyoCorner(
     arm.position.set(px - Math.sign(px) * 0.9, py + 6.1, pz);
     const lamp = new THREE.Mesh(res.geo(new THREE.BoxGeometry(0.55, 0.1, 0.28)), amberNeonMat);
     lamp.position.set(px - Math.sign(px) * 1.65, py + 6.02, pz);
-    root.add(pole, arm, lamp);
+    const mistCone = new THREE.Mesh(lampConeGeo, lampConeMat);
+    mistCone.position.set(px - Math.sign(px) * 1.65, py + 3.1, pz);
+    root.add(pole, arm, lamp, mistCone);
     solids.cylinders.push({ x: px, z: pz, radius: 0.2, maxY: 6.4 });
 
-    // Illuminated cyber safety bollard on each crosswalk corner
     const bol = new THREE.Mesh(bollardGeo, darkSteelMat);
     bol.position.set(px - Math.sign(px) * 0.7, py + 0.44, pz);
     const bolRing = new THREE.Mesh(res.geo(new THREE.CylinderGeometry(0.12, 0.12, 0.12, 10)), cyanNeonMat);
@@ -852,13 +872,11 @@ export async function buildNeoTokyoCorner(
     trafficLights.push({ red: redMat, green: greenMat });
   }
 
-  // Crisscrossed overhead power wires spanning across the corner
   for (const cz of [12, 6, -6, -12]) {
     const pts = [new THREE.Vector3(-12, 7.6, cz), new THREE.Vector3(0, 6.9, cz + 0.6), new THREE.Vector3(12, 7.8, cz)];
     root.add(new THREE.Mesh(res.geo(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.022, 4, false)), darkSteelMat));
   }
 
-  // Sidewalk storm grates with rising warm steam
   const grateGeo = res.geo(new THREE.BoxGeometry(0.85, 0.04, 0.85));
   for (const [gx, gz] of [[-5.6, -7.8], [5.6, 8.2], [-5.6, 8.8], [11.5, -7.2]] as const) {
     const gy = stationHeight(gx, gz);
@@ -894,7 +912,7 @@ export async function buildNeoTokyoCorner(
     g.add(halo);
 
     if (egg.id === 'origami-unicorn') {
-      const foilMat = res.mat(new THREE.MeshStandardMaterial({ color: '#f1f5f9', emissive: '#94a3b8', emissiveIntensity: 0.5, metalness: 0.9, roughness: 0.2, flatShading: true }));
+      const foilMat = res.mat(new THREE.MeshStandardMaterial({ color: '#f1f5f9', emissive: '#94a3b8', emissiveIntensity: 0.5, metalness: 0.92, roughness: 0.18, flatShading: true }));
       const body = new THREE.Mesh(res.geo(new THREE.ConeGeometry(0.14, 0.34, 4).rotateZ(Math.PI / 2)), foilMat);
       body.position.y = 0.28;
       const neck = new THREE.Mesh(res.geo(new THREE.ConeGeometry(0.08, 0.24, 4)), foilMat);
@@ -920,8 +938,8 @@ export async function buildNeoTokyoCorner(
       card.position.y = 0.58;
       g.add(card);
     } else {
-      const furMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fef3c7', roughness: 0.85 }));
-      const patchMat = res.mat(new THREE.MeshStandardMaterial({ color: '#f97316', roughness: 0.85 }));
+      const furMat = res.mat(new THREE.MeshStandardMaterial({ color: '#fef3c7', roughness: 0.82 }));
+      const patchMat = res.mat(new THREE.MeshStandardMaterial({ color: '#f97316', roughness: 0.82 }));
       const cBody = new THREE.Mesh(res.geo(new THREE.SphereGeometry(0.22, 12, 10)), furMat);
       cBody.scale.set(1.2, 0.68, 1.0);
       cBody.position.y = 0.16;
@@ -951,7 +969,6 @@ export async function buildNeoTokyoCorner(
       conbini: conbiniSignMat,
     },
     steamPuffs,
-    lanternPivots,
     holoOptics,
     opticsDrone,
     mainCrtScreen,

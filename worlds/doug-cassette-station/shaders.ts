@@ -150,11 +150,11 @@ export function createWetStreetMaterial(): WetStreetHandle {
     // Fine wet asphalt micro-grit on the perpendicular road
     const grit = fract(sin(dot(floor(p.mul(44.0)), vec2(41.1, 289.7))).mul(43758.5453)).mul(0.028);
 
-    const dayLift = mix(float(1.0), float(1.7), uDaylight);
-    const roadBase = vec3(0.042, 0.047, 0.068).add(vec3(grit, grit, grit.mul(1.12))).mul(dayLift);
-    const pedBase = vec3(0.072, 0.08, 0.108)
-      .add(vec3(tileHash.mul(0.038), tileHash.mul(0.04), tileHash.mul(0.05)))
-      .mul(float(0.74).add(mortar.mul(0.26)))
+    const dayLift = mix(float(1.0), float(1.72), uDaylight);
+    const roadBase = vec3(0.026, 0.031, 0.048).add(vec3(grit, grit, grit.mul(1.15))).mul(dayLift);
+    const pedBase = vec3(0.052, 0.058, 0.082)
+      .add(vec3(tileHash.mul(0.034), tileHash.mul(0.036), tileHash.mul(0.046)))
+      .mul(float(0.72).add(mortar.mul(0.28)))
       .mul(dayLift);
 
     let baseCol = mix(pedBase, roadBase, onCrossRoad);

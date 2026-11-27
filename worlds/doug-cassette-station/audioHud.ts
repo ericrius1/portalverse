@@ -202,12 +202,12 @@ export function createNeoTokyoHud(): NeoTokyoHud {
   });
   document.body.appendChild(chip);
 
-  // 2. NPC Cyberpunk Dialogue Card (appears cleanly when standing near any NPC)
+  // 2. NPC Cyberpunk Dialogue Card (floats cleanly above Portalverse's bottom controls bar)
   const dialog = document.createElement('div');
   Object.assign(dialog.style, {
     position: 'fixed',
     left: '50%',
-    bottom: '92px',
+    bottom: '128px',
     transform: 'translateX(-50%) translateY(12px)',
     maxWidth: '520px',
     width: 'calc(100% - 32px)',
