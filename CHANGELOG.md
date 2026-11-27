@@ -2,6 +2,21 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Midnight Cassette Station (`doug-cassette-station`) — Unreleased (2026-11-27)
+
+### Added
+
+- **New room `doug-cassette-station` (`worlds/doug-cassette-station/`, `"Midnight Cassette Station"`, owner `douglascalhoun`)**, added after `honey-hood` in `registry.json` (connecting seamlessly into `eric-world` so its soft cyan/rose holographic aesthetic bridges directly into Eric's holographic studio).
+  - **Nostalgic blue-hour rain atmosphere & TSL WebGPU shaders (`shaders.ts`, `terrain.ts`)**: fog-exempt blue-hour twilight sky dome with crescent moon, twinkling stars, and rose dusk clouds; rain-slicked dark slate promenade with glowing moss seams, mirror-like neon-reflecting puddles, continuous raindrop micro-rings, and live player footstep splash ripples; 1,600 falling diagonal raindrops; and 9 GPU-undulating translucent **holographic koi fish** swimming overhead through the mist.
+  - **Handcrafted nostalgic cyber-station vignettes (`scenery.ts`)**: giant translucent spinning **Cassette Archway** spanning the promenade, overhead glowing paper lantern catenaries, rain-sheltered waiting gazebo with retro CRT departure board, umbrella stand & sleeping calico cat, row of 3 illuminated Japanese vending machines (Warm Matcha, Peach Fizz, Star Ramune), open-air 24H Tea & Ramen stall with swaying *noren* curtains and rising bowl steam, 5 stacked 1990s CRT monitors under a glass rain canopy, glowing red payphone booth, glowing moss & cyber-bonsai planters, misty twilight skyline billboards, and a silent elevated commuter train gliding across the rear glass viaduct.
+  - **Interactive experiences & calming lo-fi soundscape (`interactions.ts`)**: 5 recessed neon glass synth pads playing warm Rhodes tones in Portalverse's shared B major / G# minor key, vending machines that chime and project floating holographic drinks, a CRT shrine that switches retro channels when approached, a singing payphone booth, a purring station cat, puddle footsteps, active-only gentle filtered pink-noise rain audio, and 5 hidden glowing mixtape cassettes with an unobtrusive lo-fi discovery toast.
+  - Added soundtrack mix in `packages/core/src/audio/musicMix.ts` and unit tests in `worlds/doug-cassette-station/cassetteStation.test.ts`.
+
+### Design & engineering decisions
+
+- **Distinct collective niche**: intentionally pivoted away from a daytime grass meadow (which overlapped `jp-world`) to an unoccupied mood in the Portalverse collective — **nostalgic, calming, rain-washed lo-fi cyberpunk** — offering warm amber shelter and playful retro surprises without competing with `laser-lab`'s high-energy rave or `jp-loft`'s interior apartment.
+- **Smooth loading & zero asset bloat**: 100% procedural WebGPU/TSL shaders, geometry, and crisp CanvasTextures (~0.08 MiB folder size vs. the 12 MiB budget) with `await ctx.breathe()` yields across mount phases and strict active-only cleanup for Web Audio and DOM toasts.
+
 ## One-command fork & PR world submission (`pnpm submit`) + conflict-free room tests — Unreleased (2026-11-27)
 
 ### Added
