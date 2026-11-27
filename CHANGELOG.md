@@ -2,6 +2,16 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Smooth 60+ fps shadows in Palace Lagoon — Unreleased (2026-11-26)
+
+### Fixed
+
+- **Flip-book low-framerate shadow stepping (`worlds/eric-palace-lagoon/renderer.ts`, `shaders/common.wgsl`)** — `SHADOW_REBAKE` was set to `0.004 rad` (`0.23°`), which at low grazing sunset altitude (`+4.2°`) only re-baked the orthographic shadow map every ~15–25 frames while walking, making column and tree shadows jump in ~3–5 fps flip-book steps across the colonnade. Lowered `SHADOW_REBAKE` to `1e-5 rad` (so shadows glide at full display framerate while walking and still skip the shadow pass completely when standing still or during the dark sun→moon swap), fixed `frameDusk` to include `this.player[1]` (`y`) so climbing the spiral keeps shadows synced with time-of-day, tightened the shadow ortho frustum (`halfWidth: 200 → 155 m`, +66% texel density across the full walk bounds), upgraded `sunShadow()` to a smooth 3×3 Gaussian PCF kernel, and triggered a bake when `baseReady` settles so tree/path shadows are always present on frame 1.
+
+### Design & engineering decisions
+
+- **Update the single depth-only shadow pass on every moving frame rather than quantizing sun angle.** At grazing sunset angles (`< 5°`), even a `0.1°` angular deadband translates into tens of centimetres of visible shadow teleportation across vertical columns; keeping the zero-movement short-circuit (`turned <= 1e-5`) preserves zero shadow cost when stationary while making shadow motion completely fluid while walking.
+
 ## Palace Lagoon: confine exit portal inside the circular ring & keep Alhambra tiled dome solid — Unreleased (2026-11-26)
 
 ### Fixed

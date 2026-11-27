@@ -149,7 +149,7 @@ fn haze(c: vec3f, p: vec3f) -> vec3f {
 }
 
 // ---------------------------------------------------------------- the light
-/** the key light's shadow (the Palace casts it; ortho from the key light, reversed-Z) */
+/** the key light's shadow (the Palace casts it; ortho from the key light, reversed-Z, soft 3x3 PCF) */
 fn sunShadow(p: vec3f, n: vec3f) -> f32 {
   let q = p + n * 0.12;
   let c = G.lightViewProj * vec4f(q, 1.0);
@@ -159,11 +159,16 @@ fn sunShadow(p: vec3f, n: vec3f) -> f32 {
   let cmp = ndc.z + 0.00025;
   let texel = 1.0 / vec2f(textureDimensions(shadowMap));
   var s = 0.0;
-  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f(-0.5, -0.5), cmp);
-  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f(0.5, -0.5), cmp);
-  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f(-0.5, 0.5), cmp);
-  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f(0.5, 0.5), cmp);
-  return s * 0.25;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f(-1.0, -1.0), cmp) * 0.0625;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f( 0.0, -1.0), cmp) * 0.125;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f( 1.0, -1.0), cmp) * 0.0625;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f(-1.0,  0.0), cmp) * 0.125;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv,                              cmp) * 0.25;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f( 1.0,  0.0), cmp) * 0.125;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f(-1.0,  1.0), cmp) * 0.0625;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f( 0.0,  1.0), cmp) * 0.125;
+  s += textureSampleCompareLevel(shadowMap, samp_shadow, uv + texel * vec2f( 1.0,  1.0), cmp) * 0.0625;
+  return s;
 }
 fn ambient(n: vec3f) -> vec3f {
   return mix(G.ambGround, G.ambSky, n.y * 0.5 + 0.5);

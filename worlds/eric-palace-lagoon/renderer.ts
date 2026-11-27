@@ -34,8 +34,8 @@ const SHADOW_SIZE = 2048;
 const REVEAL_SECONDS = 1.6;
 /** 1 MiB slices with a breath between them: the upload never holds a frame up. */
 const UPLOAD_SLICE = 1 << 20;
-/** the key light's shadow is baked again once it's turned this far (radians) */
-const SHADOW_REBAKE = 0.004;
+/** the key light's shadow is baked again whenever it turns at all (smooth every-frame shadows while walking, zero cost while still) */
+const SHADOW_REBAKE = 1e-5;
 const PHASES = ['opaque', 'water', 'sky', 'glow'];
 const ADD = { color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } as const;
 
@@ -90,7 +90,7 @@ class LagoonRenderer {
 
     // ---- the key light's shadow: an orthographic view from it over the Palace, the grounds and the lagoon
     const shadowTex = kit.texture({ label: 'lagoon.shadow', format: 'depth32float', size: [SHADOW_SIZE, SHADOW_SIZE], usage: ['render', 'sample'] });
-    this.sunCam.ortho = { halfWidth: 200, halfHeight: 200 };
+    this.sunCam.ortho = { halfWidth: 155, halfHeight: 155 };
     this.sunCam.near = 1;
     this.sunCam.far = 1600;
     this.sunView = kit.view(this.sunCam, [SHADOW_SIZE, SHADOW_SIZE], 'lagoon.sun');
@@ -166,7 +166,10 @@ class LagoonRenderer {
       kit.ready([reflPass, scene, beams, shadowPass, ...rig.depthPasses]),
       rig.ready,
       ...features.map(f => f.ready.catch(error => console.warn('[palace-lagoon] a part of the room failed to load', error))),
-    ]).then(() => undefined);
+    ]).then(() => {
+      // Rebake once trees & path meshes have finished uploading so their shadows appear immediately on frame 1.
+      this.bakeWanted = true;
+    });
     // Start fetching & unpacking the Palace mesh immediately in parallel with pipeline compilation.
     void this.ensurePalaceMesh();
   }
@@ -266,7 +269,7 @@ class LagoonRenderer {
     // they're in, whichever view comes first; else the first view's
     const work: RunEntry[] = [];
     if (firstView) {
-      const frameDusk = this.player ? duskAt(this.player[2]) : dusk;
+      const frameDusk = this.player ? duskAt(this.player[2], this.player[1]) : dusk;
       const frameState: FrameState = frameDusk === dusk ? state : { ...state, dusk: frameDusk, tod: timeOfDay(frameDusk) };
       stageShow(this.rig, view.time);
       // (no view saw the show last frame: no images painted, no depth maps drawn)
@@ -275,8 +278,10 @@ class LagoonRenderer {
       for (const f of this.features) if (f.items) work.push(...f.items(frameState));
       if (this.meshSettled) {
         const k = frameState.tod.keyDir, b = this.bakedKey;
+        const kc = frameState.tod.keyColor;
+        const keyLit = kc[0] + kc[1] + kc[2] > 1e-4;
         const turned = Math.acos(Math.min(1, Math.max(-1, k[0] * b[0] + k[1] * b[1] + k[2] * b[2])));
-        if (this.bakeWanted || turned > SHADOW_REBAKE) {
+        if (this.bakeWanted || (keyLit && turned > SHADOW_REBAKE)) {
           this.aimShadow(k);
           work.push(this.shadowPass);
           this.bakeWanted = false;
