@@ -2,6 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — spaced, perforated foliage layers — Unreleased (2026-11-28)
+
+### Changed / Removed
+
+- Replaced radial seven-finger leaf sprays and all opaque black shrub cores with individual, smooth-edged hanging leaves on seven curved foliage screens per side. Their scalloped crowns rise in uneven levels, and every screen has real geometric openings.
+- Spaced the screens 2–3.5 m apart across a 16.5 m depth, following JP's request for more separation. Offset leaf placement exposes progressively cooler emerald, teal, and blue leaves through the foreground gaps; their combined overlap closes the view through the hedge.
+- Reduced room geometry from about 2.8 million to 0.78 million triangles. Retained the winding dirt path, hedge collision, wind, sampled palette, and distance tint.
+
+### Design & engineering decisions
+
+- JP wanted the depth of overlapping perforated architectural skins, rather than marijuana-like rosettes covering black balls. The hedge now gets its opacity entirely from overlapping leaf silhouettes. Broad individual blades, visibly separated layers, and distinct depth colours make the intervening space readable through parallax.
+- A geometry ray test checks real apertures and combined coverage: in 160 sampled sightlines, the nearest screen blocks 101 while the full stack blocks all 160. Existing traversal, isolated-mount, cooperative-loading, and resource-disposal checks remain in place. WebGPU renders were checked in both travel directions without shader errors.
+
 ## Jungle Path — Unreleased (2026-11-28)
 
 ### Added

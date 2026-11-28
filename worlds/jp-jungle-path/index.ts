@@ -7,39 +7,29 @@ import { bankHeight, FIELD_HALF_LENGTH, hedgeCollider, pathCenter, pathWidth } f
 // Quantized directly from JP's supplied painting. See CREDITS.md for regions.
 const PALETTE = ['#0b8442', '#196b38', '#175e34', '#1f702e', '#2b5a28', '#6a7911', '#0d4130'];
 const BLUE = '#0e273d';
-const SHADOW = '#0e1818';
+const LAYER_DEPTHS = [0.95, 2.95, 5.25, 7.85, 10.75, 13.95, 17.45] as const;
 const UP = new THREE.Vector3(0, 1, 0);
 const FRONT = new THREE.Vector3(0, 0, 1);
 
-/** Seven tapering, bent blades share one growth point, like the painted sprays. */
-function makeSpray(): THREE.BufferGeometry {
+/** One smooth-edged, hanging blade. No radial fingers or shared rosette centre. */
+function makeLeaf(): THREE.BufferGeometry {
   const positions: number[] = [];
   const shades: number[] = [];
   const indices: number[] = [];
-  for (let leaf = 0; leaf < 7; leaf++) {
-    const angle = -2.05 + leaf * 0.68;
-    const length = 0.78 + 0.28 * Math.sin(leaf * 2.7 + 0.6) ** 2;
-    const start = positions.length / 3;
-    for (let step = 0; step <= 5; step++) {
-      const t = step / 5;
-      const width = Math.sin(Math.PI * t) ** 0.85 * 0.115;
-      const bend = Math.sin(t * Math.PI) * 0.15;
-      for (let edge = -1; edge <= 1; edge++) {
-        const u = edge * width + bend;
-        const v = t * length;
-        positions.push(
-          Math.sin(angle) * v + Math.cos(angle) * u,
-          Math.cos(angle) * v - Math.sin(angle) * u - t * t * 0.48,
-          Math.sin(t * Math.PI) * 0.14 - t * t * 0.12 + (edge === 0 ? 0.035 : 0),
-        );
-        shades.push((edge === -1 ? 0.72 : edge === 0 ? 1.12 : 0.93) * (0.85 + 0.15 * Math.sin(t * Math.PI)));
-      }
+  for (let step = 0; step <= 10; step++) {
+    const t = step / 10;
+    const width = Math.sin(Math.PI * t) ** 0.8 * 0.23;
+    const curve = Math.sin(t * Math.PI) * 0.18 + t * t * 0.12;
+    for (let edge = -1; edge <= 1; edge++) {
+      positions.push(curve + edge * width, -t * 1.45,
+        Math.sin(t * Math.PI) * 0.025 + (edge === 0 ? 0.012 : 0));
+      shades.push((edge === -1 ? 0.88 : edge === 0 ? 1.06 : 0.98) * (0.92 + 0.08 * Math.sin(t * Math.PI)));
     }
-    for (let step = 0; step < 5; step++) {
-      for (let edge = 0; edge < 2; edge++) {
-        const a = start + step * 3 + edge;
-        indices.push(a, a + 3, a + 1, a + 1, a + 3, a + 4);
-      }
+  }
+  for (let step = 0; step < 10; step++) {
+    for (let edge = 0; edge < 2; edge++) {
+      const a = step * 3 + edge;
+      indices.push(a, a + 3, a + 1, a + 1, a + 3, a + 4);
     }
   }
   const geo = new THREE.BufferGeometry();
@@ -48,6 +38,18 @@ function makeSpray(): THREE.BufferGeometry {
   geo.setIndex(indices);
   geo.computeVertexNormals();
   return geo;
+}
+
+/** Scalloped crowns read as banks of vegetation; each perforated skin is open. */
+function crown(z: number, layer: number, side: number): number {
+  return 3.6 + layer * 1.34 + Math.sin(z * 0.37 + side * 1.4 + layer * 0.45) * 0.72
+    + Math.sin(z * 0.17 - layer * 0.65) * 0.75;
+}
+
+function skinX(z: number, y: number, layer: number, side: number): number {
+  const depth = LAYER_DEPTHS[layer];
+  const bow = Math.sin(z * 0.29 + layer * 0.74) * 0.32 + Math.sin(y * 0.65 + z * 0.13) * 0.14;
+  return pathCenter(z) + side * (pathWidth(z) + depth + bow);
 }
 
 export default defineRoom('jp-jungle-path', {
@@ -82,11 +84,11 @@ export default defineRoom('jp-jungle-path', {
     const temp = new THREE.Object3D();
     const tint = new THREE.Color();
     const blue = new THREE.Color(BLUE);
-    const baseSpray = geometry(makeSpray());
+    const baseLeaf = geometry(makeLeaf());
     const leafMat = material(new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide, toneMapped: false }));
     // Restrained broad brush mottling, without raster assets or alpha overdraw.
-    const brush = sin(positionLocal.y.mul(57).add(sin(positionLocal.x.mul(31)).mul(2))).mul(0.055).add(0.945);
-    const base = attribute('sprayColor', 'vec3').mul(attribute('leafShade', 'float')).mul(brush);
+    const brush = sin(positionLocal.y.mul(57).add(sin(positionLocal.x.mul(31)).mul(2))).mul(0.025).add(0.975);
+    const base = attribute('leafColor', 'vec3').mul(attribute('leafShade', 'float')).mul(brush);
     const distanceBlue = smoothstep(6, 44, positionView.length()).mul(0.95);
     leafMat.colorNode = mix(base, color(BLUE).mul(attribute('leafShade', 'float').mul(0.8).add(0.35)), distanceBlue);
     const breeze = sin(clock.mul(0.65).add(positionWorld.z.mul(0.22)).add(positionWorld.x.mul(0.17)));
@@ -95,88 +97,56 @@ export default defineRoom('jp-jungle-path', {
       sin(clock.mul(0.8).add(positionWorld.z.mul(0.3))).mul(positionLocal.y.abs()).mul(0.018),
       float(0),
     ));
-    const heartMat = material(new THREE.MeshBasicNodeMaterial({ color: SHADOW, toneMapped: false }));
-    heartMat.colorNode = mix(color(SHADOW), color('#0c2530'), smoothstep(8, 65, positionView.length()));
-    const heartGeo = geometry(new THREE.SphereGeometry(1, 14, 10));
-    // Break the smooth sphere silhouette into rounded, unequal lobes.
-    const hp = heartGeo.getAttribute('position');
-    for (let i = 0; i < hp.count; i++) {
-      const x = hp.getX(i), y = hp.getY(i), z = hp.getZ(i);
-      const r = 1 + 0.055 * Math.sin(x * 8 + y * 3) * Math.cos(z * 7 - y * 5);
-      hp.setXYZ(i, x * r, y * r, z * r);
-    }
-    heartGeo.computeBoundingSphere();
     await ctx.breathe();
 
-    // Staggered low shrubs, middle thickets, and towering rear crowns.
-    // Each row is one instanced draw; opaque hearts prevent see-through bushes.
+    // Seven genuinely perforated skins: gaps expose another coloured leaf layer,
+    // never an opaque core. Independent offsets close the combined sightlines.
     for (const side of [-1, 1]) {
-      for (let tier = 0; tier < 3; tier++) {
-        const bushCount = 23;
-        const spraysPerBush = [112, 145, 165][tier];
-        const sprayGeo = geometry(baseSpray.clone());
-        const count = bushCount * spraysPerBush;
-        const colors = new Float32Array(count * 3);
-        sprayGeo.setAttribute('sprayColor', new THREE.InstancedBufferAttribute(colors, 3));
-        const leaves = new THREE.InstancedMesh(sprayGeo, leafMat, count);
-        const hearts = new THREE.InstancedMesh(heartGeo, heartMat, bushCount);
-        leaves.name = `Leaf sprays ${side < 0 ? 'west' : 'east'} tier ${tier}`;
-        hearts.name = 'Dense shrub interiors';
-        instances.push(leaves, hearts);
-        root.add(hearts, leaves);
-        for (let bush = 0; bush < bushCount; bush++) {
-          const z = -FIELD_HALF_LENGTH + bush * 4 + (tier % 2) * 1.6 + (rand() - 0.5) * 1.1;
-          const rx = [2.15, 3.4, 4.8][tier] * (0.85 + rand() * 0.3);
-          const ry = [2.5, 4.5, 6.6][tier] * (0.73 + rand() * 0.5);
-          const rz = 2.9 + rand() * 0.9;
-          let x = pathCenter(z) + side * (pathWidth(z) + [2.65, 6.2, 12.1][tier]);
-          // The entire dark core stays outside the trail, including at tight bends.
-          for (let dz = -rz * 1.06; dz <= rz * 1.06; dz += 0.2) {
-            const edge = side * pathCenter(z + dz) + pathWidth(z + dz) + 0.3 + rx * 1.06;
-            x = side * Math.max(side * x, edge);
+      for (let layer = 0; layer < 7; layer++) {
+        const placements: Array<{ z: number; y: number }> = [];
+        const stepZ = 0.66;
+        const stepY = 0.82;
+        for (let column = 0; column < Math.ceil(FIELD_HALF_LENGTH * 2 / stepZ); column++) {
+          const z0 = -FIELD_HALF_LENGTH + column * stepZ + (layer * 0.618 % 1) * stepZ;
+          const top = crown(z0, layer, side);
+          for (let row = 0; row * stepY < top; row++) {
+            const z = z0 + (rand() - 0.5) * stepZ * 0.85 + (row % 2) * 0.19;
+            const y = row * stepY + 0.85 + (layer * 0.381 % 1) * stepY + (rand() - 0.5) * 0.38;
+            placements.push({ z, y });
           }
-          const y = ry * 0.72 + [0, 0.4, 1.3][tier];
+          if (column % 8 === 0) await ctx.breathe();
+        }
+        const leafGeo = geometry(baseLeaf.clone());
+        const colors = new Float32Array(placements.length * 3);
+        leafGeo.setAttribute('leafColor', new THREE.InstancedBufferAttribute(colors, 3));
+        const leaves = new THREE.InstancedMesh(leafGeo, leafMat, placements.length);
+        leaves.name = `Foliage skin ${side < 0 ? 'west' : 'east'} ${layer + 1}`;
+        leaves.userData.layer = layer;
+        leaves.userData.side = side;
+        instances.push(leaves);
+        root.add(leaves);
+        const normal = new THREE.Vector3();
+        for (let i = 0; i < placements.length; i++) {
+          const { z, y } = placements[i];
+          const x = skinX(z, y, layer, side);
           temp.position.set(x, y, z);
-          temp.quaternion.identity();
-          temp.scale.set(rx * 0.96, ry * 0.96, rz * 0.96);
+          const slope = (skinX(z + 0.02, y, layer, side) - skinX(z - 0.02, y, layer, side)) / 0.04;
+          normal.set(-side, 0, side * slope).normalize();
+          temp.quaternion.setFromUnitVectors(FRONT, normal);
+          // Flowing, alternating hangs, with small irregularity rather than a fan.
+          temp.rotateZ(Math.sin(z * 0.75 + y * 1.4 + layer) * 0.65 + (rand() - 0.5) * 0.8);
+          temp.rotateY((rand() - 0.5) * 0.18);
+          temp.scale.set(0.8 + rand() * 0.45, 0.78 + rand() * 0.42, 1);
           temp.updateMatrix();
-          hearts.setMatrixAt(bush, temp.matrix);
-          const normal = new THREE.Vector3();
-          for (let spray = 0; spray < spraysPerBush; spray++) {
-            // Golden-angle distribution avoids visibly regular rows of leaves.
-            const ny = 1 - 2 * (spray + 0.5) / spraysPerBush;
-            const azimuth = spray * 2.399963 + bush * 1.71;
-            const ring = Math.sqrt(1 - ny * ny);
-            const nx = Math.cos(azimuth) * ring;
-            const nz = Math.sin(azimuth) * ring;
-            const shell = 1.015 + rand() * 0.07;
-            temp.position.set(x + nx * rx * shell, Math.max(0.15, y + ny * ry * shell), z + nz * rz * shell);
-            // Preserve the complete curving corridor even where bushes overlap bends.
-            const boundary = pathWidth(temp.position.z) + 0.75;
-            if (side * (temp.position.x - pathCenter(temp.position.z)) < boundary) {
-              temp.position.x = pathCenter(temp.position.z) + side * boundary;
-            }
-            normal.set(nx / rx, ny / ry, nz / rz).normalize();
-            temp.quaternion.setFromUnitVectors(FRONT, normal);
-            temp.rotateZ((rand() - 0.5) * 1.6);
-            const size = (0.72 + rand() * 0.5) * [1, 1.15, 1.4][tier];
-            temp.scale.setScalar(size);
-            temp.updateMatrix();
-            const id = bush * spraysPerBush + spray;
-            leaves.setMatrixAt(id, temp.matrix);
-            // Most growth is emerald, with sparse olive crowns and cool inner ranks.
-            const pick = ny > 0.32 && rand() > 0.58 ? 5 : Math.floor(rand() * 5);
-            tint.set(PALETTE[pick]).lerp(blue, tier * 0.19 + (ny < -0.3 ? 0.1 : 0));
-            tint.multiplyScalar(0.8 + rand() * 0.35);
-            tint.toArray(colors, id * 3);
-            if (spray % 32 === 0) await ctx.breathe();
-          }
-          await ctx.breathe();
+          leaves.setMatrixAt(i, temp.matrix);
+          const pick = rand() < 0.18 && layer < 3 ? 5 : Math.floor(rand() * 5);
+          tint.set(PALETTE[pick]).lerp(blue, Math.pow(layer / 6, 0.85) * 0.92);
+          tint.multiplyScalar(0.86 + rand() * 0.22);
+          tint.toArray(colors, i * 3);
+          if (i % 32 === 0) await ctx.breathe();
         }
         leaves.computeBoundingSphere();
-        // Shader wind moves tips by < 0.1 m beyond their CPU bounds.
         if (leaves.boundingSphere) leaves.boundingSphere.radius += 0.15;
-        hearts.computeBoundingSphere();
         await ctx.breathe();
       }
     }

@@ -53,19 +53,45 @@ it('mounts isolated previews, yields during foliage setup, and releases every GP
   const a = await mount();
   const b = await mount();
   const resources = new Set<THREE.BufferGeometry | THREE.Material | THREE.InstancedMesh>();
-  let sprays = 0;
+  let leaves = 0;
   a.scene.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
     resources.add(o.geometry);
     for (const mat of Array.isArray(o.material) ? o.material : [o.material]) resources.add(mat);
     if (o instanceof THREE.InstancedMesh) {
       resources.add(o);
-      if (o.name.startsWith('Leaf sprays')) sprays += o.count;
+      if (o.name.startsWith('Foliage skin')) leaves += o.count;
       expect(o.boundingSphere).not.toBeNull();
     }
   });
-  expect(sprays * 7).toBeGreaterThan(100_000);
-  expect(a.yields).toBeGreaterThan(600);
+  expect(leaves).toBeGreaterThan(10_000);
+  expect(a.yields).toBeGreaterThan(500);
+  // Every screen has real apertures; overlapping screens close the view collectively.
+  const skins: THREE.InstancedMesh[] = [];
+  a.scene.traverse(o => {
+    if (o instanceof THREE.InstancedMesh && o.name.startsWith('Foliage skin') && o.userData.side === 1) skins.push(o);
+  });
+  expect(skins).toHaveLength(7);
+  a.scene.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster();
+  let frontHits = 0;
+  let stackHits = 0;
+  for (let i = 0; i < 160; i++) {
+    const z = -27 + (i % 40) * 1.31;
+    const y = 0.75 + Math.floor(i / 40) * 0.57;
+    ray.set(new THREE.Vector3(pathCenter(z), y, z), new THREE.Vector3(1, 0, 0));
+    const hits = ray.intersectObjects(skins, false);
+    if (hits.some(h => h.object.userData.layer === 0)) frontHits++;
+    if (hits.length) stackHits++;
+  }
+  expect(frontHits).toBeLessThan(160 * 0.8);
+  expect(frontHits).toBeGreaterThan(160 * 0.25);
+  expect(stackHits).toBeGreaterThanOrEqual(160 * 0.96);
+  const near = new THREE.Matrix4();
+  const far = new THREE.Matrix4();
+  skins[0].getMatrixAt(0, near);
+  skins[6].getMatrixAt(0, far);
+  expect(Math.abs(far.elements[12] - near.elements[12])).toBeGreaterThan(15);
   const released = new Set<unknown>();
   resources.forEach(r => {
     const release = () => { released.add(r); };

@@ -13,5 +13,6 @@ Colours were sampled by median-cut quantization of five rectangular image region
 - Deep negative space: near-black green `#0e1818`.
 
 All geometry, foliage, leaf mottling and dirt shading are original procedural code.
-The seven-blade sprays interpret the reference's narrow, drooping leaf silhouettes;
+Individual smooth-edged, hanging blades interpret the reference's leaf silhouettes.
+Seven offset, perforated foliage screens use the user's layered architectural analogy;
 no image, cutout, model, or texture from the painting is included in the room.
