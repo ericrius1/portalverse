@@ -1,4 +1,4 @@
-import { jungleDefaults, jungleRanges, observeJungleSettings, updateJungleSettings, type JungleKey } from './tuning';
+import { gapCurves, heightCurves, jungleOriginal, jungleRanges, observeJungleSettings, updateJungleSettings, type JungleKey, type JungleSettings } from './tuning';
 
 /** Only the active room owns DOM controls. Leaving it removes every listener. */
 export function mountJungleControls(): () => void {
@@ -19,10 +19,36 @@ export function mountJungleControls(): () => void {
     pathDistance: ['Distance from path', 'Moves the whole hedge away from the path.'],
     layerGap: ['Gap between layers', 'Sets the first gap; later gaps grow outward.'],
     gapMultiplier: ['Gap multiplier', 'Adds outward growth to each successive gap.'],
-    heightMultiplier: ['Height multiplier', 'Raises outer walls while keeping the front wall’s height.'],
+    heightMultiplier: ['Height multiplier', 'Exaggerates the rise toward the back; the first wall stays put.'],
+    leafSizeNear: ['Leaf size near', 'Size of leaves in the first layer.'],
+    leafSizeFar: ['Leaf size far', 'Size in the last layer; layers between blend smoothly.'],
     density: ['Density of leaves', 'Adds or removes leaves without changing their size.'],
   };
-  const refreshers: Array<(settings: typeof jungleDefaults) => void> = [];
+  const refreshers: Array<(settings: JungleSettings) => void> = [];
+  function curvePicker(key: 'gapCurve' | 'heightCurve', title: string, options: Record<string, string>, help: string) {
+    const label = document.createElement('label');
+    label.style.cssText = 'display:block;margin:14px 0;';
+    const caption = document.createElement('span');
+    caption.textContent = title;
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', title);
+    select.style.cssText = 'display:block;width:100%;margin:7px 0;padding:7px;border:1px solid #90b89155;border-radius:6px;color:#e4f1df;background:#19382b;font:inherit;';
+    for (const [value, text] of Object.entries(options)) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = text;
+      select.append(option);
+    }
+    const detail = document.createElement('small');
+    detail.textContent = help;
+    detail.id = `jungle-${key}-hint`;
+    detail.style.cssText = 'display:block;color:#adbfad;font-size:11px;';
+    select.setAttribute('aria-describedby', detail.id);
+    select.addEventListener('change', () => updateJungleSettings({ [key]: select.value } as Partial<JungleSettings>));
+    refreshers.push(settings => { select.value = settings[key]; });
+    label.append(caption, select, detail);
+    panel.append(label);
+  }
   for (const key of Object.keys(labels) as JungleKey[]) {
     const label = document.createElement('label');
     label.style.cssText = 'display:block;margin:14px 0;';
@@ -45,18 +71,20 @@ export function mountJungleControls(): () => void {
     input.addEventListener('input', () => updateJungleSettings({ [key]: Number(input.value) }));
     refreshers.push(settings => {
       input.value = String(settings[key]);
-      value.value = key === 'density' ? `${Math.round(settings[key] * 100)}%`
+      value.value = key === 'density' || key === 'leafSizeNear' || key === 'leafSizeFar' ? `${Math.round(settings[key] * 100)}%`
         : `${settings[key].toFixed(2)}${key === 'pathDistance' || key === 'layerGap' ? ' m' : '×'}`;
       input.setAttribute('aria-valuetext', value.value);
     });
     label.append(caption, value, input, detail);
     panel.append(label);
+    if (key === 'gapMultiplier') curvePicker('gapCurve', 'Gap curve', gapCurves, 'Choose where the spaces between layers widen.');
+    if (key === 'heightMultiplier') curvePicker('heightCurve', 'Height curve', heightCurves, 'Steep back rise keeps middle layers low to reveal the back.');
   }
   const reset = document.createElement('button');
   reset.textContent = 'Reset to original look';
   reset.title = 'Restore the approved rolling hedges and spacing.';
   reset.style.cssText = toggle.style.cssText;
-  reset.addEventListener('click', () => updateJungleSettings(jungleDefaults));
+  reset.addEventListener('click', () => updateJungleSettings(jungleOriginal));
   panel.append(reset);
   const unsubscribe = observeJungleSettings(settings => refreshers.forEach(refresh => refresh(settings)));
   function setOpen(open: boolean) {

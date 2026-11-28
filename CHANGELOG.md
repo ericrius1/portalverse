@@ -2,6 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — depth curves and near/far leaf sizes — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Added independent **Gap curve** choices (Gradual, Even gaps, Widen at the back, Widen near the path) and **Height curve** choices (Gradual rise, Back-loaded rise, Steep back rise, Terraces). Height now changes the tier rise while preserving the foreground and the rolling crowns' amplitude. Back-loaded curves keep intermediate walls lower so the rear foliage shows above them.
+- Added **Leaf size near** and **Leaf size far**, interpolated linearly through all seven layers. New near-size values start at 65%, far at 100%; existing tuning values are retained. Density remains an independent leaf-count control. **Reset to original look** still restores the original full-size composition.
+
+### Design & engineering decisions
+
+- The previous height multiplier scaled wall height and undulation together. Applying a curve to the rise between tiers gives control over which layers grow, while keeping both the first layer and the rolling character intact.
+- Size changes scale individual blades without moving their anchors, changing counts, or consuming different random values. Height curves and sizes use the existing cancellable foliage rebuild; gap curves move existing layers immediately. All new values persist with the current browser settings.
+- Added tests for curve endpoints, monotonic spacing, fixed foreground, rear-focused height, independent density, size interpolation, and saved-value validation. WebGPU interaction checks cover both selectors, near/far interpolation, density, reload persistence, and the original reset.
+
 ## Jungle Path — live foliage controls — Unreleased (2026-11-28)
 
 ### Added

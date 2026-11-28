@@ -1,44 +1,97 @@
-/** The approved 5df88bc composition is the exact reset preset. */
-export const jungleDefaults = {
+export const gapCurves = {
+  gradual: 'Gradual',
+  even: 'Even gaps',
+  'back-loaded': 'Widen at the back',
+  early: 'Widen near the path',
+} as const;
+export const heightCurves = {
+  gradual: 'Gradual rise',
+  'back-loaded': 'Back-loaded rise',
+  steep: 'Steep back rise',
+  terraces: 'Terraces',
+} as const;
+export interface JungleSettings {
+  pathDistance: number;
+  layerGap: number;
+  gapMultiplier: number;
+  heightMultiplier: number;
+  density: number;
+  leafSizeNear: number;
+  leafSizeFar: number;
+  gapCurve: keyof typeof gapCurves;
+  heightCurve: keyof typeof heightCurves;
+}
+export type JungleKey = Exclude<keyof JungleSettings, 'gapCurve' | 'heightCurve'>;
+export const jungleDefaults: JungleSettings = {
   pathDistance: 0.95,
   layerGap: 2,
   gapMultiplier: 1,
   heightMultiplier: 1,
   density: 1,
+  leafSizeNear: 0.65,
+  leafSizeFar: 1,
+  gapCurve: 'gradual',
+  heightCurve: 'gradual',
 };
-export type JungleSettings = typeof jungleDefaults;
-export type JungleKey = keyof JungleSettings;
+/** Preserve the original approved composition as an explicit reset preset. */
+export const jungleOriginal: JungleSettings = { ...jungleDefaults, leafSizeNear: 1 };
 export const jungleRanges: Record<JungleKey, readonly [number, number, number]> = {
   pathDistance: [0.6, 8, 0.05],
   layerGap: [0.5, 4, 0.05],
   gapMultiplier: [1, 1.3, 0.01],
   heightMultiplier: [0.5, 2.5, 0.05],
   density: [0.25, 2, 0.05],
+  leafSizeNear: [0.2, 1.5, 0.05],
+  leafSizeFar: [0.2, 1.5, 0.05],
 };
 
 export function normalizeSettings(saved: unknown): JungleSettings {
   const result = { ...jungleDefaults };
   if (!saved || typeof saved !== 'object') return result;
-  for (const key of Object.keys(result) as JungleKey[]) {
-    const value = (saved as Record<string, unknown>)[key];
+  const values = saved as Record<string, unknown>;
+  for (const key of Object.keys(jungleRanges) as JungleKey[]) {
+    const value = values[key];
     if (typeof value !== 'number' || !Number.isFinite(value)) continue;
     result[key] = Math.max(jungleRanges[key][0], Math.min(jungleRanges[key][1], value));
+  }
+  if (typeof values.gapCurve === 'string' && Object.hasOwn(gapCurves, values.gapCurve)) {
+    result.gapCurve = values.gapCurve as JungleSettings['gapCurve'];
+  }
+  if (typeof values.heightCurve === 'string' && Object.hasOwn(heightCurves, values.heightCurve)) {
+    result.heightCurve = values.heightCurve as JungleSettings['heightCurve'];
   }
   return result;
 }
 
-/** Keep the approved gentle progression; compound any extra outward growth. */
+/** Gap curves change where widening happens; the multiplier adds compounding. */
 export function layerDepth(layer: number, settings: JungleSettings): number {
   let depth = settings.pathDistance;
   for (let gap = 0; gap < layer; gap++) {
-    depth += settings.layerGap * (1 + gap * 0.15) * settings.gapMultiplier ** gap;
+    const t = gap / 5;
+    const widening = settings.gapCurve === 'even' ? 0
+      : settings.gapCurve === 'back-loaded' ? t * t
+      : settings.gapCurve === 'early' ? Math.sqrt(t) : t;
+    depth += settings.layerGap * (1 + 0.75 * widening) * settings.gapMultiplier ** gap;
   }
   return depth;
 }
 
-/** Foreground stays put while successive crowns grow toward the requested height. */
-export function layerHeightScale(layer: number, settings: JungleSettings): number {
-  return 1 + (settings.heightMultiplier - 1) * layer / 6;
+/** Change the tier rise, not the whole wall. Rolling crown amplitude stays intact. */
+export function layerHeightOffset(layer: number, settings: JungleSettings): number {
+  const t = layer / 6;
+  const rise = settings.heightCurve === 'back-loaded' ? t * t
+    : settings.heightCurve === 'steep' ? t * t * t
+    : settings.heightCurve === 'terraces' ? Math.floor(layer / 2) / 3 : t;
+  return 8.04 * (settings.heightMultiplier * rise - t);
+}
+
+export function layerLeafSize(layer: number, settings: JungleSettings): number {
+  return settings.leafSizeNear + (settings.leafSizeFar - settings.leafSizeNear) * layer / 6;
+}
+
+export function sameFoliageShape(a: JungleSettings, b: JungleSettings): boolean {
+  return a.heightMultiplier === b.heightMultiplier && a.heightCurve === b.heightCurve
+    && a.density === b.density && a.leafSizeNear === b.leafSizeNear && a.leafSizeFar === b.leafSizeFar;
 }
 
 const storageKey = 'jp-jungle-path.tuning.v1';

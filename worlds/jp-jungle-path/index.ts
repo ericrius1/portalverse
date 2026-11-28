@@ -3,7 +3,7 @@ import { attribute, color, float, fract, mix, positionLocal, positionView, posit
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { seededRandom } from '@portalverse/core/rooms/kit';
 import { bankHeight, FIELD_HALF_LENGTH, createHedgeCollider, pathCenter, pathWidth } from './layout';
-import { getJungleSettings, jungleDefaults, layerDepth, layerHeightScale, observeJungleSettings, type JungleSettings } from './tuning';
+import { getJungleSettings, jungleDefaults, layerDepth, layerHeightOffset, layerLeafSize, sameFoliageShape, observeJungleSettings, type JungleSettings } from './tuning';
 import { mountJungleControls } from './controls';
 
 // Quantized directly from JP's supplied painting. See CREDITS.md for regions.
@@ -174,7 +174,7 @@ export default defineRoom('jp-jungle-path', {
             const stepY = 0.82 / Math.sqrt(settings.density);
             for (let column = 0; column < Math.ceil(FIELD_HALF_LENGTH * 2 / stepZ); column++) {
               const z0 = -FIELD_HALF_LENGTH + column * stepZ + (layer * 0.618 % 1) * stepZ;
-              const top = crown(z0, layer, side) * layerHeightScale(layer, settings);
+              const top = crown(z0, layer, side) + layerHeightOffset(layer, settings);
               for (let row = 0; row * stepY < top; row++) {
                 const z = z0 + (random() - 0.5) * stepZ * 0.85 + (row % 2) * 0.19;
                 const y = row * stepY + 0.85 + (layer * 0.381 % 1) * stepY + (random() - 0.5) * 0.38;
@@ -206,6 +206,7 @@ export default defineRoom('jp-jungle-path', {
               temp.rotateZ(Math.sin(z * 0.75 + y * 1.4 + layer) * 0.65 + (random() - 0.5) * 0.8);
               temp.rotateY((random() - 0.5) * 0.18);
               temp.scale.set(0.8 + random() * 0.45, 0.78 + random() * 0.42, 1);
+              temp.scale.multiplyScalar(layerLeafSize(layer, settings));
               temp.updateMatrix();
               leaves.setMatrixAt(i, temp.matrix);
               const pick = random() < 0.18 && layer < 3 ? 5 : Math.floor(random() * 5);
@@ -291,7 +292,7 @@ export default defineRoom('jp-jungle-path', {
       applySpacing(foliage, settings);
       const request = ++revision;
       clearTimeout(rebuildTimer);
-      if (settings.heightMultiplier === foliage.settings.heightMultiplier && settings.density === foliage.settings.density) return;
+      if (sameFoliageShape(settings, foliage.settings)) return;
       rebuildTimer = setTimeout(() => {
         const isCurrent = () => !disposed && request === revision;
         void buildFoliage(settings, isCurrent).then(next => {
