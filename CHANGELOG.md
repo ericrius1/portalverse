@@ -2,6 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — Unreleased (2026-11-28)
+
+### Added
+
+- **`jp-jungle-path` / Jungle Path**: a winding dirt trail between 138 overlapping shrubs in three staggered tiers. Roughly 136,000 curved leaves form seven-blade sprays, with dark opaque interiors, uneven crowns, subtle wind, mossy banks, and dry leaf litter. Added between JP's Reef and Apartment rooms, with a quiet ambient music blend.
+- Directly sampled emerald, olive, teal, blue, and shadow colours from JP's supplied jungle painting. Rear tiers are cooler, and a per-view distance tint turns receding foliage blue in either travel direction. The source artwork is not shipped; sampling provenance is recorded in the room's credits.
+- A continuous hedge collider slides players along both bends, with clear, level landings at both portals. Flight is disabled for this enclosed walking room. Tests cover both travel directions, hedge containment, portal crossings, independent mounts, cooperative loading, and GPU disposal.
+
+### Design & engineering decisions
+
+- The request was for huge, nearly impenetrable abstract jungle hedges, with organic bushes and distinct levels. Real curved leaf geometry preserves silhouettes and parallax; rounded, irregular dark cores make the shrubs solid without transparent billboard overdraw. Instanced sprays and cores keep rendering to a small set of batches.
+- The dirt shader follows the same centreline as collision, shading its irregular edges per pixel. Bush cores stay outside the entire curved trail, including at bends. Setup yields inside the foliage and ground loops, animation uses one uniform, and each mount owns and disposes its resources.
+
 ## Official room paths and final Relay floor — Unreleased (2026-11-28)
 
 ### Changed / Removed

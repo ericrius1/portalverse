@@ -74,6 +74,22 @@
       }
     },
     {
+      "id": "jp-jungle-path",
+      "name": "Jungle Path",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "A winding dirt trail between towering, layered jungle hedges. Painted emerald and olive leaf sprays deepen to petrol blue in the distance.",
+      "accentColor": "#0b8442",
+      "kind": "local",
+      "allowFlight": false,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
       "id": "jp-apartment",
       "name": "Apartment",
       "owner": "jpwhitaker",
