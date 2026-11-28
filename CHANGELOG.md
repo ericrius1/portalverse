@@ -2,6 +2,16 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Speech Bubble Framing & Clipping Fix — Unreleased (2026-11-27)
+
+### Fixed
+
+- **3D speech bubbles getting cut off at top of screen & inside thought/shout canvases (`packages/core/src/chat/speechBubble3D.ts`, `speechBubbleCanvas.ts`, `packages/core/src/npc/npcRig.ts`, `packages/core/src/engine/AvatarController.ts`, `app/styles.css`)**:
+  - Scaled 3D speech bubble sprites from an oversized `3.45 m` down to a crisp, human-proportioned `2.0 m` wide (`1.55 m` voice, `1.35 m` typing), tightened NPC & remote player nameplates (`1.32 m` / `1.45 m`) and bubble `baseHeight`, and gently softened the NPC nameplate while a bubble is active — lowering a 4-line bubble's top edge by over `1.1 m` so close-up NPC conversations stay cleanly inside the viewport below the top HUD.
+  - Added automatic font-size fitting and generous outer margins (`52–56 px` for `thought` clouds and `shout` bursts) in `renderSpeechBubbleToCanvas` so 3–4 line bubbles always stay strictly inside `fixedHeight` (`864×448`) without clipping cloud puffs/spikes or mutating WebGPU `CanvasTexture` dimensions after upload.
+  - Tightened the desktop lower-third `.dialogue-panel` with `max-height: calc(100dvh - 80px); overflow-y: auto;` so all dialogue choices remain visible on shorter widescreen viewports.
+  - Added regression coverage in `packages/core/src/__tests__/speechBubbles.test.ts`.
+
 ## Zero-Hitch FPS to Character Switching — Unreleased (2026-11-27)
 
 ### Fixed

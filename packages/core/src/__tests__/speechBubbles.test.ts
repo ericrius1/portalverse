@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AvatarSpeechBubble,
   BUBBLE_PRESETS,
@@ -7,6 +7,7 @@ import {
   computeBubbleDurationSeconds,
   createDefaultBubbleStyle,
   getBubblePreset,
+  renderSpeechBubbleToCanvas,
   sanitizeBubbleBadge,
   sanitizeSpeechBubbleStyle,
   wrapBubbleTextByChars,
@@ -112,6 +113,79 @@ describe('AvatarSpeechBubble (headless 3D lifecycle)', () => {
     }
     expect(bubble.getActiveMode()).toBeNull();
     expect(bubble.sprite.visible).toBe(false);
+
+    bubble.dispose();
+  });
+
+  it('keeps 3D speech bubble world framing compact and preserves exact fixedHeight on 4-line thought/shout text', () => {
+    const style = getBubblePreset('thought').style;
+    const bubble = new AvatarSpeechBubble({ baseHeight: 2.06, style });
+    bubble.showText(
+      "The big window's latched. Sealed. I checked. But there's a draft, cold and sweet, like pine needles and warm honey. Mandu lies in it with his nose up like it's a radio.",
+      style,
+      6,
+    );
+    bubble.update(0.3, 0.3);
+
+    // Compact world dimensions ensure the full bubble stays well below the top HUD at talking distance
+    expect(bubble.sprite.scale.x).toBeLessThanOrEqual(2.2);
+    expect(bubble.sprite.scale.y).toBeLessThanOrEqual(1.2);
+    const bubbleTopY = bubble.sprite.position.y + bubble.sprite.scale.y * 0.5;
+    expect(bubbleTopY).toBeLessThan(3.25);
+
+    // Verify fixedHeight never mutates canvas dimensions (WebGPU CanvasTexture safety) even on long 4-line text
+    const noopGradient = { addColorStop: vi.fn() };
+    const ctx = {
+      font: '',
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineJoin: 'round',
+      lineCap: 'round',
+      shadowColor: '',
+      shadowBlur: 0,
+      shadowOffsetY: 0,
+      globalAlpha: 1,
+      textAlign: 'center',
+      textBaseline: 'middle',
+      measureText: (s: string) => ({ width: s.length * 16 }),
+      clearRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      scale: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      quadraticCurveTo: vi.fn(),
+      arc: vi.fn(),
+      closePath: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      clip: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      createLinearGradient: vi.fn(() => noopGradient),
+      createRadialGradient: vi.fn(() => noopGradient),
+    } as unknown as CanvasRenderingContext2D;
+    const fakeCanvas = {
+      width: 864,
+      height: 448,
+      getContext: () => ctx,
+    } as unknown as HTMLCanvasElement;
+
+    for (const presetId of ['thought', 'shout', 'comic', 'parchment'] as const) {
+      const metrics = renderSpeechBubbleToCanvas(fakeCanvas, {
+        mode: 'text',
+        text: "The big window's latched. Sealed. I checked. But there's a draft, cold and sweet, like pine needles and warm honey. Mandu lies in it with his nose up like it's a radio.",
+        style: getBubblePreset(presetId).style,
+        canvasWidth: 864,
+        fixedHeight: 448,
+      });
+      expect(metrics.width).toBe(864);
+      expect(metrics.height).toBe(448);
+      expect(fakeCanvas.height).toBe(448);
+    }
 
     bubble.dispose();
   });

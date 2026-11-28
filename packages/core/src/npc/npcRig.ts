@@ -110,14 +110,15 @@ export class NpcActor {
     this.ringMesh.position.y = 0.035;
     this.group.add(this.ringMesh);
 
-    // Floating nameplate + custom speech bubble right above head
-    const labelY = spec.heightMeters + 0.34;
+    // Floating nameplate + custom speech bubble compactly framed above head so close-up
+    // conversations keep the full bubble cleanly inside the viewport below the top HUD.
+    const labelY = spec.heightMeters + 0.22;
     if (typeof document !== 'undefined') {
       this.label = createFloatingLabel({
         title: spec.name,
         subtitle: spec.title,
         accentColor: spec.accentColor,
-        width: 2.35,
+        width: 1.32,
       });
       this.label.sprite.position.set(0, labelY, 0);
       this.group.add(this.label.sprite);
@@ -126,7 +127,7 @@ export class NpcActor {
     }
 
     this.bubble = new AvatarSpeechBubble({
-      baseHeight: labelY + 0.46,
+      baseHeight: labelY + 0.18,
       style: spec.bubbleStyle,
     });
     this.group.add(this.bubble.sprite);
@@ -281,8 +282,11 @@ export class NpcActor {
     const ringScale = 1 + (this.talking ? 0.08 : this.proximity01 * 0.05) * beatPulse;
     this.ringMesh.scale.set(ringScale, ringScale, 1);
 
-    // Update floating 3D speech bubble
+    // Update floating 3D speech bubble and gently soften nameplate while the bubble is up
     this.bubble.update(step, elapsed);
+    if (this.label) {
+      this.label.sprite.material.opacity = this.bubble.sprite.visible ? 0.72 : 1;
+    }
   }
 
   private applyBoneAnimation(

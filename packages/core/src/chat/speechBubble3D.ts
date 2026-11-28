@@ -14,8 +14,8 @@ const POP_IN_SECONDS = 0.24;
 const FADE_OUT_SECONDS = 0.45;
 const ANIMATED_REDRAW_INTERVAL = 1 / 12;
 /** Fixed WebGPU-safe CanvasTexture dimensions (bubble bottom-anchors inside this frame). */
-const SPRITE_CANVAS_W = 768;
-const SPRITE_CANVAS_H = 400;
+const SPRITE_CANVAS_W = 864;
+const SPRITE_CANVAS_H = 448;
 
 /**
  * Floating 3D WebGPU-safe speech bubble attached above an avatar.
@@ -45,8 +45,8 @@ export class AvatarSpeechBubble {
   private modeAge = 0;
   private redrawAccum = 0;
   private dirty = false;
-  private worldWidth = 3.2;
-  private worldHeight = 1.0;
+  private worldWidth = 2.0;
+  private worldHeight = 1.04;
 
   constructor(options: AvatarSpeechBubbleOptions) {
     this.baseHeight = options.baseHeight;
@@ -93,7 +93,7 @@ export class AvatarSpeechBubble {
 
   setBaseHeight(height: number): void {
     this.baseHeight = height;
-    this.sprite.position.y = height + this.worldHeight * 0.42;
+    this.sprite.position.y = height + this.worldHeight * 0.46;
   }
 
   setStyle(style: SpeechBubbleStyle): void {
@@ -229,8 +229,8 @@ export class AvatarSpeechBubble {
     const scale = Math.max(0.01, popScale * pulseScale);
     this.sprite.scale.set(this.worldWidth * scale, this.worldHeight * scale, 1);
 
-    const bob = Math.sin(elapsed * 2.4) * 0.045;
-    this.sprite.position.y = this.baseHeight + this.worldHeight * 0.42 + bob;
+    const bob = Math.sin(elapsed * 2.4) * 0.032;
+    this.sprite.position.y = this.baseHeight + this.worldHeight * 0.46 + bob;
     this.material.opacity = fadeAlpha;
     this.sprite.visible = fadeAlpha > 0.01;
   }
@@ -250,13 +250,13 @@ export class AvatarSpeechBubble {
         canvasWidth: SPRITE_CANVAS_W,
         fixedHeight: SPRITE_CANVAS_H,
       });
-      const baseW = this.currentMode === 'text' ? 3.45 : this.currentMode === 'voice' ? 2.85 : 2.55;
+      const baseW = this.currentMode === 'text' ? 2.0 : this.currentMode === 'voice' ? 1.55 : 1.35;
       this.worldWidth = baseW;
       this.worldHeight = baseW * (metrics.height / metrics.width);
       this.texture.needsUpdate = true;
     } else {
-      this.worldWidth = this.currentMode === 'text' ? 3.2 : 2.4;
-      this.worldHeight = 1.65;
+      this.worldWidth = this.currentMode === 'text' ? 2.0 : 1.45;
+      this.worldHeight = this.worldWidth * (SPRITE_CANVAS_H / SPRITE_CANVAS_W);
     }
   }
 

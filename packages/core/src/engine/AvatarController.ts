@@ -234,7 +234,7 @@ export class AvatarController {
 
     this.localRig = createCharacterRig(this.localCharacterId, { accentColor: initialColor });
     this.localBubble = new AvatarSpeechBubble({
-      baseHeight: getCharacterDefinition(this.localCharacterId).labelHeight + 0.36,
+      baseHeight: getCharacterDefinition(this.localCharacterId).labelHeight + 0.18,
       style: createDefaultBubbleStyle(initialColor),
     });
     this.localRig.group.add(this.localBubble.sprite);
@@ -470,7 +470,7 @@ export class AvatarController {
     this.localRig.group.position.copy(this.position);
     this.localRig.group.rotation.y = this.getFacingYaw();
     this.localRig.group.visible = wasVisible;
-    this.localBubble.setBaseHeight(resolvedDef.labelHeight + 0.36);
+    this.localBubble.setBaseHeight(resolvedDef.labelHeight + 0.18);
     this.localRig.group.add(this.localBubble.sprite);
     this.localRig.update(0, 0, this.localMotion);
     this.scene.add(this.localRig.group);
@@ -762,13 +762,13 @@ export class AvatarController {
         const label = createFloatingLabel({
           title: p.name,
           accentColor: p.color,
-          width: 2.4,
+          width: 1.45,
         });
         label.sprite.position.set(0, charDef.labelHeight, 0);
         rig.group.add(label.sprite);
 
         const bubble = new AvatarSpeechBubble({
-          baseHeight: charDef.labelHeight + 0.42,
+          baseHeight: charDef.labelHeight + 0.22,
           style: nextBubbleStyle,
         });
         rig.group.add(bubble.sprite);
@@ -819,7 +819,7 @@ export class AvatarController {
           newRig.group.rotation.y = yaw;
           vis.label.sprite.position.set(0, charDef.labelHeight, 0);
           newRig.group.add(vis.label.sprite);
-          vis.bubble.setBaseHeight(charDef.labelHeight + 0.42);
+          vis.bubble.setBaseHeight(charDef.labelHeight + 0.22);
           newRig.group.add(vis.bubble.sprite);
           this.remoteRoot.add(newRig.group);
           vis.rig = newRig;

@@ -512,25 +512,25 @@ export function renderSpeechBubbleToCanvas(
     return { width: canvasW, height: 240, lineCount: 1 };
   }
 
-  const fontSize = style.font === 'serif' ? 40 : style.font === 'mono' ? 34 : 36;
+  const baseFontSize = style.font === 'serif' ? 36 : style.font === 'mono' ? 31 : 33;
   const fontWeight = style.font === 'comic' ? '800' : style.font === 'serif' ? '600' : '700';
-  const fontDecl = `${fontWeight} ${fontSize}px ${bubbleFontStack(style.font)}`;
-  const lineHeight = Math.round(fontSize * 1.32);
+  const fontStack = bubbleFontStack(style.font);
 
-  // Measure content first so bubble tightly fits short phrases AND comfortably wraps long ones.
-  ctx.font = fontDecl;
-  const padSide = style.preset === 'shout' || style.preset === 'thought' ? 68 : 48;
-  const padVert = style.preset === 'shout' || style.preset === 'thought' ? 46 : 34;
-  const outerMarginX = 44;
-  const outerMarginTop = 36;
-  const tailSpace = style.tail === 'none' ? 32 : style.tail === 'dots' ? 66 : 58;
+  // Generous outer margins so cloud puffs, shout burst spikes, drop shadows, and tails never clip.
+  const outerMarginX = style.preset === 'shout' || style.preset === 'thought' ? 56 : 44;
+  const outerMarginTop = style.preset === 'shout' || style.preset === 'thought' ? 52 : 40;
+  const tailSpace = style.tail === 'none' ? 34 : style.tail === 'dots' ? 72 : 62;
 
   const badgeText = style.badge?.trim() || '';
-  const maxTextW = canvasW - (outerMarginX + padSide) * 2;
+  let fontSize = baseFontSize;
+  let fontDecl = `${fontWeight} ${fontSize}px ${fontStack}`;
+  let lineHeight = Math.round(fontSize * 1.28);
+  let padSide = style.preset === 'shout' || style.preset === 'thought' ? 62 : 44;
+  let padVert = style.preset === 'shout' || style.preset === 'thought' ? 40 : 30;
 
   let lines: string[] = [];
   let boxW = 300;
-  let boxH = 128;
+  let boxH = 120;
 
   if (options.mode === 'voice') {
     boxW = badgeText ? 340 : 292;
@@ -543,29 +543,52 @@ export function renderSpeechBubbleToCanvas(
   } else {
     const rawText = options.text?.trim() || '…';
     const displayText = badgeText ? `${badgeText} ${rawText}` : rawText;
-    lines = wrapCanvasText(ctx, displayText, maxTextW, 4);
-    let widest = 0;
-    for (const line of lines) {
-      widest = Math.max(widest, ctx.measureText(line).width);
-    }
     const speakingReserve = options.speaking ? 54 : 0;
     const minBoxW = style.preset === 'shout' ? 270 : 210;
-    boxW = Math.min(
-      canvasW - outerMarginX * 2,
-      Math.max(minBoxW, Math.ceil(widest + padSide * 2 + speakingReserve)),
-    );
-    boxH = Math.max(106, lines.length * lineHeight + padVert * 2);
+    const maxAllowedBoxH = options.fixedHeight
+      ? Math.max(106, options.fixedHeight - outerMarginTop - tailSpace)
+      : Infinity;
+
+    // Auto-scale font size down when needed so 3-4 line messages always fit strictly inside
+    // fixedHeight without clipping cloud puffs, shout spikes, or mutating WebGPU texture height.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      fontDecl = `${fontWeight} ${fontSize}px ${fontStack}`;
+      lineHeight = Math.round(fontSize * 1.26);
+      padSide = style.preset === 'shout' || style.preset === 'thought'
+        ? Math.max(46, Math.round(fontSize * 1.65))
+        : Math.max(36, Math.round(fontSize * 1.3));
+      padVert = style.preset === 'shout' || style.preset === 'thought'
+        ? Math.max(28, Math.round(fontSize * 1.05))
+        : Math.max(22, Math.round(fontSize * 0.86));
+
+      ctx.font = fontDecl;
+      const maxTextW = Math.max(180, canvasW - (outerMarginX + padSide) * 2 - speakingReserve);
+      lines = wrapCanvasText(ctx, displayText, maxTextW, 4);
+      let widest = 0;
+      for (const line of lines) {
+        widest = Math.max(widest, ctx.measureText(line).width);
+      }
+      boxW = Math.min(
+        canvasW - outerMarginX * 2,
+        Math.max(minBoxW, Math.ceil(widest + padSide * 2 + speakingReserve)),
+      );
+      boxH = Math.max(102, lines.length * lineHeight + padVert * 2);
+      if (boxH <= maxAllowedBoxH || fontSize <= 20) break;
+      fontSize = Math.max(20, fontSize - 2);
+    }
   }
 
   const naturalH = Math.max(196, Math.ceil(outerMarginTop + boxH + tailSpace));
-  const canvasH = options.fixedHeight ? Math.max(options.fixedHeight, naturalH) : naturalH;
+  const canvasH = options.fixedHeight ?? naturalH;
   if (canvas.width !== canvasW) canvas.width = canvasW;
   if (canvas.height !== canvasH) canvas.height = canvasH;
 
   ctx.clearRect(0, 0, canvasW, canvasH);
 
   const bx = Math.round((canvasW - boxW) / 2);
-  const by = options.fixedHeight ? Math.max(outerMarginTop, canvasH - tailSpace - boxH) : outerMarginTop;
+  const by = options.fixedHeight
+    ? Math.max(outerMarginTop, canvasH - tailSpace - boxH)
+    : outerMarginTop;
   const cx = canvasW / 2;
 
   // Build fill style per preset

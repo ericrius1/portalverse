@@ -3258,10 +3258,12 @@ body.touch-ui-active .npc-prompt {
   --npc-accent: #38bdf8;
 
   width: min(920px, 100%);
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
   display: grid;
-  grid-template-columns: 192px minmax(0, 1fr);
-  gap: 20px;
-  padding: 20px;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 18px;
   border-radius: 20px;
   background: color-mix(in srgb, var(--b-bg) 93%, #020617 7%);
   color: var(--b-text);
@@ -3349,8 +3351,8 @@ body.touch-ui-active .npc-prompt {
 
 .dialogue-portrait-wrap {
   position: relative;
-  width: 192px;
-  height: 192px;
+  width: 168px;
+  height: 168px;
   border-radius: 16px;
   overflow: hidden;
   border: 2.5px solid var(--b-accent);
@@ -3535,7 +3537,7 @@ body.touch-ui-active .npc-prompt {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 13px;
+  padding: 8px 12px;
   border-radius: 11px;
   border: 1.5px solid color-mix(in srgb, var(--b-accent) 34%, rgba(148, 163, 184, 0.28));
   background: color-mix(in srgb, var(--b-bg) 68%, rgba(2, 6, 23, 0.62));
