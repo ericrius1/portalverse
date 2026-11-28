@@ -17,6 +17,8 @@ export function mountJungleControls(): () => void {
   panel.append(hint);
   const labels: Record<JungleKey, [string, string]> = {
     leafDepthVariation: ['Leaf depth variation', 'Moves and tilts individual leaves in and out. Zero restores flat layers.'],
+    heightNear: ['Height near', 'Average height of the first wall; keeps its rolling contour.'],
+    heightFar: ['Height far', 'Average height of the last wall; the height curve shapes the layers between.'],
     leafSizeNear: ['Leaf size near', 'Size of leaves in the first layer.'],
     densityNear: ['Density near', 'Fewer foreground leaves reveal more layers behind.'],
     leafSizeFar: ['Leaf size far', 'Size in the last layer; layers between blend smoothly.'],
@@ -24,7 +26,6 @@ export function mountJungleControls(): () => void {
     pathDistance: ['Distance from path', 'Moves the whole hedge away from the path.'],
     layerGap: ['Gap between layers', 'Sets the first gap; later gaps grow outward.'],
     gapMultiplier: ['Gap multiplier', 'Adds outward growth to each successive gap.'],
-    heightMultiplier: ['Height multiplier', 'Exaggerates the rise toward the back; the first wall stays put.'],
   };
   const refreshers: Array<(settings: JungleSettings) => void> = [];
   function curvePicker(key: 'gapCurve' | 'heightCurve', title: string, options: Record<string, string>, help: string) {
@@ -74,13 +75,13 @@ export function mountJungleControls(): () => void {
     refreshers.push(settings => {
       input.value = String(settings[key]);
       value.value = key === 'densityNear' || key === 'densityFar' || key === 'leafDepthVariation' || key === 'leafSizeNear' || key === 'leafSizeFar' ? `${Math.round(settings[key] * 100)}%`
-        : `${settings[key].toFixed(2)}${key === 'pathDistance' || key === 'layerGap' ? ' m' : '×'}`;
+        : `${settings[key].toFixed(2)}${key === 'pathDistance' || key === 'layerGap' || key === 'heightNear' || key === 'heightFar' ? ' m' : '×'}`;
       input.setAttribute('aria-valuetext', value.value);
     });
     label.append(caption, value, input, detail);
     panel.append(label);
     if (key === 'gapMultiplier') curvePicker('gapCurve', 'Gap curve', gapCurves, 'Choose where the spaces between layers widen.');
-    if (key === 'heightMultiplier') curvePicker('heightCurve', 'Height curve', heightCurves, 'Steep back rise keeps middle layers low to reveal the back.');
+    if (key === 'heightFar') curvePicker('heightCurve', 'Height curve', heightCurves, 'Steep back rise keeps middle layers low to reveal the back.');
   }
   const reset = document.createElement('button');
   reset.textContent = 'Reset to original look';

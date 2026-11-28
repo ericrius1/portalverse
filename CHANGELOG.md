@@ -2,6 +2,18 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — independent near/far heights — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Replaced **Height multiplier** with **Height near** and **Height far**, in metres. The selected height curve interpolates the average wall height between the two endpoints while retaining each screen's rolling contour. Both controls appear near the top of Jungle controls.
+- Converted existing saved height multipliers into equivalent endpoints (near 3.6 m; far 3.6 + 8.04 × the old multiplier), preserving the existing composition and other tuning. Reset restores 3.6 m near and 11.64 m far.
+
+### Design & engineering decisions
+
+- Independent endpoints let the foreground be lowered without moving the back wall, or raise the back without changing the foreground. Equal and descending endpoint heights also work with all four curves; individual leaf sizes remain independent.
+- Tests cover independent endpoints, every curve, reversed/equal heights, migration, and bounds. Browser interaction checks confirm each endpoint leaves the other unchanged, saved values survive reload, and Reset restores the original heights.
+
 ## Jungle Path — individual leaf depth and near/far density — Unreleased (2026-11-28)
 
 ### Added / Changed

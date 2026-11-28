@@ -22,7 +22,7 @@ describe('Jungle tuning', () => {
     expect(layerDepth(6, growing)).toBeGreaterThan(layerDepth(6, { ...growing, gapMultiplier: 1 }));
   });
   it('keeps the front fixed and concentrates height at the back', () => {
-    const taller = { ...jungleDefaults, heightMultiplier: 2.5 };
+    const taller = { ...jungleDefaults, heightFar: 23.7 };
     expect(layerHeightOffset(0, taller)).toBe(0);
     expect(layerHeightOffset(6, taller)).toBeCloseTo(12.06);
     const steep = { ...taller, heightCurve: 'steep' as const };
@@ -31,6 +31,40 @@ describe('Jungle tuning', () => {
     for (const heightCurve of Object.keys(heightCurves) as Array<keyof typeof heightCurves>) {
       expect(layerHeightOffset(0, { ...taller, heightCurve })).toBe(0);
     }
+  });
+  it('interpolates independent height endpoints while preserving the selected curve', () => {
+    for (const heightCurve of Object.keys(heightCurves) as Array<keyof typeof heightCurves>) {
+      for (const [heightNear, heightFar] of [[2, 18], [12, 4], [7, 7]]) {
+        const settings = { ...jungleDefaults, heightNear, heightFar, heightCurve };
+        expect(3.6 + layerHeightOffset(0, settings)).toBeCloseTo(heightNear);
+        expect(11.64 + layerHeightOffset(6, settings)).toBeCloseTo(heightFar);
+        for (let layer = 0; layer < 7; layer++) {
+          const averageHeight = 3.6 + 1.34 * layer + layerHeightOffset(layer, settings);
+          expect(averageHeight).toBeGreaterThanOrEqual(Math.min(heightNear, heightFar) - 1e-8);
+          expect(averageHeight).toBeLessThanOrEqual(Math.max(heightNear, heightFar) + 1e-8);
+        }
+      }
+    }
+    expect(7.62 + layerHeightOffset(3, { ...jungleDefaults, heightNear: 2, heightFar: 18 })).toBeCloseTo(10);
+  });
+  it('migrates saved height multipliers without changing the old profile', () => {
+    for (const heightCurve of Object.keys(heightCurves) as Array<keyof typeof heightCurves>) {
+      const migrated = normalizeSettings({ heightMultiplier: 1.8, heightCurve, densityNear: 0.6, leafSizeNear: 0.4 });
+      expect(migrated.heightNear).toBe(3.6);
+      expect(migrated.heightFar).toBeCloseTo(18.072);
+      expect(migrated.heightCurve).toBe(heightCurve);
+      expect(migrated.densityNear).toBe(0.6);
+      expect(migrated.leafSizeNear).toBe(0.4);
+      for (let layer = 0; layer < 7; layer++) {
+        const t = layer / 6;
+        const rise = heightCurve === 'back-loaded' ? t * t : heightCurve === 'steep' ? t ** 3
+          : heightCurve === 'terraces' ? Math.floor(layer / 2) / 3 : t;
+        expect(layerHeightOffset(layer, migrated)).toBeCloseTo(8.04 * (1.8 * rise - t));
+      }
+    }
+    const explicit = normalizeSettings({ heightMultiplier: 2, heightNear: 2, heightFar: 9 });
+    expect(explicit.heightNear).toBe(2);
+    expect(explicit.heightFar).toBe(9);
   });
   it('offers distinct gap curves while preserving clearance and the first gap', () => {
     for (const gapCurve of Object.keys(gapCurves) as Array<keyof typeof gapCurves>) {
@@ -90,7 +124,7 @@ describe('Jungle tuning', () => {
     const bounded = normalizeSettings({ density: -2, heightMultiplier: 200, gapMultiplier: Infinity });
     expect(bounded.densityNear).toBe(0.25);
     expect(bounded.densityFar).toBe(0.25);
-    expect(bounded.heightMultiplier).toBe(2.5);
+    expect(bounded.heightFar).toBeCloseTo(23.7);
     expect(bounded.gapMultiplier).toBe(1);
   });
 });

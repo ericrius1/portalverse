@@ -14,7 +14,8 @@ export interface JungleSettings {
   pathDistance: number;
   layerGap: number;
   gapMultiplier: number;
-  heightMultiplier: number;
+  heightNear: number;
+  heightFar: number;
   densityNear: number;
   densityFar: number;
   leafDepthVariation: number;
@@ -28,7 +29,8 @@ export const jungleDefaults: JungleSettings = {
   pathDistance: 0.95,
   layerGap: 2,
   gapMultiplier: 1,
-  heightMultiplier: 1,
+  heightNear: 3.6,
+  heightFar: 11.64,
   densityNear: 1,
   densityFar: 1,
   leafDepthVariation: 0.45,
@@ -43,7 +45,8 @@ export const jungleRanges: Record<JungleKey, readonly [number, number, number]> 
   pathDistance: [0.6, 8, 0.05],
   layerGap: [0.5, 4, 0.05],
   gapMultiplier: [1, 1.3, 0.01],
-  heightMultiplier: [0.5, 2.5, 0.05],
+  heightNear: [0.5, 30, 0.01],
+  heightFar: [0.5, 30, 0.01],
   densityNear: [0.25, 2, 0.05],
   densityFar: [0.25, 2, 0.05],
   leafDepthVariation: [0, 1, 0.05],
@@ -55,9 +58,13 @@ export function normalizeSettings(saved: unknown): JungleSettings {
   const result = { ...jungleDefaults };
   if (!saved || typeof saved !== 'object') return result;
   const values = saved as Record<string, unknown>;
+  // Convert the old rise multiplier into the same endpoint heights.
+  const legacyHeight = typeof values.heightMultiplier === 'number' && Number.isFinite(values.heightMultiplier)
+    ? 3.6 + 8.04 * Math.max(0.5, Math.min(2.5, values.heightMultiplier)) : undefined;
   for (const key of Object.keys(jungleRanges) as JungleKey[]) {
     // Preserve the previous single-density setting at both endpoints.
-    const value = values[key] ?? (key === 'densityNear' || key === 'densityFar' ? values.density : undefined);
+    const value = values[key] ?? (key === 'densityNear' || key === 'densityFar' ? values.density
+      : key === 'heightFar' ? legacyHeight : undefined);
     if (typeof value !== 'number' || !Number.isFinite(value)) continue;
     result[key] = Math.max(jungleRanges[key][0], Math.min(jungleRanges[key][1], value));
   }
@@ -89,7 +96,7 @@ export function layerHeightOffset(layer: number, settings: JungleSettings): numb
   const rise = settings.heightCurve === 'back-loaded' ? t * t
     : settings.heightCurve === 'steep' ? t * t * t
     : settings.heightCurve === 'terraces' ? Math.floor(layer / 2) / 3 : t;
-  return 8.04 * (settings.heightMultiplier * rise - t);
+  return settings.heightNear + (settings.heightFar - settings.heightNear) * rise - (3.6 + 8.04 * t);
 }
 
 export function layerLeafSize(layer: number, settings: JungleSettings): number {
@@ -115,7 +122,7 @@ export function leafDepthSample(index: number, layer: number, side: number): num
 }
 
 export function sameFoliageShape(a: JungleSettings, b: JungleSettings): boolean {
-  return a.heightMultiplier === b.heightMultiplier && a.heightCurve === b.heightCurve
+  return a.heightNear === b.heightNear && a.heightFar === b.heightFar && a.heightCurve === b.heightCurve
     && a.densityNear === b.densityNear && a.densityFar === b.densityFar
     && a.leafDepthVariation === b.leafDepthVariation
     && a.leafSizeNear === b.leafSizeNear && a.leafSizeFar === b.leafSizeFar;

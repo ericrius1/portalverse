@@ -145,7 +145,7 @@ it('updates spacing immediately and coalesces density edits in a mounted preview
     await vi.waitFor(() => expect(count()).toBe(originalCount), { timeout: 3000 });
     expect(skins()[0].position.x).toBeCloseTo(0);
     // A queued rebuild must not resurrect foliage after the room is disposed.
-    updateJungleSettings({ heightMultiplier: 2 });
+    updateJungleSettings({ heightFar: 20 });
     cleanups.forEach(fn => fn());
     cleanups.length = 0;
     await new Promise(resolve => setTimeout(resolve, 120));
