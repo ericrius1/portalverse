@@ -44,7 +44,7 @@ it('mounts isolated previews, yields during foliage setup, and releases every GP
     const ctx = {
       mode: 'preview', player: null, scene, renderer: {}, gpu: null,
       breathe: async () => { yields++; },
-      onUpdate: () => {}, onDispose: (fn: () => void) => cleanups.push(fn),
+      onActivate: () => {}, onUpdate: () => {}, onDispose: (fn: () => void) => cleanups.push(fn),
       setTerrainHeight: () => {}, setCollider: () => {}, setWalkBounds: () => {},
     } as unknown as WorldContext;
     await room.mount(ctx);
@@ -106,4 +106,52 @@ it('mounts isolated previews, yields during foliage setup, and releases every GP
   expect(b.scene.children.length).toBeGreaterThan(0);
   expect(b.scene.fog).toBeInstanceOf(THREE.Fog);
   b.cleanups.forEach(fn => fn());
+});
+
+it('updates spacing immediately and coalesces density edits in a mounted preview', async () => {
+  const { default: room } = await import('./index');
+  const { updateJungleSettings, jungleDefaults } = await import('./tuning');
+  const { vi } = await import('vitest');
+  const cleanups: Array<() => void> = [];
+  const scene = new THREE.Scene();
+  const skins = () => {
+    const found: THREE.InstancedMesh[] = [];
+    scene.traverse(o => { if (o instanceof THREE.InstancedMesh && o.name.startsWith('Foliage skin')) found.push(o); });
+    return found;
+  };
+  const count = () => skins().reduce((n, mesh) => n + mesh.count, 0);
+  try {
+    await room.mount({
+      mode: 'preview', player: null, scene, renderer: {}, gpu: null,
+      breathe: async () => {}, onActivate: () => {}, onUpdate: () => {},
+      onDispose: (fn: () => void) => cleanups.push(fn),
+      setTerrainHeight: () => {}, setCollider: () => {}, setWalkBounds: () => {},
+    } as unknown as WorldContext);
+    const original = skins();
+    const originalCount = count();
+    let released = 0;
+    original.forEach(mesh => mesh.geometry.addEventListener('dispose', () => { released++; }));
+    updateJungleSettings({ pathDistance: 3.95 });
+    expect(skins()[0]).toBe(original[0]);
+    expect(skins()[0].position.x).toBeCloseTo(-3);
+    updateJungleSettings({ density: 2 });
+    updateJungleSettings({ density: 0.5 });
+    await vi.waitFor(() => expect(skins()[0]).not.toBe(original[0]), { timeout: 3000 });
+    expect(count()).toBeLessThan(originalCount * 0.6);
+    expect(count()).toBeGreaterThan(originalCount * 0.4);
+    expect(released).toBe(14);
+    expect(skins()[0].position.x).toBeCloseTo(-3);
+    updateJungleSettings(jungleDefaults);
+    await vi.waitFor(() => expect(count()).toBe(originalCount), { timeout: 3000 });
+    expect(skins()[0].position.x).toBeCloseTo(0);
+    // A queued rebuild must not resurrect foliage after the room is disposed.
+    updateJungleSettings({ heightMultiplier: 2 });
+    cleanups.forEach(fn => fn());
+    cleanups.length = 0;
+    await new Promise(resolve => setTimeout(resolve, 120));
+    expect(scene.children).toHaveLength(0);
+  } finally {
+    cleanups.forEach(fn => fn());
+    updateJungleSettings(jungleDefaults);
+  }
 });

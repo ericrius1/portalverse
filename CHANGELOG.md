@@ -2,6 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — live foliage controls — Unreleased (2026-11-28)
+
+### Added
+
+- Added **Jungle controls** with five sliders: distance from path, gap between layers, gap multiplier, height multiplier, and leaf density. The panel opens in the active room and toggles with **H**. Values persist in this browser; **Reset to original look** restores the approved `5df88bc` composition.
+- Distance moves both hedges and their walking boundaries outward. Gap adjusts the first separation, with the gap multiplier adding progressive outward growth. Height exaggerates successive outer crowns while preserving the front wall; density changes leaf count without stretching the leaves.
+
+### Design & engineering decisions
+
+- Preserved the approved rolling path and exact default layer spacing. Spacing edits move existing instances immediately. Height and density edits coalesce into cooperatively built replacements, keeping the previous foliage visible until the latest request is ready and disposing superseded work.
+- Captured deterministic random streams per layer from the approved arrangement, so changing outer heights cannot reshuffle the foreground or the opposite side. Mounted previews share settings, while only the active room owns the panel and shortcut. Extended the ground to cover the spacing controls' range.
+- Tested all five controls in WebGPU, including saved values after reload, exact reset, H, and panel cleanup. Added coverage for parameter bounds, default preservation, outward growth, queued rebuild cancellation, and resource replacement.
+
 ## Jungle Path — spaced, perforated foliage layers — Unreleased (2026-11-28)
 
 ### Changed / Removed

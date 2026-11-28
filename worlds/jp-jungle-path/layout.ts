@@ -19,26 +19,30 @@ export function bankHeight(x: number, z: number): number {
 }
 
 /** Project onto the curved corridor normal, preserving motion along the hedge. */
-export const hedgeCollider: RoomCollider = {
-  move(_from, to, radius) {
-    let x = to[0];
-    let z = to[2];
-    for (let i = 0; i < 8; i++) {
-      const side = x < pathCenter(z) ? -1 : 1;
-      const margin = Math.max(0.15, pathWidth(z) - radius);
-      const excess = side * (x - pathCenter(z)) - margin;
-      if (excess <= 1e-6) break;
-      const delta = 0.01;
-      const slope = (pathCenter(z + delta) - pathCenter(z - delta)) / (2 * delta);
-      const widthSlope = (pathWidth(z + delta) - pathWidth(z - delta)) / (2 * delta);
-      const dz = -side * slope - widthSlope;
-      const correction = excess / (1 + dz * dz);
-      x -= side * correction;
-      z -= dz * correction;
-    }
-    // Exact containment after large teleports, without changing ordinary slides.
-    const margin = Math.max(0.15, pathWidth(z) - radius);
-    x = Math.max(pathCenter(z) - margin, Math.min(pathCenter(z) + margin, x));
-    return [x, z];
-  },
-};
+export function createHedgeCollider(clearance: () => number = () => 0): RoomCollider {
+  return {
+    move(_from, to, radius) {
+      let x = to[0];
+      let z = to[2];
+      for (let i = 0; i < 8; i++) {
+        const side = x < pathCenter(z) ? -1 : 1;
+        const margin = Math.max(0.15, pathWidth(z) + clearance() - radius);
+        const excess = side * (x - pathCenter(z)) - margin;
+        if (excess <= 1e-6) break;
+        const delta = 0.01;
+        const slope = (pathCenter(z + delta) - pathCenter(z - delta)) / (2 * delta);
+        const widthSlope = (pathWidth(z + delta) - pathWidth(z - delta)) / (2 * delta);
+        const dz = -side * slope - widthSlope;
+        const correction = excess / (1 + dz * dz);
+        x -= side * correction;
+        z -= dz * correction;
+      }
+      // Exact containment after large teleports, without changing ordinary slides.
+      const margin = Math.max(0.15, pathWidth(z) + clearance() - radius);
+      x = Math.max(pathCenter(z) - margin, Math.min(pathCenter(z) + margin, x));
+      return [x, z];
+    },
+  };
+}
+
+export const hedgeCollider = createHedgeCollider();
