@@ -619,11 +619,19 @@ export class CosmicMetaView {
       root.add(flakesMesh);
 
       // 4. Crystal TSL snowglobe glass dome (rendered after interior contents)
-      const glass = createSnowglobeGlassMaterial(world.accentColor);
+      //    Refracts the interior + flurry through the liquid lens with spectral
+      //    chromatic aberration; the inner back wall (renderOrder 5) is drawn
+      //    first so its highlights get lensed by the front surface too.
+      const glass = createSnowglobeGlassMaterial(world.accentColor, {
+        spectralSamples: this.isMobile ? 3 : 6,
+      });
       this.trackMat(glass.material);
+      this.trackMat(glass.backMaterial);
+      const glassBackWall = new THREE.Mesh(glassGeo, glass.backMaterial);
+      glassBackWall.renderOrder = 5;
       const glassDome = new THREE.Mesh(glassGeo, glass.material);
       glassDome.renderOrder = 10;
-      root.add(glassDome);
+      root.add(glassBackWall, glassDome);
 
       // 5. Active-world golden orbital astrolabe halo ("You are here")
       const activeHalo = new THREE.Group();
@@ -1166,6 +1174,7 @@ export class CosmicMetaView {
       // Glass shader & base accent glow
       entry.glass.uHover.value = entry.hoverAmount;
       entry.glass.uSelected.value = entry.selectedAmount;
+      entry.glass.uShake.value = Math.min(1.5, entry.shakeEnergy);
       entry.bezelGlowMat.emissiveIntensity = 1.05 + bpmPulse * 0.35 + entry.hoverAmount * 0.55 + entry.selectedAmount * 0.7;
 
       // Active-world golden astrolabe rings

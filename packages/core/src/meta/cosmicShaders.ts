@@ -3,6 +3,8 @@ import {
   Fn,
   abs,
   cameraPosition,
+  cameraProjectionMatrix,
+  cameraViewMatrix,
   clamp,
   cos,
   dot,
@@ -13,19 +15,23 @@ import {
   length,
   max,
   mix,
+  modelPosition,
   normalize,
   positionLocal,
   positionWorld,
-  normalWorld,
   pow,
   reflect,
+  refract,
+  screenUV,
   sin,
   smoothstep,
   time,
   uniform,
   uv,
+  vec2,
   vec3,
   vec4,
+  viewportTexture,
 } from 'three/tsl';
 import type { ConstellationSpec } from './constellations';
 
@@ -112,86 +118,244 @@ export function createCosmicSkyMaterial(): THREE.MeshBasicNodeMaterial {
 
 export interface SnowglobeGlassHandle {
   material: THREE.MeshBasicNodeMaterial;
+  /** Faint additive inner back wall (second highlight + rim seen through the liquid). */
+  backMaterial: THREE.MeshBasicNodeMaterial;
   uHover: { value: number };
   uSelected: { value: number };
+  /** 0..1+ shake energy: sloshes the liquid lens and widens the dispersion. */
+  uShake: { value: number };
   uAccent: { value: THREE.Color };
 }
 
+export interface SnowglobeGlassOptions {
+  /** Spectral samples for the dispersion (3 on phones, 6 on desktop). */
+  spectralSamples?: number;
+}
+
 /**
- * Crystal-clear snowglobe glass dome shader with Fresnel rim glow, subtle
- * prismatic iridescence, and dual curved studio specular reflections so every
- * globe reads immediately as blown glass while keeping the 3D diorama crisp inside.
+ * One framebuffer copy per render, shared by every globe. Sampled through
+ * `.sample(uv)` so all glass materials reference the same base node (three
+ * keys the copy on the texture, so 16 globes still cost a single copy), and
+ * linear-filtered so the magnified interior stays smooth instead of the
+ * nearest-filtered blockiness of `viewportSharedTexture`.
  */
-export function createSnowglobeGlassMaterial(accentHex: string): SnowglobeGlassHandle {
+let glassBackdropNode: ReturnType<typeof viewportTexture> | null = null;
+function getGlassBackdrop(): ReturnType<typeof viewportTexture> {
+  if (!glassBackdropNode) {
+    const tex = new THREE.FramebufferTexture(1, 1);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    glassBackdropNode = viewportTexture(screenUV, null, tex);
+  }
+  return glassBackdropNode;
+}
+
+/** World point → screen UV (WebGPU convention, y down), clamped on screen. */
+type Vec3Node = THREE.Node<'vec3'>;
+
+function worldToScreenUV(p: Vec3Node) {
+  const clip = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(p, 1.0));
+  const ndc = clip.xy.div(max(clip.w, 0.0001));
+  return clamp(vec2(ndc.x.mul(0.5).add(0.5), ndc.y.mul(-0.5).add(0.5)), 0.001, 0.999);
+}
+
+/**
+ * Studio + cosmos environment seen in the glass: camera-locked softbox panels
+ * (a mullioned window up-left, a tall strip light on the right, a floor
+ * bounce) so every globe always catches the same crisp product-shot
+ * reflections, plus a world-space nebula band and star glints that slide
+ * across the glass as you orbit.
+ */
+function glassEnvironment(rWorld: Vec3Node, accent: THREE.Node<'vec3'> | THREE.Node<'color'>): Vec3Node {
+  const rv = normalize(cameraViewMatrix.mul(vec4(rWorld, 0.0)).xyz);
+
+  // Cosmic base: deep indigo below, violet haze above, a hint of the accent
+  let env: Vec3Node = mix(vec3(0.012, 0.016, 0.05), vec3(0.07, 0.06, 0.17), smoothstep(-0.4, 0.8, rWorld.y));
+  const band = exp(rWorld.y.mul(0.76).add(rWorld.x.mul(0.48)).sub(rWorld.z.mul(0.44)).pow(2.0).negate().mul(9.0));
+  env = env.add(mix(vec3(0.16, 0.42, 0.7), vec3(0.62, 0.3, 0.7), rWorld.x.mul(0.5).add(0.5)).mul(band.mul(0.32)));
+  env = env.add(accent.mul(0.05));
+
+  // Star glints in the reflection
+  const cell = floor(rWorld.mul(46.0));
+  const h = fract(sin(dot(cell, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+  env = env.add(vec3(1.0, 0.96, 0.9).mul(smoothstep(0.985, 0.999, h).mul(1.6)));
+
+  // Mullioned window softbox up-left (behind the viewer: rv.z > 0)
+  const facing = smoothstep(0.05, 0.35, rv.z);
+  const winX = smoothstep(-0.84, -0.8, rv.x).mul(smoothstep(-0.2, -0.24, rv.x));
+  const winY = smoothstep(0.26, 0.3, rv.y).mul(smoothstep(0.84, 0.8, rv.y));
+  const mullionX = smoothstep(0.0, 0.018, abs(rv.x.add(0.52)));
+  const mullionY = smoothstep(0.0, 0.018, abs(rv.y.sub(0.55)));
+  const windowPane = winX.mul(winY).mul(mullionX).mul(mullionY).mul(facing);
+  env = env.add(vec3(1.0, 0.98, 0.95).mul(windowPane.mul(3.2)));
+
+  // Tall cool strip light on the right
+  const strip = smoothstep(0.5, 0.54, rv.x)
+    .mul(smoothstep(0.66, 0.62, rv.x))
+    .mul(smoothstep(-0.7, -0.5, rv.y))
+    .mul(smoothstep(0.75, 0.55, rv.y))
+    .mul(facing);
+  env = env.add(vec3(0.72, 0.86, 1.0).mul(strip.mul(2.4)));
+
+  // Warm floor bounce from the brass pedestals
+  env = env.add(vec3(0.9, 0.62, 0.3).mul(smoothstep(-0.55, -0.95, rv.y).mul(0.22)));
+  return env;
+}
+
+/**
+ * Liquid-filled crystal snowglobe: the interior is refracted through the
+ * front surface (a real ray–sphere path projected back to the screen, so the
+ * diorama magnifies like a water ball), split into a spectrum for chromatic
+ * aberration that blooms into rainbow fringes toward the rim, Fresnel-mixed
+ * with studio softbox reflections, thin-film iridescence, a dark
+ * total-internal-reflection edge and a bright accent rim. Shaking the globe
+ * sloshes the liquid lens.
+ */
+export function createSnowglobeGlassMaterial(
+  accentHex: string,
+  options: SnowglobeGlassOptions = {},
+): SnowglobeGlassHandle {
   const uAccent = uniform(new THREE.Color(accentHex));
   const uHover = uniform(0.0);
   const uSelected = uniform(0.0);
+  const uShake = uniform(0.0);
+  const samples = Math.max(3, Math.min(8, Math.round(options.spectralSamples ?? 6)));
+  const backdrop = getGlassBackdrop();
 
   const material = new THREE.MeshBasicNodeMaterial({
+    // Transparent so it draws after the interior + flurry, but the output is
+    // opaque: what lies behind the glass arrives through the refraction. It
+    // writes depth so later transparents behind it (other globes' labels)
+    // can't paint over the lens unrefracted.
     transparent: true,
-    depthWrite: false,
+    depthWrite: true,
     side: THREE.FrontSide,
     fog: false,
   });
 
   const glassFn = Fn(() => {
-    const n = normalize(normalWorld);
+    const center = modelPosition;
+    const toSurf = positionWorld.sub(center);
+    const nGeo = normalize(toSurf);
+
+    // Liquid slosh: a gentle idle shimmer, much stronger while shaken
+    const wobAmt = uShake.mul(0.11).add(0.01);
+    const wave = vec3(
+      sin(nGeo.y.mul(9.0).add(nGeo.z.mul(4.0)).add(time.mul(3.1))),
+      sin(nGeo.z.mul(8.0).add(nGeo.x.mul(5.0)).add(time.mul(2.7))),
+      sin(nGeo.x.mul(10.0).add(nGeo.y.mul(3.0)).add(time.mul(3.4))),
+    );
+    const n = normalize(nGeo.add(wave.mul(wobAmt)));
+
     const viewDir = normalize(cameraPosition.sub(positionWorld));
+    const incident = viewDir.negate();
     const ndotv = clamp(dot(n, viewDir), 0.0, 1.0);
-    const fresnel = pow(float(1.0).sub(ndotv), 2.55);
-    const sharpRim = pow(float(1.0).sub(ndotv), 5.2);
+    const grazing = float(1.0).sub(ndotv);
+    const fresnel = float(0.04).add(float(0.96).mul(pow(grazing, 5.0)));
 
-    // Dual analytical cosmic studio light highlights on the glass curvature
-    const keyDir = normalize(vec3(0.55, 0.78, 0.42));
-    const rimDir = normalize(vec3(-0.68, 0.45, -0.58));
-    const halfKey = normalize(keyDir.add(viewDir));
-    const halfRim = normalize(rimDir.add(viewDir));
+    // --- Refraction with spectral dispersion -------------------------------
+    const spread = float(0.045).mul(float(1.0).add(uHover.mul(0.6)).add(uShake.mul(1.1)));
+    // Per-pixel jitter of the wavelength positions turns the few discrete
+    // spectral copies into a continuous rainbow smear instead of ghost images.
+    const jitter = fract(sin(dot(screenUV.mul(vec2(1543.0, 877.0)), vec2(12.9898, 78.233))).mul(43758.5453))
+      .sub(0.5)
+      .mul(1.0 / samples);
+    let transmitted: Vec3Node = vec3(0.0);
+    const wSum = [0, 0, 0];
+    const weights: Array<[number, number, number]> = [];
+    for (let i = 0; i < samples; i++) {
+      const t = i / (samples - 1);
+      const w: [number, number, number] = [
+        Math.max(0, 1 - 1.6 * t),
+        Math.max(0, 1 - 2 * Math.abs(t - 0.5)),
+        Math.max(0, 1 - 1.6 * (1 - t)),
+      ];
+      weights.push(w);
+      wSum[0] += w[0];
+      wSum[1] += w[1];
+      wSum[2] += w[2];
+    }
+    for (let i = 0; i < samples; i++) {
+      const t = float(i / (samples - 1) - 0.5).add(jitter);
+      const ior = float(1.17).add(spread.mul(t));
+      const r = refract(incident, n, float(1.0).div(ior));
+      // Distance to the far wall along the refracted ray; look halfway in,
+      // where the diorama sits, so the whole interior magnifies.
+      const tExit = max(dot(r, toSurf).mul(-2.0), 0.0);
+      const uvR = worldToScreenUV(positionWorld.add(r.mul(tExit.mul(0.5))));
+      const [wr, wg, wb] = weights[i];
+      const weight = vec3(wr / wSum[0], wg / wSum[1], wb / wSum[2]);
+      transmitted = transmitted.add(backdrop.sample(uvR).rgb.mul(weight));
+    }
 
-    const specSharp = pow(max(dot(n, halfKey), 0.0), 96.0);
-    const specSoft = pow(max(dot(n, halfKey), 0.0), 16.0).mul(0.28);
-    const specBack = pow(max(dot(n, halfRim), 0.0), 36.0).mul(0.45);
+    // Faint liquid tint, deeper through the thick middle, accent-leaning when selected
+    const tint = mix(vec3(0.9, 0.97, 1.0), uAccent, float(0.16).add(uSelected.mul(0.14)));
+    transmitted = transmitted.mul(mix(vec3(1.0), tint, ndotv.mul(0.6)));
 
-    // Curved gallery window sheen band near upper-left glass shoulder
-    const refl = reflect(viewDir.negate(), n);
-    const windowArc = smoothstep(float(0.62), float(0.88), refl.y).mul(
-      smoothstep(float(0.15), float(0.75), refl.x.add(0.4)),
-    );
+    // --- Reflection ---------------------------------------------------------
+    const reflDir = reflect(incident, n);
+    let reflected: Vec3Node = glassEnvironment(reflDir, uAccent);
 
-    // Subtle soap-bubble iridescence near grazing angles
-    const iriPhase = fresnel.mul(5.2).add(time.mul(0.55));
+    // Thin-film iridescence: film thickness drifts across the surface
+    const film = sin(dot(nGeo, vec3(3.1, 5.3, 2.2)).add(time.mul(0.35))).mul(0.5).add(0.5);
+    const iriPhase = film.mul(5.5).add(grazing.mul(6.0)).add(time.mul(0.4));
     const irid = vec3(
-      sin(iriPhase).mul(0.5).add(0.5),
-      sin(iriPhase.add(2.094)).mul(0.5).add(0.5),
-      sin(iriPhase.add(4.188)).mul(0.5).add(0.5),
+      cos(iriPhase).mul(0.5).add(0.5),
+      cos(iriPhase.sub(2.094)).mul(0.5).add(0.5),
+      cos(iriPhase.sub(4.188)).mul(0.5).add(0.5),
     );
+    reflected = reflected.mul(mix(vec3(1.0), irid.mul(1.7), smoothstep(0.25, 0.9, grazing).mul(0.55)));
 
-    const activeBoost = float(1.0).add(uHover.mul(0.55)).add(uSelected.mul(0.85));
-    const glassTint = mix(vec3(0.78, 0.92, 1.0), uAccent, float(0.48).add(uSelected.mul(0.25)));
-    const rimColor = mix(glassTint, irid, 0.24).mul(fresnel.mul(0.95).add(sharpRim.mul(0.85))).mul(activeBoost);
-    const highlightColor = vec3(0.98, 0.99, 1.0)
-      .mul(specSharp.mul(1.45).add(specSoft).add(windowArc.mul(0.22)))
-      .add(uAccent.mul(specBack.mul(0.85)));
+    // Sharp key specular + hover light sweep gliding across the glass
+    const keyDir = normalize(vec3(0.55, 0.78, 0.42));
+    const halfKey = normalize(keyDir.add(viewDir));
+    const nh = max(dot(n, halfKey), 0.0);
+    const spec = pow(nh, 900.0).mul(3.0).add(pow(nh, 220.0).mul(0.05));
+    const rv = normalize(cameraViewMatrix.mul(vec4(reflDir, 0.0)).xyz);
+    const sweepPhase = fract(time.mul(0.28)).mul(3.2).sub(1.6);
+    const sweep = smoothstep(0.035, 0.0, abs(rv.x.add(rv.y).mul(0.7).sub(sweepPhase)))
+      .mul(uHover.add(uSelected.mul(0.25)))
+      .mul(0.35);
 
-    const rgb = rimColor.add(highlightColor);
-    const alpha = clamp(
-      float(0.045)
-        .add(fresnel.mul(0.46).mul(activeBoost))
-        .add(specSharp.mul(0.85))
-        .add(specSoft.mul(0.32))
-        .add(windowArc.mul(0.16))
-        .add(specBack.mul(0.28)),
-      0.0,
-      0.92,
-    );
+    // --- Edge -------------------------------------------------------------------
+    // Dark total-internal-reflection band right at the silhouette, then a
+    // bright accent rim just inside it (the glass wall seen edge-on).
+    const tirEdge = smoothstep(0.0, 0.16, ndotv);
+    const activeBoost = float(1.0).add(uHover.mul(0.6)).add(uSelected.mul(0.9));
+    const rimBand = smoothstep(0.08, 0.2, ndotv).mul(smoothstep(0.42, 0.2, ndotv));
+    const rimCol = mix(vec3(0.75, 0.9, 1.0), uAccent, 0.55).mul(rimBand.mul(0.55).mul(activeBoost));
 
-    return vec4(rgb, alpha);
+    let rgb: Vec3Node = mix(transmitted, reflected, fresnel).mul(tirEdge);
+    rgb = rgb.add(rimCol).add(vec3(1.0, 0.99, 0.97).mul(spec.add(sweep)));
+    return rgb;
   });
 
-  const out = glassFn();
-  material.colorNode = out.xyz;
-  material.opacityNode = out.w;
+  material.colorNode = glassFn();
+  material.opacityNode = float(1.0);
 
-  return { material, uHover, uSelected, uAccent };
+  // Inner back wall: drawn additively before the flurry and front glass, so it
+  // lands in the backdrop copy and gets lensed by the front surface — the
+  // classic double highlight of a real glass ball.
+  const backMaterial = new THREE.MeshBasicNodeMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  });
+  backMaterial.colorNode = Fn(() => {
+    const nIn = normalize(modelPosition.sub(positionWorld)); // inward-facing
+    const viewDir = normalize(cameraPosition.sub(positionWorld));
+    const ndotv = clamp(dot(nIn, viewDir), 0.0, 1.0);
+    const reflDir = reflect(viewDir.negate(), nIn);
+    const env = glassEnvironment(reflDir, uAccent);
+    const hot = max(env.sub(0.6), vec3(0.0)); // keep only the bright softboxes
+    const rim = pow(float(1.0).sub(ndotv), 3.0).mul(0.18).mul(float(1.0).add(uSelected));
+    return hot.mul(0.35).add(uAccent.mul(rim));
+  })();
+
+  return { material, backMaterial, uHover, uSelected, uShake, uAccent };
 }
 
 /**

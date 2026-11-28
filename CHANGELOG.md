@@ -42,6 +42,23 @@ Notable changes and design decisions in **Portalverse**, newest first. Each sect
 
 - **Synchronous projection + restore around `WebGPURenderer.compileAsync(object, camera, targetScene)`:** In Three.js r181+ WebGPU, `compileAsync` synchronously projects `object` with `targetScene`'s lights before its first `await`. Temporarily setting `visible = true` only across that synchronous call lets us pre-compile hidden FPS avatars without a 1-frame pop or a separate staging scene, while serializing through `PortalPreviews`'s existing `compiling` lock prevents overlapping `compileAsync` races.
 
+## Refractive liquid-glass snowglobes in the Meta View — Unreleased (2026-11-27)
+
+### Changed
+
+- **Snowglobe glass (`packages/core/src/meta/cosmicShaders.ts`, `CosmicMetaView.ts`)**:
+  - The glass now refracts its interior: each pixel traces the refracted ray into the sphere, projects the point halfway to the far wall back onto the screen and samples the frame there, so the diorama and flurry magnify like a water-filled ball and compress toward the rim.
+  - Chromatic aberration: the refraction is taken at 6 wavelengths (3 on phones) with a per-pixel jitter, giving smooth rainbow fringes on snowflakes and edges. Dispersion widens on hover and when the globe is shaken.
+  - Fresnel-mixed reflections of a studio environment (mullioned window softbox, tall strip light, warm floor bounce, nebula band and star glints), thin-film iridescence that drifts across the surface, a dark total-internal-reflection edge with a bright accent rim, a tight key specular and a light sweep on hover.
+  - An additive inner back wall drawn before the front glass, so its highlights get lensed by the front surface (the double highlight of real glass).
+  - Shaking a globe (`Space`) sloshes the liquid lens.
+
+### Design & engineering decisions
+
+- **One linear-filtered framebuffer copy shared by all globes:** a single module-level `viewportTexture` node is sampled with `.sample(uv)` from every glass material. three keys the copy on the texture, so 16 globes cost one copy per frame, and linear filtering keeps the magnified interior smooth (`viewportSharedTexture` is nearest-filtered). The frame target is half-float linear (ACES runs in the output pass), so the copy needs no colour conversion.
+- **Opaque output, depth write on:** what is behind the glass arrives through the refraction, so the glass writes alpha 1 and depth. Without depth write, the labels of globes further back (drawn later) painted over the lens unrefracted.
+- **Tradeoff:** where two globes overlap on screen, the front one refracts the back one without its glass (the copy is taken before the first glass draws). That's rare in the layout and not worth a copy per globe.
+
 ## Cosmic Snowglobe Meta View & Celestial Constellations — Unreleased (2026-11-27)
 
 ### Added
