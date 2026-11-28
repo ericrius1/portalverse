@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { jungleDefaults, gapCurves, heightCurves, jungleOriginal, layerDepth, layerHeightOffset, layerLeafSize, normalizeSettings } from './tuning';
+import { jungleDefaults, gapCurves, heightCurves, jungleOriginal, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, normalizeSettings } from './tuning';
 
 describe('Jungle tuning', () => {
   it('resets to the exact approved depth and height arrangement', () => {
@@ -48,8 +48,38 @@ describe('Jungle tuning', () => {
     expect(layerLeafSize(3, sizes)).toBeCloseTo(0.75);
     expect(layerLeafSize(6, sizes)).toBeCloseTo(1.2);
     for (let layer = 0; layer < 7; layer++) {
-      expect(layerLeafSize(layer, { ...sizes, density: 2 })).toBe(layerLeafSize(layer, sizes));
+      expect(layerLeafSize(layer, { ...sizes, densityNear: 2, densityFar: 2 })).toBe(layerLeafSize(layer, sizes));
       expect(layerLeafSize(layer, { ...sizes, leafSizeNear: 0.5, leafSizeFar: 0.5 })).toBe(0.5);
+    }
+  });
+  it('interpolates independent near/far density and migrates the former single setting', () => {
+    const settings = { ...jungleDefaults, densityNear: 0.4, densityFar: 1.6 };
+    expect(layerDensity(0, settings)).toBeCloseTo(0.4);
+    expect(layerDensity(3, settings)).toBeCloseTo(1);
+    expect(layerDensity(6, settings)).toBeCloseTo(1.6);
+    const migrated = normalizeSettings({ density: 1.35, leafSizeNear: 0.45, heightCurve: 'steep' });
+    expect(migrated.densityNear).toBe(1.35);
+    expect(migrated.densityFar).toBe(1.35);
+    expect(migrated.leafSizeNear).toBe(0.45);
+    expect(migrated.heightCurve).toBe('steep');
+    const explicit = normalizeSettings({ density: 1.35, densityNear: 0.6, densityFar: 1.7 });
+    expect(explicit.densityNear).toBe(0.6);
+    expect(explicit.densityFar).toBe(1.7);
+  });
+  it('varies depth in both directions without consuming placement randomness or closing layer gaps', () => {
+    for (let layer = 0; layer < 7; layer++) {
+      expect(leafDepthAmplitude(layer, jungleOriginal)).toBe(0);
+      const settings = { ...jungleDefaults, leafDepthVariation: 1, layerGap: 0.5 };
+      expect(leafDepthAmplitude(layer, settings)).toBeGreaterThan(0);
+      const samples = Array.from({ length: 80 }, (_, i) => leafDepthSample(i, layer, 1));
+      expect(Math.min(...samples)).toBeLessThan(-0.8);
+      expect(Math.max(...samples)).toBeGreaterThan(0.8);
+      expect(samples.every(n => Math.abs(n) <= 1)).toBe(true);
+      expect(leafDepthSample(27, layer, 1)).toBe(samples[27]);
+      if (layer < 6) {
+        const gap = layerDepth(layer + 1, settings) - layerDepth(layer, settings);
+        expect(leafDepthAmplitude(layer, settings) + leafDepthAmplitude(layer + 1, settings)).toBeLessThan(gap);
+      }
     }
   });
   it('recovers from invalid saved settings and bounds extreme values', () => {
@@ -58,7 +88,8 @@ describe('Jungle tuning', () => {
     expect(normalizeSettings({ density: 1.4 }).leafSizeNear).toBe(0.65);
     expect(normalizeSettings({ density: NaN, pathDistance: '3' })).toEqual(jungleDefaults);
     const bounded = normalizeSettings({ density: -2, heightMultiplier: 200, gapMultiplier: Infinity });
-    expect(bounded.density).toBe(0.25);
+    expect(bounded.densityNear).toBe(0.25);
+    expect(bounded.densityFar).toBe(0.25);
     expect(bounded.heightMultiplier).toBe(2.5);
     expect(bounded.gapMultiplier).toBe(1);
   });

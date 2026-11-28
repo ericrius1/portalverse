@@ -3,7 +3,7 @@ import { attribute, color, float, fract, mix, positionLocal, positionView, posit
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { seededRandom } from '@portalverse/core/rooms/kit';
 import { bankHeight, FIELD_HALF_LENGTH, createHedgeCollider, pathCenter, pathWidth } from './layout';
-import { getJungleSettings, jungleDefaults, layerDepth, layerHeightOffset, layerLeafSize, sameFoliageShape, observeJungleSettings, type JungleSettings } from './tuning';
+import { getJungleSettings, jungleDefaults, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, sameFoliageShape, observeJungleSettings, type JungleSettings } from './tuning';
 import { mountJungleControls } from './controls';
 
 // Quantized directly from JP's supplied painting. See CREDITS.md for regions.
@@ -170,8 +170,9 @@ export default defineRoom('jp-jungle-path', {
           for (let layer = 0; layer < 7; layer++) {
             const random = seededRandom(layoutSeeds.skins.get(`${side}:${layer}`)!);
             const placements: Array<{ z: number; y: number }> = [];
-            const stepZ = 0.66 / Math.sqrt(settings.density);
-            const stepY = 0.82 / Math.sqrt(settings.density);
+            const density = layerDensity(layer, settings);
+            const stepZ = 0.66 / Math.sqrt(density);
+            const stepY = 0.82 / Math.sqrt(density);
             for (let column = 0; column < Math.ceil(FIELD_HALF_LENGTH * 2 / stepZ); column++) {
               const z0 = -FIELD_HALF_LENGTH + column * stepZ + (layer * 0.618 % 1) * stepZ;
               const top = crown(z0, layer, side) + layerHeightOffset(layer, settings);
@@ -201,10 +202,20 @@ export default defineRoom('jp-jungle-path', {
               temp.position.set(x, y, z);
               const slope = (skinX(z + 0.02, y, layer, side) - skinX(z - 0.02, y, layer, side)) / 0.04;
               normal.set(-side, 0, side * slope).normalize();
+              const depthSample = leafDepthSample(i, layer, side);
+              temp.position.addScaledVector(normal, depthSample * leafDepthAmplitude(layer, settings) / Math.hypot(1, slope));
+              // Keep inward-displaced anchors clear of the trail at every bend.
+              // Spacing is applied as a mesh translation after building the bank.
+              if (layer === 0 && settings.leafDepthVariation > 0) {
+                const translation = side * (layerDepth(layer, settings) - layerDepth(layer, jungleDefaults));
+                const worldX = temp.position.x + translation;
+                const edge = pathCenter(temp.position.z) + side * (pathWidth(temp.position.z) + 0.25);
+                if (side * (worldX - edge) < 0) temp.position.x = edge - translation;
+              }
               temp.quaternion.setFromUnitVectors(FRONT, normal);
               // Flowing, alternating hangs, with small irregularity rather than a fan.
               temp.rotateZ(Math.sin(z * 0.75 + y * 1.4 + layer) * 0.65 + (random() - 0.5) * 0.8);
-              temp.rotateY((random() - 0.5) * 0.18);
+              temp.rotateY((random() - 0.5) * 0.18 + depthSample * settings.leafDepthVariation * 0.35);
               temp.scale.set(0.8 + random() * 0.45, 0.78 + random() * 0.42, 1);
               temp.scale.multiplyScalar(layerLeafSize(layer, settings));
               temp.updateMatrix();
@@ -292,7 +303,11 @@ export default defineRoom('jp-jungle-path', {
       applySpacing(foliage, settings);
       const request = ++revision;
       clearTimeout(rebuildTimer);
-      if (sameFoliageShape(settings, foliage.settings)) return;
+      const sameDepthLayout = settings.leafDepthVariation === 0 || (
+        settings.pathDistance === foliage.settings.pathDistance && settings.layerGap === foliage.settings.layerGap
+        && settings.gapMultiplier === foliage.settings.gapMultiplier && settings.gapCurve === foliage.settings.gapCurve
+      );
+      if (sameFoliageShape(settings, foliage.settings) && sameDepthLayout) return;
       rebuildTimer = setTimeout(() => {
         const isCurrent = () => !disposed && request === revision;
         void buildFoliage(settings, isCurrent).then(next => {

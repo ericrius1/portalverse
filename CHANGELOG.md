@@ -2,6 +2,20 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — individual leaf depth and near/far density — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Added **Leaf depth variation**: stable inward/outward offsets and gentle individual tilts give each foliage screen thickness and more varied overlap. Starts at 45%; zero restores flat screens. Displacement follows each screen's normal, is bounded by neighboring layer gaps, and keeps foreground anchors out of the path.
+- Replaced the single density slider with **Density near** and **Density far**, interpolated across all seven layers independently of leaf sizes. Existing browser density values migrate to both endpoints; other saved tuning is preserved. Moved the leaf controls to the top of the panel.
+- **Reset to original look** still restores flat layers, original leaf sizes, and 100% density at both ends.
+
+### Design & engineering decisions
+
+- JP's screenshots showed that layered depth read well from some angles but looked too flat from others. Per-leaf offsets and tilts add parallax and irregular overlap without replacing the rolling screens. Reducing near density can expose more of the cool layers behind while keeping the distant wall dense.
+- Separate deterministic depth noise preserves existing colors, sizes, and counts when adjusting thickness. Density and depth changes use the existing cancellable, cooperative foliage rebuild, including spacing changes that affect safe layer depth.
+- Tests cover density interpolation, saved-value migration, deterministic depth variation, and layer-gap bounds. WebGPU checks verify inward and outward movement, unchanged colors/sizes/counts, per-layer density, reload persistence, and reset; frontal and oblique views were inspected.
+
 ## Jungle Path — depth curves and near/far leaf sizes — Unreleased (2026-11-28)
 
 ### Added / Changed

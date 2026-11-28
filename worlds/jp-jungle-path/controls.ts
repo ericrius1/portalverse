@@ -16,13 +16,15 @@ export function mountJungleControls(): () => void {
   hint.style.cssText = 'margin:0 0 12px;color:#adbfad;font-size:12px;';
   panel.append(hint);
   const labels: Record<JungleKey, [string, string]> = {
+    leafDepthVariation: ['Leaf depth variation', 'Moves and tilts individual leaves in and out. Zero restores flat layers.'],
+    leafSizeNear: ['Leaf size near', 'Size of leaves in the first layer.'],
+    densityNear: ['Density near', 'Fewer foreground leaves reveal more layers behind.'],
+    leafSizeFar: ['Leaf size far', 'Size in the last layer; layers between blend smoothly.'],
+    densityFar: ['Density far', 'Density in the last layer; layers between blend smoothly.'],
     pathDistance: ['Distance from path', 'Moves the whole hedge away from the path.'],
     layerGap: ['Gap between layers', 'Sets the first gap; later gaps grow outward.'],
     gapMultiplier: ['Gap multiplier', 'Adds outward growth to each successive gap.'],
     heightMultiplier: ['Height multiplier', 'Exaggerates the rise toward the back; the first wall stays put.'],
-    leafSizeNear: ['Leaf size near', 'Size of leaves in the first layer.'],
-    leafSizeFar: ['Leaf size far', 'Size in the last layer; layers between blend smoothly.'],
-    density: ['Density of leaves', 'Adds or removes leaves without changing their size.'],
   };
   const refreshers: Array<(settings: JungleSettings) => void> = [];
   function curvePicker(key: 'gapCurve' | 'heightCurve', title: string, options: Record<string, string>, help: string) {
@@ -71,7 +73,7 @@ export function mountJungleControls(): () => void {
     input.addEventListener('input', () => updateJungleSettings({ [key]: Number(input.value) }));
     refreshers.push(settings => {
       input.value = String(settings[key]);
-      value.value = key === 'density' || key === 'leafSizeNear' || key === 'leafSizeFar' ? `${Math.round(settings[key] * 100)}%`
+      value.value = key === 'densityNear' || key === 'densityFar' || key === 'leafDepthVariation' || key === 'leafSizeNear' || key === 'leafSizeFar' ? `${Math.round(settings[key] * 100)}%`
         : `${settings[key].toFixed(2)}${key === 'pathDistance' || key === 'layerGap' ? ' m' : '×'}`;
       input.setAttribute('aria-valuetext', value.value);
     });

@@ -15,7 +15,9 @@ export interface JungleSettings {
   layerGap: number;
   gapMultiplier: number;
   heightMultiplier: number;
-  density: number;
+  densityNear: number;
+  densityFar: number;
+  leafDepthVariation: number;
   leafSizeNear: number;
   leafSizeFar: number;
   gapCurve: keyof typeof gapCurves;
@@ -27,20 +29,24 @@ export const jungleDefaults: JungleSettings = {
   layerGap: 2,
   gapMultiplier: 1,
   heightMultiplier: 1,
-  density: 1,
+  densityNear: 1,
+  densityFar: 1,
+  leafDepthVariation: 0.45,
   leafSizeNear: 0.65,
   leafSizeFar: 1,
   gapCurve: 'gradual',
   heightCurve: 'gradual',
 };
 /** Preserve the original approved composition as an explicit reset preset. */
-export const jungleOriginal: JungleSettings = { ...jungleDefaults, leafSizeNear: 1 };
+export const jungleOriginal: JungleSettings = { ...jungleDefaults, leafSizeNear: 1, leafDepthVariation: 0 };
 export const jungleRanges: Record<JungleKey, readonly [number, number, number]> = {
   pathDistance: [0.6, 8, 0.05],
   layerGap: [0.5, 4, 0.05],
   gapMultiplier: [1, 1.3, 0.01],
   heightMultiplier: [0.5, 2.5, 0.05],
-  density: [0.25, 2, 0.05],
+  densityNear: [0.25, 2, 0.05],
+  densityFar: [0.25, 2, 0.05],
+  leafDepthVariation: [0, 1, 0.05],
   leafSizeNear: [0.2, 1.5, 0.05],
   leafSizeFar: [0.2, 1.5, 0.05],
 };
@@ -50,7 +56,8 @@ export function normalizeSettings(saved: unknown): JungleSettings {
   if (!saved || typeof saved !== 'object') return result;
   const values = saved as Record<string, unknown>;
   for (const key of Object.keys(jungleRanges) as JungleKey[]) {
-    const value = values[key];
+    // Preserve the previous single-density setting at both endpoints.
+    const value = values[key] ?? (key === 'densityNear' || key === 'densityFar' ? values.density : undefined);
     if (typeof value !== 'number' || !Number.isFinite(value)) continue;
     result[key] = Math.max(jungleRanges[key][0], Math.min(jungleRanges[key][1], value));
   }
@@ -89,9 +96,29 @@ export function layerLeafSize(layer: number, settings: JungleSettings): number {
   return settings.leafSizeNear + (settings.leafSizeFar - settings.leafSizeNear) * layer / 6;
 }
 
+export function layerDensity(layer: number, settings: JungleSettings): number {
+  return settings.densityNear + (settings.densityFar - settings.densityNear) * layer / 6;
+}
+
+/** Maximum movement normal to the screen, bounded by its nearest layer gap. */
+export function leafDepthAmplitude(layer: number, settings: JungleSettings): number {
+  const ahead = layer > 0 ? layerDepth(layer, settings) - layerDepth(layer - 1, settings) : Infinity;
+  const behind = layer < 6 ? layerDepth(layer + 1, settings) - layerDepth(layer, settings) : Infinity;
+  return Math.min(ahead, behind) * 0.4 * settings.leafDepthVariation;
+}
+
+/** Separate deterministic noise leaves placement, colour, and size streams unchanged. */
+export function leafDepthSample(index: number, layer: number, side: number): number {
+  let hash = Math.imul(index + 1, 374761393) ^ Math.imul(layer + 1, 668265263) ^ Math.imul(side, 1274126177);
+  hash = Math.imul(hash ^ (hash >>> 13), 1274126177);
+  return ((hash ^ (hash >>> 16)) >>> 0) / 4294967295 * 2 - 1;
+}
+
 export function sameFoliageShape(a: JungleSettings, b: JungleSettings): boolean {
   return a.heightMultiplier === b.heightMultiplier && a.heightCurve === b.heightCurve
-    && a.density === b.density && a.leafSizeNear === b.leafSizeNear && a.leafSizeFar === b.leafSizeFar;
+    && a.densityNear === b.densityNear && a.densityFar === b.densityFar
+    && a.leafDepthVariation === b.leafDepthVariation
+    && a.leafSizeNear === b.leafSizeNear && a.leafSizeFar === b.leafSizeFar;
 }
 
 const storageKey = 'jp-jungle-path.tuning.v1';

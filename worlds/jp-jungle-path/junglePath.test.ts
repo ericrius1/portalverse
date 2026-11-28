@@ -134,8 +134,8 @@ it('updates spacing immediately and coalesces density edits in a mounted preview
     updateJungleSettings({ pathDistance: 3.95 });
     expect(skins()[0]).toBe(original[0]);
     expect(skins()[0].position.x).toBeCloseTo(-3);
-    updateJungleSettings({ density: 2 });
-    updateJungleSettings({ density: 0.5 });
+    updateJungleSettings({ densityNear: 2, densityFar: 2 });
+    updateJungleSettings({ densityNear: 0.5, densityFar: 0.5 });
     await vi.waitFor(() => expect(skins()[0]).not.toBe(original[0]), { timeout: 3000 });
     expect(count()).toBeLessThan(originalCount * 0.6);
     expect(count()).toBeGreaterThan(originalCount * 0.4);
