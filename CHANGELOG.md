@@ -2,6 +2,60 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Reef — production atmosphere preset — Unreleased (2026-11-28)
+
+### Changed
+
+- Restricted the Reef fog tuning panel and saved experimental density overrides to development. Production ships the approved 46% fog density without a tuning panel.
+
+### Design & engineering decisions
+
+- Release the approved undersea water and creature updates with the same clean production experience as Jungle Path; retain the authoring slider for local development.
+
+## Reef approved fog density — Unreleased (2026-11-28)
+
+### Changed
+
+- Set Reef's default fog density to **46%**, following JP's visual tuning. Bumped the saved-settings version so earlier experiments do not override the approved default; the slider remains available.
+
+## Reef fog controls, continuous jellyfish, and swimming creatures — Unreleased (2026-11-28)
+
+### Added / Fixed
+
+- Added an active-room **Fog density** slider (0–150%, saved locally), defaulting to 75% for a less hazy view. 100% restores the CollectivSea range. Mounted Reef instances share settings; the same fog object updates so portal shaders do not recompile on input.
+- Removed the jellyfish's hard reset from y=15 to y=2.5. They now drift continuously up and down on bounded, shared-clock paths. Corrected bell masking for the models' actual local coordinates and expanded culling bounds for shader movement.
+- Light shafts fade along both ends, across their sides, and before meeting the y=26 surface, removing their bright rectangular ceiling cutoffs.
+- Corrected the ray's forward axis to -X. Added procedural ray wing/tail strokes and turtle flipper strokes; both supplied GLBs are static meshes without animation clips or skeletons. Central bodies remain stable, with expanded culling bounds for the moving extremities.
+
+### Design & engineering decisions
+
+- Density adjusts the existing linear fog range, including its near-camera haze, rather than changing shared exposure or introducing a post-process. A near-zero fog contribution at 0% preserves the same material variants.
+- Animation runs in existing vertex shaders and uses the room's clock. No extra draw calls, rigs, model assets, or animation mixers are required. The light shafts remain inexpensive translucent planes with soft envelopes.
+
+## Portal windows inherit surrounding atmosphere — Unreleased (2026-11-28)
+
+### Fixed
+
+- Live portal windows and cached snapshots now receive the fog of the room displaying the aperture. Distant openings lose contrast and pick up the surrounding water/fog colour rather than appearing as crisp cutouts. Rooms without fog retain clear windows.
+- Both preview paths use the same material policy, including nested views and reused view slots, with no room IDs or neighbour assumptions.
+
+### Design & engineering decisions
+
+- The destination texture already contains its own atmosphere beyond the threshold; Three's scene fog now adds the source-room segment up to the aperture. This needs no extra texture samples or render pass.
+- Fade the source atmosphere out between 2 m and 0.6 m from the portal plane, before the existing direct-render switch at 0.55 m. This avoids a crossing discontinuity in rooms such as Reef whose negative fog.near would otherwise retain haze at zero distance. Portal rings and crossing geometry are unchanged.
+
+## Reef — CollectivSea water palette and caustics — Unreleased (2026-11-28)
+
+### Changed
+
+- Replaced Reef's dark blue water with CollectivSea's original `#0fa2ab` turquoise background and fog, including its -25/50 fog range. Softened the room lights and adjusted the overhead surface and shafts to the same palette.
+- Replaced the synthetic sine-wave caustics with the actual six-second light pattern from JP's CollectivSea project, projected consistently across sand, coral, and creatures through TSL.
+
+### Design & engineering decisions
+
+- The reference uses video-textured spotlight illumination rather than a standalone water-surface shader. Converted its clip to a 64-frame grayscale atlas and interpolate adjacent frames with the engine clock. This avoids autoplay policies, per-frame video uploads, and background decoder work while neighbouring rooms remain mounted.
+- The atlas is 2048×1152 and about 1.4 MiB, with half-texel insets to prevent adjacent animation frames bleeding together. Mirror tiling extends the source pattern across the canyon. No additional render pass, dynamic light, or shared-renderer setting is introduced. The lighting projection is an adaptation; the original camera, spotlight falloff, and scene layout are not reproduced.
+
 ## Official room paths and final Relay floor — Unreleased (2026-11-28)
 
 ### Changed / Removed

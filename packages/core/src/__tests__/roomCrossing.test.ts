@@ -545,14 +545,28 @@ describe('the portal two rooms ahead', () => {
     previews.clear();
   });
 
-  it('keeps snapshot materials un-fogged like live windows so depth-3 previews do not pop in saturation', async () => {
+  it('gives snapshots and live windows the same source-room atmosphere', async () => {
     const fake = fakeRenderer();
     const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(emptyRoom(nextRoomId)));
     const room = await RoomInstance.mount(emptyRoom(firstRoomId), fake.renderer);
+    room.scene.fog = new THREE.Fog('#0fa2ab', -25, 50);
     await previews.prepare(nextRoomId);
     await previews.refreshSnapshots(room);
     const exit = room.portals.find(p => p.portal.id === 'exit')!;
-    expect((exit.aperture.material as THREE.MeshBasicNodeMaterial).fog).toBe(false);
+    const snapshot = exit.aperture.material as THREE.MeshBasicNodeMaterial;
+    expect(snapshot.fog).toBe(true);
+    const viewer = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 450);
+    viewer.position.set(0, PORTAL_CENTER_Y, -ROUTE_LENGTH / 2 + 6);
+    viewer.lookAt(0, PORTAL_CENTER_Y, -ROUTE_LENGTH);
+    previews.render(room.portals, viewer, 1 / 60, 1);
+    const live = exit.aperture.material as THREE.MeshBasicNodeMaterial;
+    expect(live).not.toBe(snapshot);
+    expect(live.fog).toBe(true);
+    // Source settings remain unchanged; each draw gets them from the scene.
+    expect(room.scene.fog.near).toBe(-25);
+    expect(room.scene.fog.far).toBe(50);
+    previews.releaseViews();
+    expect(exit.aperture.material).toBe(snapshot);
     previews.disposeRoom(room);
     previews.clear();
   });
