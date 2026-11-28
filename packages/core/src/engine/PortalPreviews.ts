@@ -27,6 +27,7 @@ import {
 import { RoomInstance } from './RoomInstance';
 import { isOneWay } from './PortalMesh';
 import { createSceneTarget } from './sceneTarget';
+import { createPortalWindowMaterial } from './portalAtmosphere';
 import { roomWindow, type Heading } from './roomWindow';
 
 type Aperture = PortalVisualHandle['aperture'];
@@ -953,11 +954,10 @@ export class PortalPreviews {
       if (!snap) continue;
       if (this.snapshotMaterials.has(handle.aperture)) continue;
 
-      const mat = new THREE.MeshBasicNodeMaterial();
+      const mat = createPortalWindowMaterial();
       mat.side = isOneWay(handle) ? THREE.FrontSide : THREE.DoubleSide;
-      // Match live portal windows (`fog = false`) so distant depth-3 snapshots stay
-      // equally vibrant and never pop in saturation when promoted to depth-2 live.
-      mat.fog = false;
+      // Same source-room atmosphere as live windows, so promotion cannot pop
+      // from a hazy snapshot to a clear live image.
       mat.colorNode = buildSnapshotColorNode(snap, handle.aperture);
       this.snapshotMaterials.set(handle.aperture, mat);
 
@@ -1028,9 +1028,8 @@ export class PortalPreviews {
     const targetW = Math.max(1, Math.round(this.size.x * scale));
     const targetH = Math.max(1, Math.round(this.size.y * scale));
     const target = createSceneTarget(targetW, targetH);
-    const material = new THREE.MeshBasicNodeMaterial();
+    const material = createPortalWindowMaterial();
     material.side = oneWay ? THREE.FrontSide : THREE.DoubleSide;
-    material.fog = false;
 
     const bounds = new THREE.Vector4(0, 0, this.size.x, this.size.y);
     const pixels = bounds.clone();

@@ -10,9 +10,8 @@
  */
 import * as THREE from 'three/webgpu';
 import {
-  Fn,
   abs,
-  clamp,
+  color,
   float,
   max,
   mix,
@@ -20,7 +19,6 @@ import {
   normalWorld,
   positionLocal,
   positionWorld,
-  pow,
   sin,
   smoothstep,
   time,
@@ -30,6 +28,10 @@ import {
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { disposeObject, loadGLB, seededRandom } from '@portalverse/core/rooms/kit';
+import causticsUrl from './assets/collectivsea-caustics.png?url';
+import { bindFogDensity, mountFogControls } from './fogControls';
+import { jellyHeight, turtleSwim, raySwim, shaftEnvelope } from './creatureMotion';
+import { createWaterLight, WATER_COLOR, WATER_FOG_NEAR, WATER_FOG_FAR, type CausticField } from './water';
 
 const assets = import.meta.glob<string>('./assets/*.glb', { query: '?url', import: 'default', eager: true });
 const asset = (name: string): string => {
@@ -38,7 +40,6 @@ const asset = (name: string): string => {
   return url;
 };
 
-const WATER = '#0e5d73';
 const PATH_HALF_WIDTH = 4;
 const ROOM_HALF_LENGTH = 46;
 
@@ -50,31 +51,19 @@ function seabedHeight(x: number, z: number): number {
   return THREE.MathUtils.smoothstep(off, 0, 3) * (0.6 + dunes) + walls;
 }
 
-/** Animated web of sunlight focused by the waves, 0..1, at world position scaled by `scale`. */
-const caustic = (scale = 1) => Fn(() => {
-  const t = time.mul(0.7);
-  const web = (frequency: number, speed: number) => {
-    const q = positionWorld.xz.mul(scale * frequency);
-    const a = sin(q.x.add(t.mul(speed)).add(sin(q.y.mul(0.8).sub(t.mul(speed * 1.3)))));
-    const b = sin(q.y.sub(t.mul(speed * 0.9)).add(sin(q.x.mul(0.7).add(t.mul(speed)))));
-    return pow(clamp(a.mul(b).mul(0.5).add(0.5), 0, 1), 4.0);
-  };
-  return max(web(1.1, 1), web(2.3, 1.6).mul(0.8));
-})();
-
-function createSandMaterial(): THREE.MeshStandardNodeMaterial {
+function createSandMaterial(caustic: CausticField): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 1, metalness: 0 });
   const p = positionWorld;
   const ripples = sin(p.x.mul(2.1).add(sin(p.z.mul(0.6)).mul(1.5))).mul(0.5).add(0.5);
   const onPath = float(1).sub(smoothstep(float(PATH_HALF_WIDTH - 1), float(PATH_HALF_WIDTH + 1.5), abs(p.x)));
   const base = mix(vec3(0.62, 0.58, 0.45), vec3(0.78, 0.74, 0.6), ripples.mul(0.5).add(onPath.mul(0.35)));
   material.colorNode = base;
-  material.emissiveNode = vec3(0.55, 0.95, 1.0).mul(caustic()).mul(0.32);
+  material.emissiveNode = vec3(1, 0.98, 0.87).mul(caustic()).mul(1.5);
   return material;
 }
 
 /** Swap a model's materials for node versions that catch the caustics on their upward faces. */
-function causticLit(model: THREE.Object3D, extra?: (m: THREE.MeshStandardNodeMaterial) => void): THREE.Material[] {
+function causticLit(model: THREE.Object3D, caustic: CausticField, extra?: (m: THREE.MeshStandardNodeMaterial) => void): THREE.Material[] {
   const converted = new Map<THREE.Material, THREE.MeshStandardNodeMaterial>();
   model.traverse(object => {
     const mesh = object as THREE.Mesh;
@@ -89,10 +78,10 @@ function causticLit(model: THREE.Object3D, extra?: (m: THREE.MeshStandardNodeMat
         metalness: source.metalness ?? 0,
         side: source.side,
       });
-      material.emissiveNode = vec3(0.55, 0.95, 1.0)
+      material.emissiveNode = vec3(1, 0.98, 0.87)
         .mul(caustic())
         .mul(max(normalWorld.y, 0))
-        .mul(0.28);
+        .mul(1.1);
       extra?.(material);
       converted.set(source, material);
     }
@@ -147,10 +136,17 @@ export default defineRoom('jp-reef', {
       return gltf.scene;
     };
 
-    ctx.scene.background = new THREE.Color(WATER);
-    ctx.scene.fog = new THREE.Fog(WATER, 6, 82);
-    root.add(new THREE.HemisphereLight('#9be7ff', '#0a3340', 1.7));
-    const sun = new THREE.DirectionalLight('#d9fbff', 1.9);
+    const atlas = await new THREE.TextureLoader().loadAsync(causticsUrl);
+    const water = createWaterLight(atlas);
+    const { caustic } = water;
+    ctx.onDispose(() => atlas.dispose());
+    ctx.scene.background = new THREE.Color(WATER_COLOR);
+    const fog = new THREE.Fog(WATER_COLOR, WATER_FOG_NEAR, WATER_FOG_FAR);
+    ctx.scene.fog = fog;
+    ctx.onDispose(bindFogDensity(fog));
+    ctx.onActivate(mountFogControls);
+    root.add(new THREE.HemisphereLight('#c9f5ec', '#237f7e', 1.1));
+    const sun = new THREE.DirectionalLight('#fff4d6', 1.2);
     sun.position.set(6, 30, 4);
     root.add(sun);
 
@@ -164,7 +160,7 @@ export default defineRoom('jp-reef', {
       floorPositions.setY(i, seabedHeight(floorPositions.getX(i), floorPositions.getZ(i)));
     }
     floorGeometry.computeVertexNormals();
-    const sandMaterial = createSandMaterial();
+    const sandMaterial = createSandMaterial(caustic);
     root.add(new THREE.Mesh(floorGeometry, sandMaterial));
     ownGeometries.push(floorGeometry);
     ownMaterials.push(sandMaterial);
@@ -173,7 +169,7 @@ export default defineRoom('jp-reef', {
     const surfaceGeometry = new THREE.PlaneGeometry(220, 220);
     surfaceGeometry.rotateX(Math.PI / 2);
     const surfaceMaterial = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
-    surfaceMaterial.colorNode = mix(vec3(0.16, 0.55, 0.62), vec3(0.75, 0.98, 1.0), caustic(0.35).mul(0.8));
+    surfaceMaterial.colorNode = mix(color(WATER_COLOR), color('#a4ece1'), caustic(0.65).mul(0.65));
     const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
     surface.position.y = 26;
     root.add(surface);
@@ -185,11 +181,10 @@ export default defineRoom('jp-reef', {
     const shaftMaterial = new THREE.MeshBasicNodeMaterial({
       transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
     });
-    const across = sin(uv().x.mul(Math.PI));
-    const down = smoothstep(float(0), float(0.85), uv().y);
+    const shaftFade = shaftEnvelope(uv().x, uv().y, positionWorld.y);
     const flicker = sin(time.mul(0.7).add(modelPosition.x.mul(0.37)).add(modelPosition.z.mul(0.21))).mul(0.35).add(0.65);
-    shaftMaterial.colorNode = vec3(0.7, 0.95, 1.0);
-    shaftMaterial.opacityNode = across.mul(down).mul(flicker).mul(0.11);
+    shaftMaterial.colorNode = color('#d2fff0');
+    shaftMaterial.opacityNode = shaftFade.mul(flicker).mul(0.14);
     for (let i = 0; i < 14; i++) {
       const shaft = new THREE.Mesh(shaftGeometry, shaftMaterial);
       const side = i % 2 ? 1 : -1;
@@ -211,10 +206,10 @@ export default defineRoom('jp-reef', {
     ]);
 
     // Corals, rocks and seaweed lining the canyon
-    for (const model of [...reefs, ...corals, ...rocks]) ownMaterials.push(...causticLit(model));
+    for (const model of [...reefs, ...corals, ...rocks]) ownMaterials.push(...causticLit(model, caustic));
     // Seaweed sways more the higher up the frond, each plant on its own beat.
     for (const model of weeds) {
-      ownMaterials.push(...causticLit(model, material => {
+      ownMaterials.push(...causticLit(model, caustic, material => {
         const height = max(positionLocal.y, 0);
         const beat = time.mul(1.3).add(modelPosition.x.mul(0.9)).add(modelPosition.z.mul(0.6));
         const sway = sin(beat.add(positionLocal.y.mul(1.2))).mul(height.mul(height)).mul(0.035);
@@ -243,7 +238,8 @@ export default defineRoom('jp-reef', {
     const jellyMaterial = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide });
     const beat = time.mul(2.1).add(modelPosition.x.mul(1.7)).add(modelPosition.y.mul(0.9));
     const pulse = sin(beat).mul(0.5).add(0.5);
-    const bell = smoothstep(float(0.4), float(1.4), positionLocal.y);
+    // Asset bells sit near y=0; the tentacles extend into negative local Y.
+    const bell = smoothstep(float(-0.28), float(-0.02), positionLocal.y);
     const squeeze = float(1).sub(pulse.mul(0.16).mul(bell));
     const trail = sin(beat.sub(positionLocal.y.mul(3))).mul(float(1).sub(bell)).mul(0.06);
     jellyMaterial.positionNode = vec3(
@@ -256,7 +252,12 @@ export default defineRoom('jp-reef', {
     for (const model of [jellyA, jellyB]) {
       model.traverse(object => {
         const mesh = object as THREE.Mesh;
-        if (mesh.isMesh) mesh.material = jellyMaterial;
+        if (mesh.isMesh) {
+          mesh.material = jellyMaterial;
+          // GPU deformation extends outside the static GLB bounds.
+          mesh.geometry.computeBoundingSphere();
+          mesh.geometry.boundingSphere!.radius += 0.25;
+        }
       });
     }
     ownMaterials.push(jellyMaterial);
@@ -273,27 +274,37 @@ export default defineRoom('jp-reef', {
         phase: rand() * Math.PI * 2,
       };
       object.scale.setScalar(0.9 + rand() * 0.9);
+      object.position.set(jelly.x, jellyHeight(jelly.y, jelly.drift, jelly.phase, 0), jelly.z);
       jellies.push(jelly);
       root.add(object);
     }
 
     // Schools of fish, a turtle and a manta ray circling through the canyon
     const [fishA, fishB, fishC, fishD, turtle, ray] = creatures;
-    const steer = (model: THREE.Object3D, axis: 'x' | 'z') => {
+    const steer = (model: THREE.Object3D, axis: 'x' | 'z', sign = headSign(model, axis)) => {
       // Turn the model so its head points down the holder's +Z, the axis Object3D.lookAt aims.
-      const sign = headSign(model, axis);
       const holder = new THREE.Group();
       model.rotation.y = axis === 'x' ? (sign > 0 ? -Math.PI / 2 : Math.PI / 2) : (sign > 0 ? 0 : Math.PI);
       holder.add(model);
       return holder;
     };
     for (const model of [fishA, fishB, fishC, fishD]) {
-      ownMaterials.push(...causticLit(model, material => {
+      ownMaterials.push(...causticLit(model, caustic, material => {
         const wiggle = sin(time.mul(11).add(positionLocal.x.mul(14)).add(modelPosition.x.mul(3.1)).add(modelPosition.z.mul(1.7)));
         material.positionNode = positionLocal.add(vec3(0, 0, wiggle.mul(0.03)));
       }));
     }
-    ownMaterials.push(...causticLit(turtle), ...causticLit(ray));
+    ownMaterials.push(...causticLit(turtle, caustic, material => {
+      material.positionNode = turtleSwim(water.clock);
+    }), ...causticLit(ray, caustic, material => {
+      material.positionNode = raySwim(water.clock);
+    }));
+    for (const model of [turtle, ray]) model.traverse(object => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.geometry.computeBoundingSphere();
+      mesh.geometry.boundingSphere!.radius += 0.2;
+    });
     const fishModels = [fishA, fishB, fishC, fishD].map(model => steer(model, 'x'));
     const swimmers: Swimmer[] = [];
     for (let school = 0; school < 5; school++) {
@@ -318,9 +329,10 @@ export default defineRoom('jp-reef', {
     }
     for (const [model, axis, scale, height, radius, speed, centerZ] of [
       [turtle, 'x', 2.2, 7, 11, 0.12, 10],
-      [ray, 'z', 2.6, 9.5, 14, 0.09, -12],
+      [ray, 'x', 2.6, 9.5, 14, 0.09, -12],
     ] as const) {
-      const object = steer(model, axis);
+      // Both supplied creatures face -X (the ray's long tail extends toward +X).
+      const object = steer(model, axis, -1);
       object.scale.setScalar(scale);
       swimmers.push({ object, phase: rand() * 6, radius, height, speed, centerX: 0, centerZ, stretch: 2.2 });
       root.add(object);
@@ -341,12 +353,11 @@ export default defineRoom('jp-reef', {
     const dummy = new THREE.Object3D();
     const ahead = new THREE.Vector3();
     ctx.onUpdate((dt, elapsed) => {
+      water.clock.value = elapsed;
       for (const jelly of jellies) {
-        jelly.y += jelly.drift * dt;
-        if (jelly.y > 15) jelly.y = 2.5;
         jelly.object.position.set(
           jelly.x + Math.sin(elapsed * 0.3 + jelly.phase) * 0.8,
-          jelly.y + Math.sin(elapsed * 2.1 + jelly.phase) * 0.12,
+          jellyHeight(jelly.y, jelly.drift, jelly.phase, elapsed),
           jelly.z + Math.cos(elapsed * 0.25 + jelly.phase) * 0.8,
         );
       }
