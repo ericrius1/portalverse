@@ -5,26 +5,81 @@ import * as THREE from 'three/webgpu';
 import registryJson from '../../../../registry.json';
 import {
   NPC_LIST,
+  NPC_PLACEMENTS_BY_ID,
   NpcActor,
   NpcJournalStore,
+  NpcManager,
   SHUTTLE_SECRET_PAGE,
-  getNpcForWorld,
   getNpcPlacement,
+  getNpcsForWorld,
 } from '../npc';
+import type { RoomInstance } from '../engine/RoomInstance';
+
+function makeMockRoom(worldId: string): RoomInstance {
+  return {
+    module: { manifest: { id: worldId } },
+    platforms: [],
+    terrainHeight: () => 0,
+  } as unknown as RoomInstance;
+}
 
 describe('NPC runtime, journal memory, and Cast facial animation', () => {
-  it('assigns a safe stand placement to every Keeper world in registry.json', () => {
+  it('assigns safe, well-spaced stand placements to every Keeper across Eric’s rooms', () => {
     let checked = 0;
     for (const world of registryJson.worlds) {
-      const npc = getNpcForWorld(world.id);
-      if (!npc) continue;
-      checked++;
-      const placement = npc.placement ?? getNpcPlacement(world.id);
-      expect(placement.position).toHaveLength(3);
-      // Keep every Keeper comfortably away from entrance/exit portals at Z = ±36.25
-      expect(Math.abs(placement.position[2])).toBeLessThan(33.5);
+      const npcs = getNpcsForWorld(world.id);
+      if (npcs.length === 0) continue;
+
+      const placements = npcs.map((npc) => {
+        expect(NPC_PLACEMENTS_BY_ID[npc.id], `Missing placement for ${npc.id}`).toBeDefined();
+        const placement = npc.placement ?? getNpcPlacement(npc.id, world.id);
+        expect(placement.position).toHaveLength(3);
+        const [x, , z] = placement.position;
+        if (world.id === 'eric-palace-lagoon') {
+          // Custom entrance portal at (-13.05, 0, 61.05), exit dome portal at (0, 26.2, -14)
+          expect(Math.hypot(x - -13.05, z - 61.05), `${npc.id} too close to Palace entrance`).toBeGreaterThan(8);
+        } else {
+          // Standard entrance/exit portals at (0, 0, ±36.25)
+          expect(Math.abs(z), `${npc.id} too close to portal`).toBeLessThan(33.5);
+        }
+        checked++;
+        return { id: npc.id, pos: placement.position };
+      });
+
+      // Every pair of Keepers sharing a room must be comfortably spaced apart
+      for (let i = 0; i < placements.length; i++) {
+        for (let j = i + 1; j < placements.length; j++) {
+          const a = placements[i];
+          const b = placements[j];
+          const dist = Math.hypot(a.pos[0] - b.pos[0], a.pos[2] - b.pos[2]);
+          expect(dist, `${a.id} & ${b.id} overlap in ${world.id}`).toBeGreaterThanOrEqual(8);
+        }
+      }
     }
-    expect(checked).toBeGreaterThanOrEqual(NPC_LIST.length);
+    expect(checked).toBe(NPC_LIST.length);
+  });
+
+  it('mounts multiple Keepers in Eric’s rooms and zero Keepers in non-Eric rooms', () => {
+    const manager = new NpcManager();
+
+    manager.mountForRoom(makeMockRoom('jp-loft'));
+    expect(manager.getActors()).toHaveLength(0);
+
+    manager.mountForRoom(makeMockRoom('doug-cassette-station'));
+    expect(manager.getActors()).toHaveLength(0);
+
+    manager.mountForRoom(makeMockRoom('eric-palace-lagoon'));
+    expect(manager.getActors().map((a) => a.spec.id)).toEqual(['soraya', 'solenne', 'keola', 'nori']);
+
+    manager.mountForRoom(makeMockRoom('eric-starlight-pavilion'));
+    expect(manager.getActors().map((a) => a.spec.id)).toEqual(['dre', 'lulu']);
+
+    // Walking close to Dre selects Dre as nearest NPC
+    const drePos = NPC_PLACEMENTS_BY_ID.dre.position;
+    manager.update(0.016, 1.0, new THREE.Vector3(drePos[0], 0, drePos[2] + 1.5));
+    expect(manager.getNearestNpc()?.id).toBe('dre');
+
+    manager.dispose();
   });
 
   it('tracks met Keepers, discovers clues, unlocks callbacks, and reveals The Shuttle at full collection', () => {

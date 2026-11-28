@@ -1,42 +1,57 @@
 import type { NpcPlacement } from './types';
 
 /**
- * Verified scenic stand points for each Keeper beside their room's walkable promenade,
- * well clear of entrance/exit portals (Z = ±36.25) and room colliders.
+ * Verified scenic stand points for each Keeper, spread across Eric's four rooms
+ * (`eric-palace-lagoon`, `eric-biolum-grove`, `eric-sun-observatory`, `eric-starlight-pavilion`),
+ * well clear of portals, stage dancers, water, and room colliders.
+ *
  * Y is a baseline hint; NpcManager snaps every Keeper cleanly onto the room's live
  * terrainHeight / platforms when mounted.
  *
- * Yaw uses Three.js standard +Z forward convention (0 faces +Z toward arriving players
- * walking down from the +36.25 entrance portal).
+ * Yaw uses Three.js standard +Z forward convention (0 faces +Z toward arriving players).
  */
-export const DEFAULT_NPC_PLACEMENTS: Readonly<Record<string, NpcPlacement>> = Object.freeze({
-  'jp-world': { position: [-2.8, 0, 16.0], yaw: 0.45 },
-  'jp-garden': { position: [2.4, 0, 15.0], yaw: -0.4 },
-  fishpond: { position: [-2.2, 0, 14.0], yaw: 0.42 },
-  'jp-reef': { position: [2.5, 0, 14.5], yaw: -0.42 },
-  'jp-loft': { position: [-3.1, 0, 14.0], yaw: 0.55 },
-  // Steady landing stones near the entrance before the drifting chasm begins
-  'jp-abyss': { position: [1.35, 0, 30.8], yaw: -0.38 },
-  'jp-visages-synthesis': { position: [-3.6, 0, 16.5], yaw: 0.5 },
-  'jp-visages': { position: [-3.6, 0, 16.5], yaw: 0.5 },
-  'jp-visages-claude': { position: [-3.6, 0, 16.5], yaw: 0.5 },
-  'jp-visages-codex': { position: [-3.6, 0, 16.5], yaw: 0.5 },
-  // Right on the inlaid 8-point Alhambra star plaza inside the rotunda north arch
-  'eric-palace-lagoon': { position: [1.85, 0.06, 2.15], yaw: -0.58 },
-  'laser-lab': { position: [3.6, 0, 15.0], yaw: -0.5 },
-  'alpine-sled': { position: [-2.6, 0, 16.0], yaw: 0.46 },
-  'eric-biolum-grove': { position: [2.7, 0, 15.5], yaw: -0.48 },
-  // On the grand central marble plaza beneath the colossal brass armillary rings
-  'eric-sun-observatory': { position: [4.5, 0, 3.4], yaw: -0.82 },
-  'honey-hood': { position: [-3.1, 0, 17.5], yaw: 0.44 },
-  // Beside the glowing rain shelter & cat bench on the level station promenade
-  'doug-cassette-station': { position: [-3.6, 0, 13.5], yaw: 0.52 },
-  // Starlight Dance Pavilion mounts Soraya, Dex & Ermelin live on stage; fallback spot sits beside promenade
-  'eric-starlight-pavilion': { position: [-4.2, 0, 14.5], yaw: 0.45 },
+export const NPC_PLACEMENTS_BY_ID: Readonly<Record<string, NpcPlacement>> = Object.freeze({
+  // ── Palace Lagoon (4 Keepers: wildflower meadow → lagoon cove bridge → north arch → star plaza)
+  soraya: { position: [1.85, 0.06, 2.15], yaw: -0.58 },
+  keola: { position: [-1.05, 0.08, 13.0], yaw: 0.45 },
+  nori: { position: [2.05, 0.34, 24.8], yaw: -0.68 },
+  solenne: { position: [12.0, 0, 46.0], yaw: -0.85 },
+
+  // ── Bioluminescent Redwood Grove (4 Keepers staggered down the glowing forest trail)
+  myrrow: { position: [2.9, 0, 21.0], yaw: -0.52 },
+  fen: { position: [-3.0, 0, 7.5], yaw: 0.48 },
+  cairn: { position: [3.0, 0, -7.5], yaw: -0.48 },
+  vesper: { position: [-2.9, 0, -21.5], yaw: 0.52 },
+
+  // ── Sun Observatory (4 Keepers across the marble bridge approaches & central armillary plaza)
+  juno: { position: [-2.6, 0, 22.5], yaw: 0.48 },
+  halcyon: { position: [5.4, 0, 3.6], yaw: -0.85 },
+  ermelin: { position: [-5.6, 0, -3.4], yaw: 0.92 },
+  dex: { position: [2.6, 0, -22.5], yaw: -0.52 },
+
+  // ── Starlight Dance Pavilion (2 Keepers on the south & north lantern promenades;
+  //    Soraya, Dex & Ermelin perform live on the central dance stage)
+  dre: { position: [-2.5, 0, 25.5], yaw: 0.55 },
+  lulu: { position: [2.5, 0, -24.5], yaw: -0.55 },
 });
 
-export function getNpcPlacement(worldId: string): NpcPlacement {
-  return DEFAULT_NPC_PLACEMENTS[worldId] ?? { position: [2.6, 0, 15.0], yaw: -0.45 };
+/** Default lead stand point per room for callers looking up by worldId. */
+export const DEFAULT_NPC_PLACEMENTS: Readonly<Record<string, NpcPlacement>> = Object.freeze({
+  'eric-palace-lagoon': NPC_PLACEMENTS_BY_ID.soraya,
+  'eric-biolum-grove': NPC_PLACEMENTS_BY_ID.myrrow,
+  'eric-sun-observatory': NPC_PLACEMENTS_BY_ID.halcyon,
+  'eric-starlight-pavilion': NPC_PLACEMENTS_BY_ID.dre,
+});
+
+export function getNpcPlacement(npcIdOrWorldId: string, fallbackWorldId?: string): NpcPlacement {
+  return (
+    NPC_PLACEMENTS_BY_ID[npcIdOrWorldId] ??
+    DEFAULT_NPC_PLACEMENTS[npcIdOrWorldId] ??
+    (fallbackWorldId ? DEFAULT_NPC_PLACEMENTS[fallbackWorldId] : undefined) ?? {
+      position: [2.6, 0, 15.0],
+      yaw: -0.45,
+    }
+  );
 }
 
 export function getNpcModelUrl(npcId: string): string {

@@ -2,6 +2,20 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Relocate All Keeper NPCs to Eric's Rooms — Unreleased (2026-11-27)
+
+### Changed
+
+- **Multi-NPC room support & Eric-only Keeper placement (`packages/core/src/npc/dialogueData.ts`, `placements.ts`, `npcManager.ts`, `packages/core/src/__tests__/npcDialogue.test.ts`, `npcRuntime.test.ts`)**:
+  - Removed all Keepers from non-Eric rooms (JP's, Doug's, and Charles's/`simplesessions` worlds now mount zero Keepers so contributors' rooms stay untouched).
+  - Relocated all 14 Keepers across Eric's four rooms, spread across verified walkable spots (>= 11 m apart, clear of portals, water, and colliders):
+    - **Palace Lagoon** (`eric-palace-lagoon`, 4): Soraya (Alhambra star plaza), Keola (rotunda north arch), Nori (lagoon cove bridge crest), Solenne (golden wildflower meadow).
+    - **Bioluminescent Redwood Grove** (`eric-biolum-grove`, 4): Myrrow, Fen, Cairn, Vesper staggered down the illuminated forest trail.
+    - **Sun Observatory** (`eric-sun-observatory`, 4): Halcyon & Ermelin on opposite rims of the central armillary plaza, Juno & Dex on the south and north marble bridge approaches.
+    - **Starlight Dance Pavilion** (`eric-starlight-pavilion`, 2): Dre & Lulu bracketing the south and north lantern promenades while Soraya, Dex & Ermelin perform live on the central dance stage (zero duplicates).
+  - Added `NPC_SPECS_BY_WORLD`, `getNpcsForWorld(worldId)`, `NPC_PLACEMENTS_BY_ID`, and multi-actor mounting in `NpcManager.mountForRoom` with one-at-a-time ambient bark gating so NPCs sharing a room never talk over each other.
+  - Updated Seam Clue Journal links automatically via each Keeper's updated `worldId`, and added test coverage verifying Eric-only ownership, multi-NPC mounting, spacing, and portal clearance.
+
 ## Speech Bubble Framing & Clipping Fix — Unreleased (2026-11-27)
 
 ### Fixed

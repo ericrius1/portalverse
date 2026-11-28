@@ -20,7 +20,7 @@ function nodes(defs: Record<string, Omit<NpcDialogueNode, 'id'>>): Record<string
 
 const SOLENNE: NpcSpec = {
   id: 'solenne',
-  worldId: 'jp-world',
+  worldId: 'eric-palace-lagoon',
   name: 'Solenne',
   title: 'Keeper of the Brass Arches',
   species: 'Human (solarpunk heliotrope tinker)',
@@ -135,7 +135,7 @@ const SOLENNE: NpcSpec = {
 
 const FEN: NpcSpec = {
   id: 'fen',
-  worldId: 'jp-garden',
+  worldId: 'eric-biolum-grove',
   name: 'Fen',
   title: 'the Breeze Between Leaves',
   species: 'Leaf-woven breeze spirit',
@@ -250,7 +250,7 @@ const FEN: NpcSpec = {
 
 const KEOLA: NpcSpec = {
   id: 'keola',
-  worldId: 'fishpond',
+  worldId: 'eric-palace-lagoon',
   name: 'Uncle Keola',
   title: 'Kiaʻi Loko, Fishpond Caretaker',
   species: 'Human (Native Hawaiian kupuna)',
@@ -365,7 +365,7 @@ const KEOLA: NpcSpec = {
 
 const NORI: NpcSpec = {
   id: 'nori',
-  worldId: 'jp-reef',
+  worldId: 'eric-palace-lagoon',
   name: 'Nori',
   title: 'Current-Reader of the Reef',
   species: 'Tidefolk (sea-person)',
@@ -480,7 +480,7 @@ const NORI: NpcSpec = {
 
 const JUNO: NpcSpec = {
   id: 'juno',
-  worldId: 'jp-loft',
+  worldId: 'eric-sun-observatory',
   name: 'Juno Park',
   title: 'Night-Shift Translator',
   species: 'Human (urban dreamer), with Mandu the shiba',
@@ -595,7 +595,7 @@ const JUNO: NpcSpec = {
 
 const CAIRN: NpcSpec = {
   id: 'cairn',
-  worldId: 'jp-abyss',
+  worldId: 'eric-biolum-grove',
   name: 'Cairn',
   title: 'Abbot of the Stepping Stones',
   species: 'Voronoi stone construct (folkloric guardian)',
@@ -710,7 +710,7 @@ const CAIRN: NpcSpec = {
 
 const VESPER: NpcSpec = {
   id: 'vesper',
-  worldId: 'jp-visages-synthesis',
+  worldId: 'eric-biolum-grove',
   name: 'Vesper',
   title: 'Last Lamplighter of the Avenue',
   species: 'Moon-touched human, half-carved',
@@ -940,7 +940,7 @@ const SORAYA: NpcSpec = {
 
 const DEX: NpcSpec = {
   id: 'dex',
-  worldId: 'laser-lab',
+  worldId: 'eric-sun-observatory',
   name: 'Dex Arclight',
   title: 'Light-Show Rigger',
   species: 'Human (augmented, with a beam-sight visor)',
@@ -1055,7 +1055,7 @@ const DEX: NpcSpec = {
 
 const ERMELIN: NpcSpec = {
   id: 'ermelin',
-  worldId: 'alpine-sled',
+  worldId: 'eric-sun-observatory',
   name: 'Ermelin',
   title: 'Lantern Warden of the Snow Run',
   species: 'Ermine-folk (folkloric snow guardian)',
@@ -1400,7 +1400,7 @@ const HALCYON: NpcSpec = {
 
 const DRE: NpcSpec = {
   id: 'dre',
-  worldId: 'honey-hood',
+  worldId: 'eric-starlight-pavilion',
   name: 'Dré Honeycutt',
   title: 'Block Beekeeper and Corner Philosopher',
   species: 'Human (neighborhood beekeeper)',
@@ -1515,7 +1515,7 @@ const DRE: NpcSpec = {
 
 const LULU: NpcSpec = {
   id: 'lulu',
-  worldId: 'doug-cassette-station',
+  worldId: 'eric-starlight-pavilion',
   name: 'Lulu Static',
   title: 'Tea-Stall Keeper, Ex-Pirate DJ',
   species: 'Human (retired late-night radio host)',
@@ -1628,47 +1628,67 @@ const LULU: NpcSpec = {
 
 // ─── Exports ────────────────────────────────────────────────────────────────
 
-/** The fourteen keepers, in portal-loop order (`registry.json`, archived Visages & ensemble rooms skipped). */
+/**
+ * The fourteen Keepers, spread across Eric's four rooms in `registry.json` loop order:
+ *   - Palace Lagoon (4): Soraya, Solenne, Keola, Nori
+ *   - Bioluminescent Redwood Grove (4): Myrrow, Fen, Cairn, Vesper
+ *   - Sun Observatory (4): Halcyon, Ermelin, Juno, Dex
+ *   - Starlight Dance Pavilion (2): Dre, Lulu (alongside Soraya, Dex & Ermelin live on stage)
+ */
 export const NPC_LIST: readonly NpcSpec[] = [
+  SORAYA,
   SOLENNE,
-  FEN,
   KEOLA,
   NORI,
-  JUNO,
+  MYRROW,
+  FEN,
   CAIRN,
   VESPER,
-  SORAYA,
-  DEX,
-  ERMELIN,
-  MYRROW,
   HALCYON,
+  ERMELIN,
+  JUNO,
+  DEX,
   DRE,
   LULU,
 ];
 
-/** The three archived Visages comparison rooms, which share Vesper with the Avenue of Visages. */
+/** The three archived Visages comparison rooms (retained as a constant for reference; no Keepers mount here). */
 export const ARCHIVED_VISAGES_WORLD_IDS = ['jp-visages', 'jp-visages-claude', 'jp-visages-codex'] as const;
 
-/** Ensemble worlds that host visiting Keepers live on stage instead of a standalone stationary Keeper. */
+/** Ensemble worlds that also mount live animated troupe performers on a central stage. */
 export const TROUPE_STAGE_WORLD_IDS = ['eric-starlight-pavilion'] as const;
 
-/**
- * NPC for each world id: the fifteen home worlds plus shared/ensemble rooms
- * (archived Visages studies share Vesper; Starlight Dance Pavilion hosts Soraya, Dex & Ermelin live).
- */
-export const NPC_SPECS: Readonly<Record<string, NpcSpec>> = Object.freeze({
-  ...Object.fromEntries(NPC_LIST.map((npc) => [npc.worldId, npc])),
-  ...Object.fromEntries(ARCHIVED_VISAGES_WORLD_IDS.map((worldId) => [worldId, VESPER])),
-  'eric-starlight-pavilion': SORAYA,
-});
+/** All Keepers hosted in each world id (multiple Keepers may share a room). */
+export const NPC_SPECS_BY_WORLD: Readonly<Record<string, readonly NpcSpec[]>> = (() => {
+  const grouped: Record<string, NpcSpec[]> = {};
+  for (const npc of NPC_LIST) {
+    (grouped[npc.worldId] ??= []).push(npc);
+  }
+  const frozen: Record<string, readonly NpcSpec[]> = {};
+  for (const [worldId, list] of Object.entries(grouped)) {
+    frozen[worldId] = Object.freeze(list);
+  }
+  return Object.freeze(frozen);
+})();
 
-/** NPC by its slug (`kestrel`, `solenne`, ...). */
+/** Lead Keeper for each populated world id. */
+export const NPC_SPECS: Readonly<Record<string, NpcSpec>> = Object.freeze(
+  Object.fromEntries(Object.entries(NPC_SPECS_BY_WORLD).map(([worldId, list]) => [worldId, list[0]])),
+);
+
+/** NPC by its slug (`soraya`, `solenne`, ...). */
 export const NPC_BY_ID: Readonly<Record<string, NpcSpec>> = Object.freeze(
   Object.fromEntries(NPC_LIST.map((npc) => [npc.id, npc])),
 );
 
+/** Returns all Keepers mounted in `worldId` (empty array for rooms with no Keepers). */
+export function getNpcsForWorld(worldId: string): readonly NpcSpec[] {
+  return NPC_SPECS_BY_WORLD[worldId] ?? [];
+}
+
+/** Returns the lead Keeper for `worldId`, or `undefined` if the room has no Keepers. */
 export function getNpcForWorld(worldId: string): NpcSpec | undefined {
-  return NPC_SPECS[worldId];
+  return NPC_SPECS_BY_WORLD[worldId]?.[0];
 }
 
 /** The NPC whose clue this is, for journal pages and callback hints. */

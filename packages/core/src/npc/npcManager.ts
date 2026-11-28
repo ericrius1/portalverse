@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type { RoomInstance } from '../engine/RoomInstance';
-import { TROUPE_STAGE_WORLD_IDS, getNpcForWorld } from './dialogueData';
+import { getNpcsForWorld } from './dialogueData';
 import { getNpcPlacement } from './placements';
 import { NpcActor } from './npcRig';
 import type { NpcExpression, NpcGesture, NpcSpec } from './types';
@@ -35,19 +35,23 @@ export class NpcManager {
   mountForRoom(room: RoomInstance): void {
     this.clear();
     const worldId = room.module.manifest.id;
-    // Skip static Keeper stand-in for ensemble stages that mount their own live animated Keeper troupe
-    if ((TROUPE_STAGE_WORLD_IDS as readonly string[]).includes(worldId)) return;
-    const spec = getNpcForWorld(worldId);
-    if (!spec) return;
+    const specs = getNpcsForWorld(worldId);
+    if (specs.length === 0) return;
 
-    const placement = spec.placement ?? getNpcPlacement(worldId);
-    const [x, baseY, z] = placement.position;
-    const groundY = this.sampleRoomGround(room, x, z, baseY);
+    for (const spec of specs) {
+      const placement = spec.placement ?? getNpcPlacement(spec.id, worldId);
+      const [x, baseY, z] = placement.position;
+      const groundY = this.sampleRoomGround(room, x, z, baseY);
 
-    const actor = new NpcActor(spec, [x, groundY, z], placement.yaw);
-    this.root.add(actor.group);
-    this.actors.push(actor);
-    void actor.loadModel();
+      const actor = new NpcActor(spec, [x, groundY, z], placement.yaw);
+      this.root.add(actor.group);
+      this.actors.push(actor);
+      void actor.loadModel();
+    }
+  }
+
+  getActors(): readonly NpcActor[] {
+    return this.actors;
   }
 
   getNearestNpc(): NpcSpec | null {
@@ -93,9 +97,11 @@ export class NpcManager {
         closest = actor;
       }
 
-      // Friendly ambient approach bark before dialogue opens
+      // Friendly ambient approach bark before dialogue opens (one active bark at a time per room)
+      const anotherBarkActive = this.actors.some((other) => other !== actor && Boolean(other.bubble.getActiveMode()));
       if (
         !this.activeDialogueNpcId &&
+        !anotherBarkActive &&
         dist < AMBIENT_BARK_RADIUS &&
         vertDist < 5.0 &&
         !actor.bubble.getActiveMode()

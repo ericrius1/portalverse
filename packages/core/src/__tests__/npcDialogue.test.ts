@@ -8,9 +8,10 @@ import {
   NPC_BY_ID,
   NPC_LIST,
   NPC_SPECS,
-  TROUPE_STAGE_WORLD_IDS,
+  NPC_SPECS_BY_WORLD,
   getNpcByClueId,
   getNpcForWorld,
+  getNpcsForWorld,
   visibleChoices,
 } from '../npc';
 
@@ -22,16 +23,17 @@ const GESTURES = new Set(['idle', 'wave', 'explain', 'ponder', 'point', 'bow', '
 const TONES = new Set(['curious', 'playful', 'lore', 'farewell']);
 const HEX = /^#[0-9a-f]{6}$/;
 
-const troupeWorldSet = new Set<string>(TROUPE_STAGE_WORLD_IDS);
 const registryWorldIds = registryJson.worlds.map((w) => w.id);
 const registryIndex = new Map(registryWorldIds.map((id, i) => [id, i]));
+const registryOwnerById = new Map(registryJson.worlds.map((w) => [w.id, w.owner]));
+const ericWorldIds = registryJson.worlds.filter((w) => w.owner === 'ericrius1').map((w) => w.id);
 
 describe('NPC cast', () => {
-  it('places every Keeper in a real registry world, in loop order, with unique ids and clues', () => {
+  it('places every Keeper in one of Eric’s registry worlds, in loop order, with unique ids and clues', () => {
     const npcWorldIds = NPC_LIST.map((n) => n.worldId);
     for (const worldId of npcWorldIds) {
       expect(registryIndex.has(worldId)).toBe(true);
-      expect(troupeWorldSet.has(worldId)).toBe(false);
+      expect(registryOwnerById.get(worldId)).toBe('ericrius1');
     }
     const indices = npcWorldIds.map((id) => registryIndex.get(id)!);
     expect(indices).toEqual([...indices].sort((a, b) => a - b));
@@ -44,14 +46,32 @@ describe('NPC cast', () => {
     }
   });
 
-  it('maps every Keeper world and archived Visages study to a valid registry entry', () => {
-    for (const worldId of Object.keys(NPC_SPECS)) {
-      expect(registryIndex.has(worldId)).toBe(true);
-      expect(getNpcForWorld(worldId)).toBeDefined();
+  it('mounts multiple Keepers across Eric’s rooms and zero Keepers in non-Eric rooms', () => {
+    let totalMounted = 0;
+    for (const world of registryJson.worlds) {
+      const npcs = getNpcsForWorld(world.id);
+      if (world.owner === 'ericrius1') {
+        expect(npcs.length, `${world.id} should host multiple Keepers`).toBeGreaterThanOrEqual(2);
+        expect(getNpcForWorld(world.id)).toBe(npcs[0]);
+        expect(NPC_SPECS[world.id]).toBe(npcs[0]);
+        expect(NPC_SPECS_BY_WORLD[world.id]).toBe(npcs);
+        totalMounted += npcs.length;
+      } else {
+        expect(npcs, `${world.id} (owner: ${world.owner}) should have no Keepers`).toHaveLength(0);
+        expect(getNpcForWorld(world.id)).toBeUndefined();
+        expect(NPC_SPECS[world.id]).toBeUndefined();
+      }
     }
-    const vesper = NPC_SPECS['jp-visages-synthesis'];
-    for (const worldId of ARCHIVED_VISAGES_WORLD_IDS) expect(NPC_SPECS[worldId]).toBe(vesper);
-    expect(NPC_SPECS['eric-starlight-pavilion']).toBeDefined();
+    expect(totalMounted).toBe(NPC_LIST.length);
+    expect(Object.keys(NPC_SPECS_BY_WORLD).sort()).toEqual([...ericWorldIds].sort());
+    for (const worldId of ARCHIVED_VISAGES_WORLD_IDS) {
+      expect(getNpcsForWorld(worldId)).toHaveLength(0);
+    }
+    // Starlight Pavilion mounts Soraya, Dex & Ermelin live on stage, so its promenade Keepers never duplicate them
+    const pavilionIds = new Set(getNpcsForWorld('eric-starlight-pavilion').map((n) => n.id));
+    expect(pavilionIds.has('soraya')).toBe(false);
+    expect(pavilionIds.has('dex')).toBe(false);
+    expect(pavilionIds.has('ermelin')).toBe(false);
   });
 
   it('keeps specs within art and bubble limits', () => {
