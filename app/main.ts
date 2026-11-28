@@ -956,12 +956,14 @@ async function boot(): Promise<void> {
     getEquippedId: () => engine.avatar.getCharacterId(),
     getAccentColor: () => identity.color,
     getSkinAppearance: () => normalizeSkinAppearance(identity),
+    onPreview: (char, appearance) => {
+      engine.prewarmCharacter(char.id, appearance);
+    },
     onSelect: (char, switchToThirdPerson, appearance) => {
       identity = { ...identity, characterId: char.id, ...appearance };
       try { localStorage.setItem(STORAGE_CHARACTER_CHOICE_KEY, char.id); } catch { /* storage unavailable */ }
       saveIdentity(identity);
-      engine.avatar.setSkinAppearance(appearance);
-      engine.avatar.setCharacter(char.id);
+      engine.equipCharacter(char.id, appearance);
       net.updateProfile(identity.name, identity.color, char.id, appearance, activeBubbleStyle());
       if (switchToThirdPerson && engine.avatar.firstPerson) {
         engine.avatar.setFirstPerson(false);
@@ -1183,6 +1185,7 @@ async function boot(): Promise<void> {
 
   function closeAllModals(relockPointer = false): void {
     characterSelect.hide();
+    engine.clearPrewarmedCharacter();
     bubbleCustomizer.hide();
     for (const modal of allModals) modal.classList.add('hidden');
     syncInputLocks();

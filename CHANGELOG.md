@@ -2,6 +2,22 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Zero-Hitch FPS to Character Switching — Unreleased (2026-11-27)
+
+### Fixed
+
+- **Eliminated FPS → 3rd-person / character switch hitch (`packages/core/src/engine/PortalPreviews.ts`, `packages/core/src/engine/WorldEngine.ts`, `packages/core/src/engine/AvatarController.ts`, `app/characterSelect.ts`, `app/main.ts`)**:
+  - Added `PortalPreviews.compileObject(object, targetScene, useSceneTarget)` to asynchronously pre-compile the hidden local avatar rig against the active room's lighting, fog, and render-target format (`HalfFloatType` scene target or direct swapchain on `mobile-lite`) while restoring `visible`, `frustumCulled`, and the active render target synchronously before awaiting so FPS frames never flash the character.
+  - Pre-compiles the equipped character behind the startup loading gate (`warmUpPortals`), whenever entering a new room in FPS (`installRoom`), and when switching characters — preventing Three.js WebGPU from stalling for 100–400ms on the first frame `localRig.group.visible` flips to `true`.
+  - Added `WorldEngine.prewarmCharacter`, `equipCharacter`, and `clearPrewarmedCharacter` wired to `CharacterSelectScreen.onPreview` so browsing a character in Character Select pre-builds and GPU-compiles its rig on `WorldEngine.renderer`, then adopts that exact rig directly on equip with zero rebuild or compile stall.
+  - Deferred `transitRig` rebuilding off the character-equip click frame (with lazy sync before portal transit) so equipping a character never builds two identical rigs synchronously.
+  - Made the FPS → 3rd-person camera pullback frame-rate independent (`1 - Math.exp(-12 * dt)`) and smoothly blended the look target from FPS aim to 3rd-person chase aim so switching out of FPS glides smoothly without an aim snap.
+  - Added unit tests in `packages/core/src/__tests__/avatarSwitchPrewarm.test.ts`.
+
+### Design & engineering decisions
+
+- **Synchronous projection + restore around `WebGPURenderer.compileAsync(object, camera, targetScene)`:** In Three.js r181+ WebGPU, `compileAsync` synchronously projects `object` with `targetScene`'s lights before its first `await`. Temporarily setting `visible = true` only across that synchronous call lets us pre-compile hidden FPS avatars without a 1-frame pop or a separate staging scene, while serializing through `PortalPreviews`'s existing `compiling` lock prevents overlapping `compileAsync` races.
+
 ## Cosmic Snowglobe Meta View & Celestial Constellations — Unreleased (2026-11-27)
 
 ### Added

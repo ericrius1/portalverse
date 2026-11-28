@@ -16,6 +16,8 @@ export interface CharacterSelectCallbacks {
   getEquippedId: () => string;
   getAccentColor: () => string;
   getSkinAppearance: () => SkinAppearance;
+  /** Optional hook so the main renderer can pre-build & GPU-compile the previewed character. */
+  onPreview?: (character: CharacterDefinition, appearance: SkinAppearance) => void;
   onSelect: (character: CharacterDefinition, switchToThirdPerson: boolean, appearance: SkinAppearance) => void;
   onClose: (relockPointer: boolean) => void;
 }
@@ -345,6 +347,7 @@ export class CharacterSelectScreen {
     if (this.activeRigId === def.id && this.activeRig) {
       this.activeRig.setAccentColor?.(this.callbacks.getAccentColor());
       this.activeRig.setSkinAppearance?.(this.appearance);
+      this.notifyPreviewPrewarm(def);
       return;
     }
     if (this.activeRig) {
@@ -359,14 +362,29 @@ export class CharacterSelectScreen {
     this.rigReady = !rig.ready;
     this.btnEquip.disabled = !this.rigReady;
     this.loadStatus.textContent = rig.ready ? 'Loading character…' : '';
+    if (!rig.ready) {
+      this.notifyPreviewPrewarm(def);
+    }
     void rig.ready?.then(() => {
       if (this.activeRig !== rig) return;
       this.rigReady = true;
       this.btnEquip.disabled = false;
       this.loadStatus.textContent = '';
+      this.notifyPreviewPrewarm(def);
     }, () => {
       if (this.activeRig !== rig) return;
       this.loadStatus.textContent = 'Character could not load. Choose another character and try again.';
+    });
+  }
+
+  private notifyPreviewPrewarm(def: CharacterDefinition): void {
+    const onPreview = this.callbacks.onPreview;
+    if (!onPreview) return;
+    const targetId = def.id;
+    const appearance = { ...this.appearance };
+    requestAnimationFrame(() => {
+      if (!this.open || this.previewedId !== targetId) return;
+      onPreview(def, appearance);
     });
   }
 

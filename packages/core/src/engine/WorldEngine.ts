@@ -24,8 +24,9 @@ import type { Heading } from './roomWindow';
 import { AvatarController } from './AvatarController';
 import { NpcManager } from '../npc/npcManager';
 import type { NpcSpec } from '../npc/types';
-import { createCharacterRig, DEFAULT_CHARACTER_ID, type CharacterRig } from '../characters';
+import { createCharacterRig, DEFAULT_CHARACTER_ID, getCharacterDefinition, type CharacterRig, type SkinAppearance } from '../characters';
 import { PERFORMANCE_PROFILES, type PerformanceProfile } from './performanceProfile';
+import { createSceneTarget } from './sceneTarget';
 import { needsViewportSync, resolvePixelRatio, resolveViewportSize } from './viewportSize';
 import { createArchwayPortal } from './PortalMesh';
 import { portalWarp, smoothSpeed, warpSpeedFactor } from './portalWarp';
@@ -104,6 +105,14 @@ export class WorldEngine {
   private readonly previews?: PortalPreviews;
   private readonly ripplePass: PortalRipplePass;
   private transitRig: CharacterRig;
+  private transitRigCharacterId: string;
+  private transitRigTimer: number | null = null;
+  private avatarCompileSeq = 0;
+  private avatarCompileTarget: THREE.RenderTarget | null = null;
+  private readonly avatarCompileCamera = new THREE.PerspectiveCamera(62, 1, 0.1, 100);
+  private prewarmedRig: { id: string; rig: CharacterRig; compiledRoom: RoomInstance | null } | null = null;
+  private prewarmSeq = 0;
+  private skipNextLocalWarmup = false;
   private readonly transitAvatarPos = new THREE.Vector3();
   private mountSequence = 0;
   private readonly dynamicPortalRoot = new THREE.Group();
@@ -210,7 +219,8 @@ export class WorldEngine {
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
-    this.transitRig = createCharacterRig(initialCharacterId, { accentColor: initialAvatarColor });
+    this.transitRigCharacterId = getCharacterDefinition(initialCharacterId).id;
+    this.transitRig = createCharacterRig(this.transitRigCharacterId, { accentColor: initialAvatarColor });
     this.transitAvatarState = {
       rig: this.transitRig.group,
       position: this.transitAvatarPos,
@@ -232,12 +242,12 @@ export class WorldEngine {
       callbacks.onMovementModeChange,
       initialCharacterId,
       (characterId) => {
-        this.transitRig.dispose();
-        this.transitRig = createCharacterRig(characterId, {
-          accentColor: this.avatar.getLocalColor(),
-          ...this.avatar.getSkinAppearance(),
-        });
-        this.transitAvatarState.rig = this.transitRig.group;
+        const skipWarmup = this.skipNextLocalWarmup;
+        this.skipNextLocalWarmup = false;
+        this.scheduleTransitRigSync();
+        if (!skipWarmup) {
+          void this.warmUpLocalAvatar();
+        }
         callbacks.onCharacterChange?.(characterId);
       },
       (appearance) => this.transitRig.setSkinAppearance?.(appearance),
@@ -452,6 +462,180 @@ export class WorldEngine {
     } else {
       this.renderMainPass();
     }
+    // Pre-compile the equipped local avatar rig behind the loading gate even while in FPS so
+    // the first switch to 3rd person never stalls on WebGPU shader/pipeline compilation.
+    await Promise.race([
+      this.warmUpLocalAvatar(),
+      new Promise<void>((resolve) => setTimeout(resolve, 3500)),
+    ]);
+  }
+
+  /**
+   * Pre-build and GPU-compile a candidate character rig (e.g. while previewed in Character
+   * Select) against the active room so equipping it and switching out of FPS is instant.
+   */
+  prewarmCharacter(characterId: string, appearance?: Partial<SkinAppearance>): void {
+    const id = getCharacterDefinition(characterId).id;
+    if (id === this.avatar.getCharacterId()) {
+      void this.warmUpLocalAvatar();
+      return;
+    }
+    const existing = this.prewarmedRig;
+    if (existing && existing.id === id) {
+      if (appearance) existing.rig.setSkinAppearance?.(appearance);
+      if (this.room && existing.compiledRoom !== this.room) {
+        void this.compilePrewarmedEntry(existing, this.room, ++this.prewarmSeq);
+      }
+      return;
+    }
+    this.clearPrewarmedCharacter();
+    const rig = createCharacterRig(id, {
+      accentColor: this.avatar.getLocalColor(),
+      ...(appearance ?? this.avatar.getSkinAppearance()),
+    });
+    const entry = { id, rig, compiledRoom: null as RoomInstance | null };
+    this.prewarmedRig = entry;
+    if (this.room) {
+      void this.compilePrewarmedEntry(entry, this.room, ++this.prewarmSeq);
+    }
+  }
+
+  /**
+   * Equip a character, adopting any prewarmed & compiled rig for that character so switching
+   * from FPS to 3rd person avoids both synchronous rig rebuilding and first-frame shader stalls.
+   */
+  equipCharacter(characterId: string, appearance?: Partial<SkinAppearance>): void {
+    const id = getCharacterDefinition(characterId).id;
+    if (appearance) {
+      this.avatar.setSkinAppearance(appearance);
+    }
+    if (this.prewarmedRig && this.prewarmedRig.id === id) {
+      const adopted = this.prewarmedRig;
+      this.prewarmedRig = null;
+      this.prewarmSeq++;
+      this.skipNextLocalWarmup = Boolean(this.room && adopted.compiledRoom === this.room);
+      this.avatar.setCharacter(id, adopted.rig);
+      return;
+    }
+    this.clearPrewarmedCharacter();
+    this.avatar.setCharacter(id);
+  }
+
+  /** Dispose any unused prewarmed character rig (e.g. when Character Select closes). */
+  clearPrewarmedCharacter(): void {
+    this.prewarmSeq++;
+    if (!this.prewarmedRig) return;
+    this.prewarmedRig.rig.dispose();
+    this.prewarmedRig = null;
+  }
+
+  private async compilePrewarmedEntry(
+    entry: { id: string; rig: CharacterRig; compiledRoom: RoomInstance | null },
+    room: RoomInstance,
+    seq: number,
+  ): Promise<void> {
+    if (entry.rig.ready) {
+      try {
+        await entry.rig.ready;
+      } catch {
+        return;
+      }
+    }
+    if (this.prewarmedRig !== entry || this.prewarmSeq !== seq || this.room !== room) return;
+    entry.rig.update(0, this.elapsed, this.avatar.getMotionState());
+    await this.compileRigForRoom(entry.rig, room);
+    if (this.prewarmedRig === entry && this.room === room) {
+      entry.compiledRoom = room;
+    }
+  }
+
+  private async warmUpLocalAvatar(): Promise<void> {
+    const room = this.room;
+    if (!room) return;
+    const seq = ++this.avatarCompileSeq;
+    const rig = this.avatar.getLocalRig();
+    if (rig.ready) {
+      try {
+        await rig.ready;
+      } catch {
+        return;
+      }
+    }
+    if (this.avatarCompileSeq !== seq || this.room !== room || this.avatar.getLocalRig() !== rig) return;
+    rig.update(0, this.elapsed, this.avatar.getMotionState());
+    await this.compileRigForRoom(rig, room);
+  }
+
+  private async compileRigForRoom(rig: CharacterRig, room: RoomInstance): Promise<void> {
+    const useSceneTarget = this.performanceProfile.useRipplePass;
+    if (this.previews) {
+      try {
+        await this.previews.compileObject(rig.group, room.scene, useSceneTarget);
+      } catch {
+        // Non-fatal: the rig will still compile lazily on first visible render.
+      }
+      return;
+    }
+    const prevVisible = rig.group.visible;
+    const culled: THREE.Object3D[] = [];
+    rig.group.visible = true;
+    rig.group.traverse((child) => {
+      if (!child.frustumCulled) return;
+      child.frustumCulled = false;
+      culled.push(child);
+    });
+    rig.group.updateMatrixWorld(true);
+    const compileTarget = useSceneTarget ? (this.avatarCompileTarget ??= createSceneTarget(1, 1)) : null;
+    const target = this.renderer.getRenderTarget();
+    const previous = this.avatarCompileTarget && target === this.avatarCompileTarget ? null : target;
+    let pending: Promise<unknown> | undefined;
+    try {
+      this.avatarCompileCamera.coordinateSystem = this.renderer.coordinateSystem;
+      this.avatarCompileCamera.updateProjectionMatrix();
+      this.renderer.setRenderTarget(compileTarget);
+      pending = this.renderer.compileAsync(rig.group, this.avatarCompileCamera, room.scene);
+    } catch {
+      // Non-fatal fallback
+    } finally {
+      rig.group.visible = prevVisible;
+      for (const child of culled) child.frustumCulled = true;
+      this.renderer.setRenderTarget(previous);
+    }
+    if (pending) {
+      try {
+        await pending;
+      } catch {
+        // Non-fatal fallback
+      } finally {
+        this.renderer.setRenderTarget(previous);
+      }
+    }
+  }
+
+  private scheduleTransitRigSync(): void {
+    if (this.transitRigTimer !== null) {
+      window.clearTimeout(this.transitRigTimer);
+    }
+    this.transitRigTimer = window.setTimeout(() => {
+      this.transitRigTimer = null;
+      this.syncTransitRigIfNeeded();
+    }, 120);
+  }
+
+  private syncTransitRigIfNeeded(): void {
+    const targetId = this.avatar.getCharacterId();
+    if (this.transitRigCharacterId === targetId) return;
+    if (this.transitRigTimer !== null) {
+      window.clearTimeout(this.transitRigTimer);
+      this.transitRigTimer = null;
+    }
+    this.transitRig.dispose();
+    this.transitRig = createCharacterRig(targetId, {
+      accentColor: this.avatar.getLocalColor(),
+      ...this.avatar.getSkinAppearance(),
+    });
+    this.transitRigCharacterId = targetId;
+    this.transitAvatarState.rig = this.transitRig.group;
   }
 
   private installRoom(
@@ -510,6 +694,9 @@ export class WorldEngine {
 
     // Move the room window: neighbours load immediately so transitions never stall
     this.adjacentReady = this.previews?.syncPinnedForRoom(room, heading, !prevRoom) ?? Promise.resolve();
+    // Pre-compile the local avatar rig for the newly installed room's lighting/shadows
+    // so switching from FPS to 3rd person in any room never hitches.
+    void this.warmUpLocalAvatar();
 
     // Brief portal reentry grace period so players don't immediately re-trigger a portal at spawn
     this.portalCooldownUntil = performance.now() + 900;
@@ -748,6 +935,7 @@ export class WorldEngine {
     // Keep transit avatar proxy animation synced with the live character
     this.transitAvatarPos.copy(this.avatar.position);
     if (!this.avatar.firstPerson) {
+      if (this.transitPortal) this.syncTransitRigIfNeeded();
       this.transitRig.update(dt, this.elapsed, this.avatar.getMotionState());
     }
 
@@ -980,6 +1168,13 @@ export class WorldEngine {
       window.clearTimeout(this.orientationTimer);
       this.orientationTimer = null;
     }
+    if (this.transitRigTimer !== null) {
+      window.clearTimeout(this.transitRigTimer);
+      this.transitRigTimer = null;
+    }
+    this.clearPrewarmedCharacter();
+    this.avatarCompileTarget?.dispose();
+    this.avatarCompileTarget = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
     window.removeEventListener('resize', this.handleResize);

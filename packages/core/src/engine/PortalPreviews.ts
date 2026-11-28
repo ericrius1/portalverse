@@ -663,6 +663,66 @@ export class PortalPreviews {
     }
   }
 
+  /**
+   * Pre-compile a single object subtree (such as the hidden FPS local avatar rig) against
+   * `targetScene`'s lighting and environment using the same serialized compile lock as
+   * background room precompiles. Restores `object.visible` and render target synchronously
+   * before awaiting so an invisible FPS rig never flashes on screen.
+   */
+  async compileObject(
+    object: THREE.Object3D,
+    targetScene: THREE.Scene,
+    useSceneTarget = true,
+  ): Promise<void> {
+    while (this.compiling) await this.compiling;
+    const work = this.compileObjectNow(object, targetScene, useSceneTarget);
+    this.compiling = work.catch(() => {});
+    try {
+      await work;
+    } finally {
+      if (this.compiling) this.compiling = undefined;
+    }
+  }
+
+  private async compileObjectNow(
+    object: THREE.Object3D,
+    targetScene: THREE.Scene,
+    useSceneTarget: boolean,
+  ): Promise<void> {
+    const prevVisible = object.visible;
+    const culled: THREE.Object3D[] = [];
+    object.visible = true;
+    object.traverse((child) => {
+      if (!child.frustumCulled) return;
+      child.frustumCulled = false;
+      culled.push(child);
+    });
+    object.updateMatrixWorld(true);
+
+    const compileTarget = useSceneTarget ? (this.compileTarget ??= createSceneTarget(1, 1)) : null;
+    const target = this.renderer.getRenderTarget();
+    const previous = this.compileTarget && target === this.compileTarget ? null : target;
+    let pending: Promise<unknown> | undefined;
+    try {
+      this.compileCamera.coordinateSystem = this.renderer.coordinateSystem;
+      this.compileCamera.updateProjectionMatrix();
+      this.renderer.setRenderTarget(compileTarget);
+      pending = this.renderer.compileAsync(object, this.compileCamera, targetScene);
+    } finally {
+      // Projection into Three.js's precompile queue runs synchronously before the first await.
+      // Restore visibility, culling, and the active render target immediately so live FPS frames
+      // never flash the avatar or draw into the 1x1 compile target while pipelines finish.
+      object.visible = prevVisible;
+      for (const child of culled) child.frustumCulled = true;
+      this.renderer.setRenderTarget(previous);
+    }
+    try {
+      await pending;
+    } finally {
+      this.renderer.setRenderTarget(previous);
+    }
+  }
+
   prepare(id: string, urgent = true): Promise<RoomInstance> | undefined {
     const dest = this.destination(id, this.lastElapsed, urgent);
     if (dest) {

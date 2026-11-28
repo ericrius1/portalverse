@@ -152,6 +152,10 @@ export class AvatarController {
   private lookTurn?: { yaw: number; pitch: number; dyaw: number; dpitch: number; initialLift: number; start: number; duration: number };
   private activeDragPointerId: number | null = null;
   private readonly desiredCamPos = new THREE.Vector3();
+  private readonly fpsLookTarget = new THREE.Vector3();
+  private readonly chaseLookTarget = new THREE.Vector3();
+  /** Smooth 0 (FPS) -> 1 (3rd person) look-target blend so toggling out of FPS glides cleanly. */
+  private cameraViewBlend = 0;
   private readonly flyVel = new THREE.Vector3();
   private readonly takeoffDrift = new THREE.Vector3();
   private readonly stride = new THREE.Vector2();
@@ -423,6 +427,10 @@ export class AvatarController {
     return this.localCharacterId;
   }
 
+  getLocalRig(): CharacterRig {
+    return this.localRig;
+  }
+
   getSkinAppearance(): SkinAppearance {
     return { ...this.localAppearance };
   }
@@ -433,10 +441,15 @@ export class AvatarController {
     this.onSkinAppearanceChange?.(this.localAppearance);
   }
 
-  setCharacter(characterId: string): void {
+  setCharacter(characterId: string, prewarmedRig?: CharacterRig): void {
     const resolvedDef = getCharacterDefinition(characterId);
     const resolved = resolvedDef.id;
-    if (resolved === this.localCharacterId) return;
+    if (resolved === this.localCharacterId) {
+      if (prewarmedRig && prewarmedRig !== this.localRig) {
+        prewarmedRig.dispose();
+      }
+      return;
+    }
     this.facingYaw = this.getFacingYaw();
     this.localCharacterId = resolved;
     const defaultMode = getCharacterDefinition(resolved).defaultMovementMode;
@@ -447,7 +460,13 @@ export class AvatarController {
     this.scene.remove(this.localRig.group);
     this.localRig.dispose();
 
-    this.localRig = createCharacterRig(resolved, { accentColor: this.localColor, ...this.localAppearance });
+    if (prewarmedRig) {
+      this.localRig = prewarmedRig;
+      this.localRig.setAccentColor?.(this.localColor);
+      this.localRig.setSkinAppearance?.(this.localAppearance);
+    } else {
+      this.localRig = createCharacterRig(resolved, { accentColor: this.localColor, ...this.localAppearance });
+    }
     this.localRig.group.position.copy(this.position);
     this.localRig.group.rotation.y = this.getFacingYaw();
     this.localRig.group.visible = wasVisible;
@@ -563,6 +582,7 @@ export class AvatarController {
   }
 
   snapCameraToTarget(): void {
+    this.cameraViewBlend = this.firstPerson ? 0 : 1;
     const eyeY = this.position.y + 1.65;
     if (this.firstPerson) {
       this.camera.position.set(this.position.x, eyeY, this.position.z);
@@ -701,10 +721,13 @@ export class AvatarController {
     this.chaseLift = 0;
     this.facingYaw = this.getFacingYaw();
     this.firstPerson = firstPerson;
+    if (firstPerson) {
+      this.cameraViewBlend = 0;
+    }
     if (getCharacterDefinition(this.localCharacterId).thirdPersonMovement === 'adventure') {
       this.prevRigYaw = this.getFacingYaw();
     }
-    this.localRig.group.visible = !this.firstPerson;
+    this.updateCameraVisibility();
     this.onCameraViewChange?.(this.firstPerson);
   }
 
@@ -1125,6 +1148,7 @@ export class AvatarController {
     // Update camera (3rd person chase OR 1st person eye)
     const eyeY = this.position.y + 1.65;
     if (this.firstPerson) {
+      this.cameraViewBlend = 0;
       this.camera.position.set(this.position.x, eyeY, this.position.z);
       const lookX = this.position.x - Math.sin(this.yaw) * Math.cos(this.pitch) * 10;
       const lookY = eyeY + Math.sin(this.pitch) * 10;
@@ -1139,13 +1163,28 @@ export class AvatarController {
       );
       const camZ = this.position.z + Math.cos(this.yaw) * Math.cos(this.pitch) * camDist;
       this.desiredCamPos.set(camX, camY, camZ);
-      this.camera.position.lerp(this.desiredCamPos, Math.min(1, clampedDt * 12));
+      this.camera.position.lerp(this.desiredCamPos, 1 - Math.exp(-12 * clampedDt));
       const lookAhead = this.isFlying ? 12 : 4;
-      this.camera.lookAt(
+      this.chaseLookTarget.set(
         this.position.x - Math.sin(this.yaw) * lookAhead,
         eyeY + this.chaseRise(this.pitch) * lookAhead,
         this.position.z - Math.cos(this.yaw) * lookAhead,
       );
+      if (this.cameraViewBlend < 1) {
+        this.cameraViewBlend = damp(this.cameraViewBlend, 1, 14, clampedDt);
+        if (this.cameraViewBlend > 0.998) this.cameraViewBlend = 1;
+      }
+      if (this.cameraViewBlend < 1) {
+        this.fpsLookTarget.set(
+          this.position.x - Math.sin(this.yaw) * Math.cos(this.pitch) * 10,
+          eyeY + Math.sin(this.pitch) * 10,
+          this.position.z - Math.cos(this.yaw) * Math.cos(this.pitch) * 10,
+        );
+        this.fpsLookTarget.lerp(this.chaseLookTarget, this.cameraViewBlend);
+        this.camera.lookAt(this.fpsLookTarget);
+      } else {
+        this.camera.lookAt(this.chaseLookTarget);
+      }
     }
 
     // Smoothly interpolate & animate remote players
