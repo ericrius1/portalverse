@@ -22,7 +22,7 @@ import {
 } from './textures';
 import { decimateGeometry } from './headGeometry';
 
-describe('jp-visages-synthesis layout, terrain, and collider', () => {
+describe('jp-visage layout, terrain, and collider', () => {
   const plan = buildVisageSynthesisPlan();
 
   it('places two endless opposing rows of upright heads facing inward well past both portals', () => {
@@ -101,7 +101,7 @@ describe('jp-visages-synthesis layout, terrain, and collider', () => {
   });
 });
 
-describe('jp-visages-synthesis procedural textures and LOD decimation', () => {
+describe('jp-visage procedural textures and LOD decimation', () => {
   it('builds a coherent single-layer cobblestone atlas, non-Voronoi grain map, and HDR reflection sky', async () => {
     const [cobble, grain, sky] = await Promise.all([
       cobbleMapPixels(),

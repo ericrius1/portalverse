@@ -205,6 +205,17 @@ export function buildRemotePortalUrl(
 const ROUTE_PARAMS = ['world', 'spawn', 'handoff'] as const;
 const RELATIVE_BASE = 'http://portalverse.invalid';
 
+// Public bookmarks made before the rooms received their official names.
+const ROOM_ROUTE_ALIASES = new Map([
+  ['jp-obsidian-relay', 'jp-relay'],
+  ['jp-visages-synthesis', 'jp-visage'],
+  ['jp-loft', 'jp-apartment'],
+]);
+
+function canonicalRoomRoute(id: string): string {
+  return ROOM_ROUTE_ALIASES.get(id) ?? id;
+}
+
 /**
  * Builds a clean shareable link, e.g. `https://host/?world=jp-world` or
  * `https://host/?world=fishpond&spawn=exit`. Other query params on the base
@@ -226,7 +237,7 @@ export function buildShareableWorldUrl(
   url.hash = '';
 
   const worldId = sanitizeId(opts.worldId);
-  if (worldId) url.searchParams.set('world', worldId);
+  if (worldId) url.searchParams.set('world', canonicalRoomRoute(worldId));
   const spawnId = sanitizeId(opts.spawnId);
   if (spawnId) url.searchParams.set('spawn', spawnId);
 
@@ -246,14 +257,19 @@ export function readRouteFromLocation(search: string, hash?: string): LocationRo
   const hashParams = new URLSearchParams((hash ?? '').replace(/^#/, ''));
 
   const worldId = sanitizeId(query.get('world'));
-  if (worldId) route.worldId = worldId;
+  if (worldId) route.worldId = canonicalRoomRoute(worldId);
   const spawnId = sanitizeId(query.get('spawn'));
   if (spawnId) route.spawnId = spawnId;
 
   const encoded = query.get('handoff') ?? hashParams.get('handoff');
   if (encoded) {
     const handoff = decodePortalHandoff(encoded);
-    if (handoff) route.handoff = handoff;
+    if (handoff) {
+      // Only the local destination is renamed; the remote origin/return URL
+      // may still belong to a deployment using the old catalog.
+      if (handoff.targetWorldId) handoff.targetWorldId = canonicalRoomRoute(handoff.targetWorldId);
+      route.handoff = handoff;
+    }
   }
   return route;
 }

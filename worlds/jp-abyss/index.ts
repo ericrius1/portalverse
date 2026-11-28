@@ -1,5 +1,5 @@
 /**
- * ABYSS STEPPING STONES (`jp-abyss`)
+ * ABYSS (`jp-abyss`)
  *
  * A crooked path of ancient stones hanging in the dark, high above a chasm. Each
  * stone is a Voronoi cell cut along the path, gapped from its neighbours,

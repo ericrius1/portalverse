@@ -51,9 +51,9 @@ Each keeper gives one clue on their deep-lore node (`grantsClue`). Each keeper a
 | Fen (Breezy Plant Garden) | `clue_wind_from_nowhere`: *A Breeze With No Compass Point* | `clue_draft_pine_honey` | Juno |
 | Uncle Keola (Kāneʻohe Fishpond) | `clue_makaha_tide`: *What the Mākāhā Lets In* | `clue_falling_stones` | Cairn |
 | Nori (Coral Reef Walk) | `clue_coral_song`: *Grooves in the Coral* | `clue_resonance_gsharp` | Lulu |
-| Juno (Night Loft) | `clue_draft_pine_honey`: *A Draft Through a Closed Window* | `clue_upward_snow` | Ermelin |
-| Cairn (Abyss Stepping Stones) | `clue_falling_stones`: *What Falls Doesn't Land Here* | `clue_makaha_tide` | Keola |
-| Vesper (Avenue of Visages) | `clue_obsidian_sky`: *The Other Sky in Their Eyes* | `clue_knotted_constellation` | Halcyon |
+| Juno (Apartment) | `clue_draft_pine_honey`: *A Draft Through a Closed Window* | `clue_upward_snow` | Ermelin |
+| Cairn (Abyss) | `clue_falling_stones`: *What Falls Doesn't Land Here* | `clue_makaha_tide` | Keola |
+| Vesper (Visage) | `clue_obsidian_sky`: *The Other Sky in Their Eyes* | `clue_knotted_constellation` | Halcyon |
 | Soraya (Palace Lagoon) | `clue_projected_lattice`: *A Pattern Cast From Somewhere Wider* | `clue_fourth_axis` | Kestrel |
 | Dex (Laser Forcefield Arena) | `clue_second_beam`: *The Beam Nobody Fires* | `clue_obsidian_sky` | Vesper |
 | Ermelin (Alpine Snow Run) | `clue_upward_snow`: *Snow That Remembers Falling Up* | `clue_second_sun` | Solenne |
@@ -79,9 +79,9 @@ When a player holds all fifteen clues, the journal could add one more entry with
 | 3 | Breezy Plant Garden (`jp-garden`) | **Fen**, the Breeze Between Leaves (`fen`) | Leaf-woven breeze spirit | 1.52 m | `comic` |
 | 4 | Kāneʻohe Fishpond (`fishpond`) | **Uncle Keola**, Kiaʻi Loko (`keola`) | Human, Native Hawaiian kupuna | 1.76 m | `glass` |
 | 5 | Coral Reef Walk (`jp-reef`) | **Nori**, Current-Reader (`nori`) | Tidefolk sea-person | 1.58 m | `thought` |
-| 6 | Night Loft (`jp-loft`) | **Juno Park**, Night-Shift Translator (`juno`), with Mandu the shiba | Human, urban dreamer | 1.66 m | `thought` |
-| 7 | Abyss Stepping Stones (`jp-abyss`) | **Cairn**, Abbot of the Stepping Stones (`cairn`) | Voronoi stone construct | 2.10 m | `cyber` |
-| 8 | Avenue of Visages (`jp-visages-synthesis`, also `jp-visages`, `jp-visages-claude`, `jp-visages-codex`) | **Vesper**, Last Lamplighter (`vesper`) | Moon-touched human, half-carved | 2.02 m | `parchment` |
+| 6 | Apartment (`jp-apartment`) | **Juno Park**, Night-Shift Translator (`juno`), with Mandu the shiba | Human, urban dreamer | 1.66 m | `thought` |
+| 7 | Abyss (`jp-abyss`) | **Cairn**, Abbot of the Stepping Stones (`cairn`) | Voronoi stone construct | 2.10 m | `cyber` |
+| 8 | Visage (`jp-visage`, also `jp-visages`, `jp-visages-claude`, `jp-visages-codex`) | **Vesper**, Last Lamplighter (`vesper`) | Moon-touched human, half-carved | 2.02 m | `parchment` |
 | 9 | Palace Lagoon (`eric-palace-lagoon`) | **Soraya Benali**, Geometer of the Tiled Dome (`soraya`) | Human, zellige master | 1.70 m | `aurora` |
 | 10 | Laser Forcefield Arena (`laser-lab`) | **Dex Arclight**, Light-Show Rigger (`dex`) | Human, augmented | 1.74 m | `shout` |
 | 11 | Alpine Snow Run (`alpine-sled`) | **Ermelin**, Lantern Warden (`ermelin`) | Ermine-folk | 1.48 m | `shout` |
@@ -217,7 +217,7 @@ Each brief covers **concept · silhouette · outfit layers · signature prop · 
 
 ---
 
-### 4.6 Juno Park, Night-Shift Translator · Night Loft (`jp-loft`), with Mandu the shiba
+### 4.6 Juno Park, Night-Shift Translator · Apartment (`jp-apartment`), with Mandu the shiba
 
 **Concept:** a Korean-American subtitle translator who works at 3 a.m. because "daytime is too loud", and who makes up stories for the city's windows. Her shiba, Mandu, barks before anyone comes through the portal, and a sealed window breathes pine and honey.
 
@@ -235,7 +235,7 @@ Each brief covers **concept · silhouette · outfit layers · signature prop · 
 
 ---
 
-### 4.7 Cairn, Abbot of the Stepping Stones · Abyss Stepping Stones (`jp-abyss`)
+### 4.7 Cairn, Abbot of the Stepping Stones · Abyss (`jp-abyss`)
 
 **Concept:** stones that broke the same way and agreed to stay near, held together by a teal "agreement" of light. Cairn is serene, slow, and "mostly time". Cairn has lost eleven fingers to the fog, and later learns they were *sent*.
 
@@ -252,7 +252,7 @@ Each brief covers **concept · silhouette · outfit layers · signature prop · 
 
 ---
 
-### 4.8 Vesper, Last Lamplighter of the Avenue · Avenue of Visages (`jp-visages-synthesis`; shared by `jp-visages`, `jp-visages-claude`, `jp-visages-codex`)
+### 4.8 Vesper, Last Lamplighter of the Avenue · Visage (`jp-visage`; shared by `jp-visages`, `jp-visages-claude`, `jp-visages-codex`)
 
 **Concept:** the last lamplighter, who lights the Avenue each night and polishes the colossal heads' obsidian eyes so they mirror the moon. She is mostly human; "the rest is moonlight that stayed too long". She is gothic, courteous and melancholy, and the eyes have started showing another sky.
 

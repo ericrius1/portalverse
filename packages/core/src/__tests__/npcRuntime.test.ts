@@ -62,7 +62,7 @@ describe('NPC runtime, journal memory, and Cast facial animation', () => {
   it('mounts multiple Keepers in Eric’s rooms and zero Keepers in non-Eric rooms', () => {
     const manager = new NpcManager();
 
-    manager.mountForRoom(makeMockRoom('jp-loft'));
+    manager.mountForRoom(makeMockRoom('jp-apartment'));
     expect(manager.getActors()).toHaveLength(0);
 
     manager.mountForRoom(makeMockRoom('doug-cassette-station'));

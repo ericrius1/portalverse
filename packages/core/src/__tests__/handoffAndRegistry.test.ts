@@ -163,6 +163,22 @@ describe('remote + shareable URLs', () => {
     const url = new URL(buildShareableWorldUrl('https://x.dev/', { worldId: 'laser-lab', spawnId: 'entrance' }));
     expect(readRouteFromLocation(url.search, url.hash)).toEqual({ worldId: 'laser-lab', spawnId: 'entrance' });
   });
+
+  it.each([
+    ['jp-obsidian-relay', 'jp-relay'],
+    ['jp-visages-synthesis', 'jp-visage'],
+    ['jp-loft', 'jp-apartment'],
+  ])('keeps legacy %s bookmarks and handoffs working as %s', (legacy, canonical) => {
+    expect(registryJson.worlds.some(room => room.id === canonical)).toBe(true);
+    expect(readRouteFromLocation(`?world=${legacy}&spawn=exit`)).toEqual({
+      worldId: canonical, spawnId: 'exit',
+    });
+    expect(buildShareableWorldUrl('/?debug=1', { worldId: legacy, spawnId: 'exit' }))
+      .toBe(`/?debug=1&world=${canonical}&spawn=exit`);
+    const incoming = { ...payload, fromWorldId: legacy, targetWorldId: legacy };
+    expect(readRouteFromLocation('', `#handoff=${encodePortalHandoff(incoming)}`).handoff)
+      .toEqual({ ...incoming, targetWorldId: canonical });
+  });
 });
 
 describe('createReturnPortalFromHandoff', () => {

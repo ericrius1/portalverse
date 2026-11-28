@@ -38,7 +38,7 @@ describe('soundtrack mixing', () => {
 
   it('gives each room a song of its own stems, loudest first', () => {
     expect(stemsFor(vibeFor('jp-abyss'))).toEqual(['abyss-bed', 'abyss-motif']);
-    expect(stemsFor(vibeFor('jp-loft'))[0]).toBe('lofi-bed');
+    expect(stemsFor(vibeFor('jp-apartment'))[0]).toBe('lofi-bed');
     expect(stemsFor(vibeFor('unknown-room')).length).toBeGreaterThan(0);
   });
 

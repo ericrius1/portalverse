@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 /**
- * VISAGES — SYNTHESIS (`jp-visages-synthesis`)
+ * VISAGE (`jp-visage`)
  *
  * A unified synthesis of the strongest elements across the three Visages studies:
  *  - Neon's monumental composition, ruined background monoliths, scattered debris, pale
@@ -303,7 +303,7 @@ function schlickFresnel(normal: Vec3Node, f0: number): FloatNode {
   return float(f0).add(float(1 - f0).mul(pow(float(1).sub(facing), 5))) as FloatNode;
 }
 
-export default defineRoom('jp-visages-synthesis', {
+export default defineRoom('jp-visage', {
   async mount(ctx) {
     const eyeStudy = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('eyes') === 'compare';
     const [layout, headLods] = await Promise.all([sharedSynthesisLayout(), loadHeadLods()]);

@@ -75,8 +75,8 @@ See [COLLAB.md](./COLLAB.md#building-your-room) for the full room authoring cont
   3. **Breezy Plant Garden (`worlds/jp-garden`)** — Giant flat-coloured tropical plants swaying in the breeze and bending away as you pass (`jpwhitaker`).
   4. **Kāneʻohe Fishpond (`worlds/fishpond`)** — Hawaiian coastal *loko iʻa* boardwalk over turquoise TSL lagoon water, basalt walls, swaying palms, reef fish, and Koʻolau cliffs (`jpwhitaker`).
   5. **Coral Reef Walk (`worlds/jp-reef`)** — A sea-floor path through a coral canyon with caustic light, jellyfish, fish schools, a turtle, and a manta ray (`jpwhitaker`).
-  6. **Night Loft (`worlds/jp-loft`)** — An open-plan loft above the night city, with warm lamps and a shiba that follows you around (`jpwhitaker`).
-  7. **Abyss Stepping Stones (`worlds/jp-abyss`)** — A crooked path of ancient floating stones high above a chasm of drifting fog, glowing from beneath and trailing smoke, with needle spires rising out of the murk (`jpwhitaker`).
+  6. **Apartment (`worlds/jp-apartment`)** — An open-plan loft above the night city, with warm lamps and a shiba that follows you around (`jpwhitaker`).
+  7. **Abyss (`worlds/jp-abyss`)** — A crooked path of ancient floating stones high above a chasm of drifting fog, glowing from beneath and trailing smoke, with needle spires rising out of the murk (`jpwhitaker`).
   8. **Palace Lagoon (`worlds/eric-palace-lagoon`)** — Earth's Palace of Fine Arts across a mirror-still lagoon at golden hour, from a wind-blown wildflower meadow. The first room drawn with [weft](https://github.com/ericrius1/weft) instead of Three.js, composited with depth through the engine's GPU layers (`ericrius1`).
   9. **Laser Forcefield Arena (`worlds/laser-lab`)** — Pitch-black light-show gallery with sweeping volumetric TSL laser fans, pulsing scanline forcefield walls, and floating prisms (`jpwhitaker`).
   10. **Alpine Snow Run (`worlds/alpine-sled`)** — Twilight snow promenade with lantern-lit sled fences, frosted fir forests, alpenglow peaks, toboggans, and drifting snow (`jpwhitaker`).

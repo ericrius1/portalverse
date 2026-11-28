@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 /**
- * NIGHT LOFT (`jp-loft`)
+ * APARTMENT (`jp-apartment`)
  *
  * Inspired by JP's `apartment` and `white-fiber` scenes, using their furniture, the
  * shiba and the night-city sky: a long open-plan loft with window bays looking out
@@ -9,17 +9,18 @@
  * bed when you leave.
  */
 import * as THREE from 'three/webgpu';
-import { abs, color, cos, float, floor, fract, mix, positionWorld, sin, smoothstep, vec3 } from 'three/tsl';
+import { abs, color, cos, float, floor, fract, mix, positionLocal, positionWorld, sin, smoothstep, uniform, vec3 } from 'three/tsl';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { disposeObject, groundModel, loadGLB, seededRandom } from '@portalverse/core/rooms/kit';
 import cityUrl from './assets/modern_buildings_night_1k.hdr?url';
+import { mountLightingControls, observeLighting } from './lighting';
 
 const assets = import.meta.glob<string>('./assets/*.glb', { query: '?url', import: 'default', eager: true });
 const asset = (name: string): string => {
   const url = assets[`./assets/${name}.glb`];
-  if (!url) throw new Error(`jp-loft: missing asset ${name}`);
+  if (!url) throw new Error(`jp-apartment: missing asset ${name}`);
   return url;
 };
 
@@ -143,7 +144,7 @@ function frontOf(model: THREE.Object3D): THREE.Vector3 {
   return back.lengthSq() < 1e-6 ? new THREE.Vector3(0, 0, 1) : back.normalize().negate();
 }
 
-export default defineRoom('jp-loft', {
+export default defineRoom('jp-apartment', {
   async mount(ctx) {
     const rand = seededRandom(1999);
     const root = new THREE.Group();
@@ -160,18 +161,42 @@ export default defineRoom('jp-loft', {
     ]);
     templates.push(couch, lamp, plant, sideTable, door, shibaGltf);
 
+    // This GLB uses one textured material for both the shade and the metal base.
+    // Its cylindrical shade spans local Y 0.4715–0.6916 m, radius 0.1973 m.
+    // Mask emission to that shell so the stem/base remain ordinary reflective metal.
+    const lampGlow = uniform(1);
+    lamp.scene.traverse(object => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const source = mesh.material as THREE.MeshStandardMaterial;
+      const shade = new THREE.MeshStandardNodeMaterial({
+        map: source.map, color: source.color, roughness: source.roughness,
+        metalness: source.metalness, side: source.side,
+      });
+      const shell = smoothstep(0.46, 0.475, positionLocal.y)
+        .mul(smoothstep(0.14, 0.18, positionLocal.xz.length()));
+      shade.emissiveNode = color('#ffd39b').mul(shell).mul(lampGlow).mul(1.8);
+      mesh.material = shade;
+      source.dispose(); // Texture remains shared with the replacement material.
+      const bulb = new THREE.Object3D();
+      bulb.name = 'loft-lamp-bulb';
+      bulb.position.set(0, (0.4715 + 0.6916) / 2, 0);
+      mesh.add(bulb);
+    });
+
     // Night city outside, and its glow on the room
     city.mapping = THREE.EquirectangularReflectionMapping;
     ctx.scene.background = new THREE.Color('#0b0e18');
     ctx.scene.environment = city;
-    ctx.scene.environmentIntensity = 0.45;
     ctx.scene.fog = new THREE.Fog('#0b0e18', 45, 160);
     const skyGeometry = geometry(new THREE.SphereGeometry(150, 64, 32));
     skyGeometry.scale(-1, 1, 1);
-    const sky = new THREE.Mesh(skyGeometry, material(new THREE.MeshBasicNodeMaterial({ map: city, color: new THREE.Color(1.7, 1.7, 1.7), fog: false })));
+    const skyMaterial = material(new THREE.MeshBasicNodeMaterial({ map: city, fog: false }));
+    const sky = new THREE.Mesh(skyGeometry, skyMaterial);
     sky.position.y = 8;
     root.add(sky);
-    root.add(new THREE.HemisphereLight('#7f8fbf', '#2a1c14', 0.55));
+    const ambientFill = new THREE.HemisphereLight('#7f8fbf', '#2a1c14', 0.15);
+    root.add(ambientFill);
 
     // Floor: warm planks
     ctx.addPlatform({ minX: -HALF_WIDTH, maxX: HALF_WIDTH, minZ: -HALF_LENGTH, maxZ: HALF_LENGTH, topY: 0 });
@@ -320,11 +345,18 @@ export default defineRoom('jp-loft', {
 
     // Living room (left): couch facing the path across a rug, lamp on a side table, plants
     const sideTableHeight = 0.483;
+    const placeLamp = (x: number, z: number, intensity: number) => {
+      const piece = furnish(lamp, x, z, towardPath(x), 1.5);
+      piece.position.y = sideTableHeight * 1.65;
+      piece.updateWorldMatrix(true, true);
+      const bulb = piece.getObjectByName('loft-lamp-bulb')!;
+      const position = bulb.getWorldPosition(new THREE.Vector3());
+      warmLight(position.x, position.y, position.z, intensity);
+    };
     rug(-6.4, 12.6, 6.2, 5.4, rugMaterial('#8a3b2e', '#d9a56b'));
     furnish(couch, -7.7, 12, towardPath(-7.7), 1.75);
     furnish(sideTable, -7.9, 14.6, towardPath(-7.9), 1.65);
-    furnish(lamp, -7.9, 14.6, towardPath(-7.9), 1.5).position.y = sideTableHeight * 1.65;
-    warmLight(-7.9, 2.0, 14.6, 16);
+    placeLamp(-7.9, 14.6, 16);
     furnish(plant, -9.0, 17.2, towardPath(-9), 1.65);
     furnish(plant, -9.0, 7.2, towardPath(-9), 1.45);
     // Dog bed by the couch
@@ -336,8 +368,7 @@ export default defineRoom('jp-loft', {
     rug(6.5, 13.4, 5.8, 5.2, rugMaterial('#2f4858', '#86bbd8'));
     furnish(couch, 7.7, 14, towardPath(7.7), 1.65);
     furnish(sideTable, 7.9, 11.45, towardPath(7.9), 1.65);
-    furnish(lamp, 7.9, 11.45, towardPath(7.9), 1.5).position.y = sideTableHeight * 1.65;
-    warmLight(7.9, 2.0, 11.45, 16);
+    placeLamp(7.9, 11.45, 16);
     const shelfWood = material(new THREE.MeshStandardMaterial({ color: '#5a3a24', roughness: 0.7 }));
     const bookColors = ['#c0392b', '#2e86ab', '#f6c85f', '#6f4e7c', '#9fd356', '#e8e1d5', '#264653'].map(c => material(new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 })));
     for (const shelfZ of [18.5, 20.8]) {
@@ -397,9 +428,20 @@ export default defineRoom('jp-loft', {
     box(0.36, 1.75, 3.3, tableWood, -9.7, 0.875, -22);
     for (const z of [-24.45, -19.55]) {
       furnish(sideTable, -9.0, z, towardPath(-9), 1.65);
-      furnish(lamp, -9.0, z, towardPath(-9), 1.5).position.y = sideTableHeight * 1.65;
+      placeLamp(-9.0, z, 8);
     }
-    warmLight(-9.0, 2.0, -22, 16);
+
+    // Change uniforms/light strengths, not shader topology or shared renderer exposure.
+    const lampIntensities = lights.map(light => light.intensity);
+    const stopObservingLighting = observeLighting(settings => {
+      skyMaterial.color.setScalar(settings.city);
+      ctx.scene.environmentIntensity = settings.environment;
+      ambientFill.intensity = settings.fill;
+      lampGlow.value = settings.lamps;
+      lights.forEach((light, i) => { light.intensity = lampIntensities[i] * settings.lamps; });
+    });
+    ctx.onActivate(mountLightingControls);
+    ctx.onDispose(stopObservingLighting);
 
     // Lounge (right): second couch under the window, plants
     rug(6.5, -18, 6.0, 5.0, rugMaterial('#4b3f2f', '#c9a227'));

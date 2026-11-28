@@ -476,7 +476,7 @@ const NORI: NpcSpec = {
   }),
 };
 
-// ─── 6 · Night Loft ─────────────────────────────────────────────────────────
+// ─── 6 · Apartment ─────────────────────────────────────────────────────────
 
 const JUNO: NpcSpec = {
   id: 'juno',
@@ -591,7 +591,7 @@ const JUNO: NpcSpec = {
   }),
 };
 
-// ─── 7 · Abyss Stepping Stones ──────────────────────────────────────────────
+// ─── 7 · Abyss ──────────────────────────────────────────────
 
 const CAIRN: NpcSpec = {
   id: 'cairn',
@@ -706,7 +706,7 @@ const CAIRN: NpcSpec = {
   }),
 };
 
-// ─── 8 · Avenue of Visages (shared by the three archived Visages studies) ───
+// ─── 8 · Visage (shared by the three archived Visages studies) ───
 
 const VESPER: NpcSpec = {
   id: 'vesper',
