@@ -140,7 +140,7 @@ async function buildSplitHead(url: string): Promise<SplitHeadAssets> {
         sourceMesh = obj as THREE.Mesh;
       }
     });
-    if (!sourceMesh) throw new Error('jp-visages-synthesis: head GLB contains no mesh');
+    if (!sourceMesh) throw new Error('jp-visage: head GLB contains no mesh');
 
     const mesh = sourceMesh as THREE.Mesh;
     const srcGeo = mesh.geometry;

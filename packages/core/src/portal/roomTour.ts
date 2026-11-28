@@ -4,7 +4,7 @@ export const VISAGES_TOUR = [
   'jp-visages',
   'jp-visages-claude',
   'jp-visages-codex',
-  'jp-visages-synthesis',
+  'jp-visage',
 ] as const;
 
 /** A tour changes this browser's route, never the persistent world catalog. */

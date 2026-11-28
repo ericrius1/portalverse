@@ -74,8 +74,8 @@
       }
     },
     {
-      "id": "jp-loft",
-      "name": "Night Loft",
+      "id": "jp-apartment",
+      "name": "Apartment",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
       "description": "An open-plan loft above the night city, with warm lamps, a kitchen island and a shiba who follows you around.",
@@ -90,8 +90,24 @@
       }
     },
     {
+      "id": "jp-relay",
+      "name": "Relay",
+      "owner": "jpwhitaker",
+      "author": "JP (jpwhitaker)",
+      "description": "A mirror-black floor in the dark, with ranks of square rack cages standing off it. Orange slashed-zero glyphs chase round the LED rims of their stacked platters, climbing each tower and growing tails, like cues on a lighting console.",
+      "accentColor": "#ff5a14",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
       "id": "jp-abyss",
-      "name": "Abyss Stepping Stones",
+      "name": "Abyss",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
       "description": "A crooked path of ancient floating stones high above a chasm of drifting fog, glowing from beneath and trailing smoke, with needle spires rising out of the murk.",
@@ -108,7 +124,7 @@
     {
       "id": "jp-visages",
       "comparisonOnly": true,
-      "name": "Avenue of Visages — Neon",
+      "name": "Visage — Neon",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
       "description": "Two endless rows of colossal ancient stone heads with obsidian-black eyes facing a rough matte stone path pooled with liquid crimson, marching past both portals into pitch darkness.",
@@ -125,7 +141,7 @@
     {
       "id": "jp-visages-claude",
       "comparisonOnly": true,
-      "name": "Visages (Claude variant)",
+      "name": "Visage (Claude variant)",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
       "description": "Two endless rows of colossal ancient stone heads, buried to the chin with polished black eyes, stare across a rough cobbled path pooled with blood, vanishing into the dark beyond both portals.",
@@ -142,7 +158,7 @@
     {
       "id": "jp-visages-codex",
       "comparisonOnly": true,
-      "name": "The Unending Witnesses — Codex",
+      "name": "Visage — Codex",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
       "description": "Two endless ranks of colossal ancient stone faces watch a rubble-strewn path. Black glass eyes and crimson liquid shine in the cold darkness.",
@@ -157,8 +173,8 @@
       }
     },
     {
-      "id": "jp-visages-synthesis",
-      "name": "Avenue of Visages",
+      "id": "jp-visage",
+      "name": "Visage",
       "owner": "jpwhitaker",
       "author": "JP (jpwhitaker)",
       "description": "A forgotten avenue of colossal weathered faces, black moon-mirroring eyes, broken monuments and dark crimson pools, stretching endlessly into the night.",

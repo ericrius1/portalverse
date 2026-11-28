@@ -25,7 +25,7 @@ export function mountDevControls(initial: VisagesTuning, apply: (value: VisagesT
   panel.dataset.visagesDevControls = '';
   panel.style.cssText = 'position:fixed;left:16px;top:110px;z-index:70;width:270px;max-width:calc(100vw - 32px);padding:14px;border:1px solid #52606d;border-radius:12px;background:#111923ed;color:#e3eaf0;font:13px/1.5 system-ui;pointer-events:auto;box-shadow:0 6px 28px #0008';
   const heading = document.createElement('summary');
-  heading.textContent = 'Visages · dev controls';
+  heading.textContent = 'Visage · dev controls';
   heading.style.cssText = 'cursor:pointer;font-weight:600';
   panel.append(heading);
   const hint = document.createElement('p');

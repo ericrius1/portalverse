@@ -2,6 +2,143 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Official room paths and final Relay floor — Unreleased (2026-11-28)
+
+### Changed / Removed
+
+- Renamed room IDs and folders to `jp-relay`, `jp-visage`, and `jp-apartment`; `jp-abyss` already matches. Updated catalog, room loading references, tour, music, metadata, tests, and current documentation. Old `?world=` bookmarks and incoming handoff destinations resolve to the new IDs; generated share links use the new paths.
+- Removed Relay's floor tuning panel, sliders, style dropdown, H shortcut, saved settings, and inspection light. The approved flat mirror finish is now fixed. Apartment retains its separate lighting controls and saved preferences.
+
+### Design & engineering decisions
+
+- Official names should agree with URLs and source folders without breaking existing links. Remote handoff origin IDs and return URLs are preserved because another deployment may still use the older catalog.
+- Flat reflections need no image distortion: restored direct blending over mirrored racks and removed ripple shaders and per-view framebuffer copies. This preserves the flat surface/reflection formula while removing copy bandwidth, temporary textures, and obsolete tuning code.
+
+## Relay flat floor selected — Unreleased (2026-11-28)
+
+### Changed
+
+- Set **Flat mirror** as Relay's default finish following JP's choice. Reset the floor settings version so saved ripple experiments no longer override it. The other styles remain available in the dropdown; house lights default off.
+
+## Relay ripple strength — Unreleased (2026-11-27)
+
+### Added
+
+- **Ripple strength** slider in Relay's floor panel: 0% is flat, 100% matches the glass/water preset, and 300% triples the distortion. It saves locally and is disabled for Flat mirror.
+
+### Design & engineering decisions
+
+- Controls the wave gradient shared by surface normals and full-image reflection distortion. Reflection brightness stays at its original full level. This replaces the briefly added reflection-brightness control following JP's clarification; any saved brightness setting is ignored while style and house lighting are preserved.
+
+## Relay reflection-image distortion — Unreleased (2026-11-27)
+
+### Fixed
+
+- The floor presets previously warped only glyph coordinates inside the mirrored LED rims; rack silhouettes stayed straight. The floor now captures the already-rendered mirrored scene and distorts that image, visibly bending cage outlines and platters as well as their orange lights.
+- Matched reflectance and roughness across all presets so switching styles no longer mostly changes brightness. Rippled glass has stationary distortion; Slow water animates it; Flat mirror samples without distortion.
+
+### Design & engineering decisions
+
+- A room-local, linear-filtered `ViewportTextureNode` performs one framebuffer copy per rendered view, with separate cached textures for portal targets. The floor writes the complete surface/reflection composite instead of alpha-blending an undistorted image behind it. Disposal tracks and releases all cached copies. This costs copy bandwidth and texture memory, but avoids re-rendering the scene.
+- Screen-space distortion can draw nearby foreground pixels into object boundaries, and fades near screen edges. This remains an approximation, but now affects the reflection geometry visibly rather than only its display patterns.
+- Compared all three styles in the running WebGPU browser: mirror outlines remain straight, glass outlines ripple, and water distortion changes over time. No browser console errors were reported during those checks. Production build and all 21 room tests pass.
+
+## Relay reflective floor styles — Unreleased (2026-11-27)
+
+### Changed / Removed
+
+- Replaced localized bubble/blob normals and all floor sliders with a **Floor style** dropdown: **Rippled glass**, **Slow water**, and **Flat mirror**. Glass uses stationary continuous ripples; water uses three slowly moving waves driven by the shared room clock; mirror has zero distortion.
+- Increased the reflective contribution and lowered glossy-surface roughness across the presets. Floor shading and reflected LEDs use the same analytic wave gradients, while the matte walkway remains flat.
+- House lights is now an inspection checkbox. Settings use a new storage version, intentionally ignoring the retired bubble presets and their strong lighting values.
+
+### Design & engineering decisions
+
+- The former isolated domes looked like raised droplets at glancing angles. Continuous low-amplitude waves provide glass/water character without those bumps. Presets replace the many tuning parameters and switch via uniforms, with no extra draw calls or render targets. Reflection transport is still mirrored room geometry with approximate LED-coordinate distortion, not full-scene rippled reflection sampling.
+
+## Denser irregular Relay bubbles — Unreleased (2026-11-27)
+
+### Added / Changed
+
+- Expanded **Bubble density** from 0–1 to 0–8 and layered three offset fields of compact domes. Above 1, cell spacing decreases; larger blobs overlap across layers without visible cell-edge discontinuities.
+- Added **Blobby shapes**: randomized ellipse orientation, elongation and lobed contours, with an analytic surface gradient shared by floor shading and mirrored LEDs.
+- Added **Reflection bend** (0–8), increasing both distortion gain and the previous fixed 2.5-LED cap, up to 20 LEDs. **Show orange ripples** applies a dense, stronger preset and dims house lighting to preserve the orange contrast.
+
+### Design & engineering decisions
+
+- The old bubbles were sparse circles and reflection distortion was tightly capped, making slider changes hard to read. The new controls expose those limitations directly. This increases shader arithmetic but adds no draw calls, geometry, textures, or render passes. Reflections still warp the existing mirrored LED surfaces rather than sampling additional scene geometry.
+
+## Relay house lights for floor tuning — Unreleased (2026-11-27)
+
+### Added
+
+- **House lights** slider at the top of Relay's floor controls. Raises ambient fill and a low-angle white directional light to make the black surface and its bump highlights easier to inspect. Zero restores the original lighting; the setting persists locally and applies to mounted previews.
+
+### Design & engineering decisions
+
+- One unshadowed inspection light stays in the scene at zero intensity when off, so dragging changes light values without rebuilding materials, adding shadow maps, or changing shared renderer exposure. Floor uniforms remain separate from the lighting setting. The matte walkway intentionally has no irregularity; inspect the glossy sides.
+
+## Official room names and Relay floor controls — Unreleased (2026-11-27)
+
+### Added / Changed
+
+- Official display names are now **Relay**, **Abyss**, **Visage**, and **Apartment**. Updated the catalog, current documentation, room/control headings and tour name assertion; archived Visage variants retain their distinguishing suffixes. Stable IDs, folder names and existing links remain compatible. Older changelog/research entries retain their historical names.
+- Relay's active-room **Relay floor** button / **H** opens five sliders: overall irregularity, bubble height (mm), bubble width, bubble coverage, and broad ripple strength. Settings persist in the visitor's browser, update mounted previews and reset to the original subtle surface. Apartment's panel now says **Apartment lighting**.
+
+### Design & engineering decisions
+
+- Per-mount uniforms drive both floor shading and mirrored LED distortion, with no material rebuilds or geometry changes while dragging. Zero overall irregularity produces a flat normal; the matte walkway and physical collision remain flat. Bubble width is bounded so domes stay inside their noise cells. Reflection distortion retains the existing 2.5-pixel cap.
+
+## Obsidian Relay white solo chases — Unreleased (2026-11-27)
+
+### Added
+
+- Occasional solo effects on one inner-rank rack at a time: a six-second burst of scattered white slashed-zero flashes, alternating with a fast white zero that visits all 32 display positions around each platter before moving down to the next. Each lap takes 0.8 seconds; the descent starts at the top and has exactly one lit glyph across the stack.
+- `specials.ts` exposes timings and a deterministic event sampler. Every 26-second slot selects one nearby rack and starts after a 4–8-second delay. Other racks continue their orange sequences. Cage glow, haze and floor reflections follow the white tint.
+- Tests verify all module positions and platter ordering, single-glyph descent, deterministic independent flashes, real-layout selection and quiet gaps.
+
+### Design & engineering decisions
+
+- A single shared solo scheduler prevents unrelated towers from flashing white simultaneously. The underlying orange cue clocks continue, so the chosen stack resumes its current program after the override. One tint attribute and CPU sampling reuse existing meshes and materials; no added draw calls, lights, render targets or post-processing.
+
+## Night Loft lamp placement and glowing shades — Unreleased (2026-11-27)
+
+### Fixed / Changed
+
+- Replaced the bedroom's floating light over the middle of the bed with two half-strength lights located inside the bedside lamps. Living-room and reading-nook lights now follow the model's bulb position too, including its grounding and scale.
+- Added warm shade-only emission to the lamp model; the metal stems and bases stay non-emissive. The Lamp light slider controls both emission and illumination. This adds one unshadowed point light overall (six total), no bloom passes or shadow maps.
+- Adopted JP's visible tuning values as defaults: city 0.02, HDRI lighting 0.06, lamps 1.01. Ambient fill remains 0.15 because its value was obscured in the screenshot; existing browser-saved choices remain intact.
+
+### Design & engineering decisions
+
+- The bed's central hotspot came from a light at Z = −22 with no fixture. Bulb markers in the lamp model now determine light placement, while a local-space shade mask makes the fixture visibly luminous without turning the whole textured model emissive. The two bedroom lights split the former intensity instead of doubling it.
+
+## Night Loft lighting controls — Unreleased (2026-11-27)
+
+### Added / Changed
+
+- **Room-local lighting controls (`worlds/jp-loft/lighting.ts`, `index.ts`):** an active-room “Loft lighting” button (or H) opens independent sliders for the visible HDR city, HDRI surface lighting/reflections, hemisphere fill, and the existing five warm point lights. Settings persist on the visitor's browser and update mounted Loft previews too; controls and subscriptions clean up on leaving/disposal.
+- **Darker night defaults:** city multiplier 1.7 → 0.12, environment intensity 0.45 → 0.12, ambient fill 0.55 → 0.15. Lamp strengths stay unchanged by default. Reset restores these night settings.
+
+### Design & engineering decisions
+
+- The city and ambient lighting were washing out the interior. Separate controls let the skyline stay readable while retaining contrast around lamps. This changes room-local material/light values only, with no shared renderer exposure changes, new lights, shadow maps, or post-processing passes. Lamp shade emission and halos remain a proposed follow-up, not part of this change.
+
+## Obsidian Relay room — Unreleased (2026-11-27)
+
+### Added
+
+- **`jp-obsidian-relay` (`worlds/jp-obsidian-relay/`, `registry.json`)**: a new room of JP's. A mirror-black floor runs either side of a matte walkway of 4 ft plates, and 169 square rack cages stand off in the dark. The racks are 4 ft square and 10.8–18.8 ft tall, holding 4 in platters with 12 in gaps. Each platter's rim is a ring of 32 orange 8 × 8 LED modules. A slashed zero chases round the bottom platter, the platters above join one beat apart a glyph behind, then tails of fading echoes grow up the tower. Each tower starts at its own deterministic time. You slide along the racks and can fly up and land on their lids. It sits between `jp-loft` and `jp-abyss` in the loop, so only JP's rooms get new neighbours (the Abyss → Visages → Palace order the tour test pins stays put).
+- **Soundtrack vibe (`packages/core/src/audio/musicMix.ts`)**: one `ROOM_VIBES` line for the room, a dark `abyss-bed` under the `soft-beat` its chases are timed to. `musicMix.test.ts` requires a vibe for every room in rotation.
+- **A lighting-console cue scheduler (`cues.ts`, `programs.ts`)**: programs are looping cue lists. Each cue fades attributes (dimmer, tail, falloff, phase, heads, glyph, spacing) with an easing and a per-platter delay fan from the top or bottom of the tower. Three named programs (`relay` as the default, plus `twist` and `weave`) are timed in beats of the soundtrack's 88 BPM. The schema and an example are in the room's `README.md`.
+- **Tests (`relay.test.ts`)**: cover bottom-up activation one beat apart, the one-glyph lag at equal speed, tail growth order, seamless loop wraparound for every program at both tower heights, program validation, the layout's clearances and sizes, collision and lid landing, and a mount smoke test that checks disposal.
+- **Cue authoring guards:** reject non-finite timings, negative rest jitter, and empty zero-duration loops before they can produce invalid display coordinates. Compare stored Float32 style values at the same precision so constant echo falloff does not trigger redundant GPU uploads.
+
+### Design & engineering decisions
+
+- **Pure time sampling:** every platter's state is a function of the engine's shared clock and the rack's integer seed: no timers, no `Math.random`, no `Date.now`. Previews, snapshots and the active view always agree. Glyph position is `speed × time`, not a cue attribute, so it never jumps when a cue fires or a loop wraps. `compileProgram` rejects any program whose fades would still be running when its loop wraps, and a cue only takes effect after its GO. Together these mean each loop ends exactly where the next one starts.
+- **Shader-drawn LEDs, CPU-sampled cues:** 1,727 platters are drawn with one instanced draw for the rims and one for their faces (plus the mirrored copies). The CPU samples every platter into instanced attributes (about 0.25 ms a frame); `aStyle` and cage glow upload only when they change. The shader reads glyph bits from an 8 × 32 atlas. Where LEDs shrink below a pixel it switches to analytic coverage, so distant towers don't shimmer (the canvas has no MSAA).
+- **Reflections without render targets:** the floor reflects a mirrored copy of the racks drawn under it. The floor is a translucent layer blended as `colour + behind × Fresnel`, and fogged by hand. Vinyl blisters exist only as surface normals; reflected LEDs are nudged by twice the floor slope. Players, portals and engine objects don't appear in the reflection (documented in the README).
+
 ## Relocate All Keeper NPCs to Eric's Rooms — Unreleased (2026-11-27)
 
 ### Changed

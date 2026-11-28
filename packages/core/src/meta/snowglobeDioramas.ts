@@ -415,7 +415,7 @@ export function buildSnowglobeDiorama(manifest: WorldManifest): SnowglobeDiorama
     return b.finish({ colorA: '#67e8f9', colorB: '#bae6fd', style: 'bubbles', fallSpeed: 0.34 });
   }
 
-  if (id === 'jp-loft') {
+  if (id === 'jp-apartment') {
     b.addStageDisc('#5c3d28', '#f4a259', '#3b2416', 0.35);
 
     // Night skyline silhouettes with glowing amber windows behind the loft
@@ -518,7 +518,7 @@ export function buildSnowglobeDiorama(manifest: WorldManifest): SnowglobeDiorama
     return b.finish({ colorA: '#3ff2c8', colorB: '#99f6e4', style: 'spores', fallSpeed: 0.2 });
   }
 
-  if (id.startsWith('jp-visages')) {
+  if (id === 'jp-visage' || id.startsWith('jp-visages')) {
     b.addStageDisc('#141118', '#d11824', '#380910', 0.55);
 
     // Glistening crimson pool along the central avenue
