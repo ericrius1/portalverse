@@ -4,7 +4,6 @@ import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { seededRandom } from '@portalverse/core/rooms/kit';
 import { bankHeight, FIELD_HALF_LENGTH, createHedgeCollider, foliageSkinX, pathCenter, pathWidth } from './layout';
 import { getJungleSettings, jungleOriginal, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, sameFoliageShape, observeJungleSettings, type JungleSettings } from './tuning';
-import { mountJungleControls } from './controls';
 import { mountJungleEyes } from './eyes';
 
 // Quantized directly from JP's supplied painting. See CREDITS.md for regions.
@@ -320,6 +319,9 @@ export default defineRoom('jp-jungle-path', {
       }, 80);
     });
     mountJungleEyes(ctx, root);
-    ctx.onActivate(mountJungleControls);
+    if (import.meta.env.DEV) {
+      const { mountJungleControls } = await import('./controls');
+      ctx.onActivate(mountJungleControls);
+    }
   },
 });

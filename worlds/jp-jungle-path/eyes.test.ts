@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three/webgpu';
 import type { WorldContext } from '@portalverse/core/types';
 import { EYE_PERIOD, EYE_RADIUS, eyeAperture, mountJungleEyes, reticleOnEyes, updateGazeBlink } from './eyes';
 
 import { jungleDefaults, updateJungleSettings } from './tuning';
 
+beforeEach(() => updateJungleSettings({ ...jungleDefaults, peripheralEyes: false }));
 afterEach(() => updateJungleSettings(jungleDefaults));
 
 describe('eyes appearing through a clipped blink', () => {
@@ -112,6 +113,20 @@ describe('fixed eyes and peripheral watchers', () => {
       expect(reticleOnEyes(new THREE.Vector3(0, 0, 10), camera.projectionMatrix)).toBe(false);
       expect(reticleOnEyes(new THREE.Vector3(5, 0, -10), camera.projectionMatrix)).toBe(false);
       expect(reticleOnEyes(new THREE.Vector3(0, 3, -10), camera.projectionMatrix)).toBe(false);
+    }
+  });
+
+  it('expands both center detection radii by exactly fifteen percent', () => {
+    const camera = new THREE.PerspectiveCamera(65, 1.6, 0.1, 200);
+    const p = camera.projectionMatrix;
+    for (const axis of [0, 1]) {
+      const scale = p.elements[axis === 0 ? 0 : 5];
+      const originalRadius = 0.035 + (axis === 0 ? 0.65 : EYE_RADIUS) * scale / 10;
+      for (const [multiplier, inside] of [[1.14, true], [1.16, false]] as const) {
+        const point = new THREE.Vector3(0, 0, -10);
+        point.setComponent(axis, originalRadius * multiplier * 10 / scale);
+        expect(reticleOnEyes(point, p)).toBe(inside);
+      }
     }
   });
 

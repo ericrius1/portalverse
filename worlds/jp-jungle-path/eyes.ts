@@ -6,6 +6,7 @@ import { getJungleSettings, layerDepth, observeJungleSettings } from './tuning';
 
 export const EYE_RADIUS = 0.32;
 export const EYE_PERIOD = 14;
+export const RETICLE_RADIUS_SCALE = 1.15;
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 /** Appear through a central slit, watch, blink once, close, and vanish for a while. */
@@ -30,8 +31,8 @@ export function reticleOnEyes(point: THREE.Vector3, projection: THREE.Matrix4): 
   const x = point.x * sx / depth;
   const y = point.y * sy / depth;
   if (Math.abs(x) > 1 || Math.abs(y) > 1) return false;
-  return (x / (0.035 + 0.65 * sx / depth)) ** 2
-    + (y / (0.035 + EYE_RADIUS * sy / depth)) ** 2 <= 1;
+  return (x / ((0.035 + 0.65 * sx / depth) * RETICLE_RADIUS_SCALE)) ** 2
+    + (y / ((0.035 + EYE_RADIUS * sy / depth) * RETICLE_RADIUS_SCALE)) ** 2 <= 1;
 }
 
 export interface GazeBlink { open: number; hiddenUntil: number }

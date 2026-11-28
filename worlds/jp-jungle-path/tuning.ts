@@ -37,7 +37,7 @@ export const jungleOriginal: JungleSettings = {
 };
 /** JP's selected values from the 2026-11-28 1:28 AM screenshots. */
 export const jungleDefaults: JungleSettings = {
-  pupilsOnly: false, peripheralEyes: false,
+  pupilsOnly: false, peripheralEyes: true,
   pathDistance: 5,
   layerGap: 1.3,
   gapMultiplier: 1.3,
@@ -142,8 +142,9 @@ export function sameFoliageShape(a: JungleSettings, b: JungleSettings): boolean 
 }
 
 // Start this chosen composition on reload; retain earlier experiments under v1.
-const storageKey = 'jp-jungle-path.tuning.v2';
+const storageKey = 'jp-jungle-path.tuning.v3';
 function load(): JungleSettings {
+  if (import.meta.env.PROD) return { ...jungleDefaults };
   try { return normalizeSettings(JSON.parse(localStorage.getItem(storageKey) ?? 'null')); }
   catch { return { ...jungleDefaults }; }
 }

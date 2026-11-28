@@ -2,6 +2,18 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — production preset and peripheral radius — Unreleased (2026-11-28)
+
+### Changed
+
+- Enabled peripheral eyes and kept pupil-only tracking off in the approved room defaults. Expanded both axes of the center-view detection radius by 15%, so eyes blink away slightly sooner as the reticle approaches them.
+- Made Jungle controls and their H shortcut development-only; the control module is excluded from production builds. Production uses the approved composition and eye settings without reading experimental browser overrides. Development tuning starts a new saved-settings version with this preset.
+
+### Design & engineering decisions
+
+- JP approved the current eye and foliage heights and requested the wider peripheral effect for release. Preserved the selected composition, blinking cadence, and all geometry; the radius multiplier applies to the complete size-aware detection ellipse.
+- Keep authoring tools available locally while shipping a clean room experience. Test coverage checks both radius boundaries and the approved eye defaults; the production bundle is checked for tuning-panel code.
+
 ## Jungle Path — fixed eyes and peripheral watchers — Unreleased (2026-11-28)
 
 ### Added / Changed
