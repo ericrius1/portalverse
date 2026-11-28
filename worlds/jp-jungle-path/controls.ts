@@ -28,6 +28,26 @@ export function mountJungleControls(): () => void {
     gapMultiplier: ['Gap multiplier', 'Adds outward growth to each successive gap.'],
   };
   const refreshers: Array<(settings: JungleSettings) => void> = [];
+  for (const [key, title, help] of [
+    ['pupilsOnly', 'Follow with pupils only', 'Eyes stay parallel to the foliage; only the dark pupils follow you.'],
+    ['peripheralEyes', 'Peripheral eyes', 'More pairs in the woods. Look directly at them and they blink away.'],
+  ] as const) {
+    const label = document.createElement('label');
+    label.style.cssText = 'display:block;margin:12px 0 16px;cursor:pointer;';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('aria-label', title);
+    input.style.cssText = 'margin:0 8px 0 0;accent-color:#95bb63;';
+    const caption = document.createElement('span');
+    caption.textContent = title;
+    const detail = document.createElement('small');
+    detail.textContent = help;
+    detail.style.cssText = 'display:block;margin-top:5px;color:#adbfad;font-size:11px;';
+    input.addEventListener('change', () => updateJungleSettings({ [key]: input.checked }));
+    refreshers.push(settings => { input.checked = settings[key]; });
+    label.append(input, caption, detail);
+    panel.append(label);
+  }
   function curvePicker(key: 'gapCurve' | 'heightCurve', title: string, options: Record<string, string>, help: string) {
     const label = document.createElement('label');
     label.style.cssText = 'display:block;margin:14px 0;';

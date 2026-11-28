@@ -11,6 +11,8 @@ export const heightCurves = {
   terraces: 'Terraces',
 } as const;
 export interface JungleSettings {
+  pupilsOnly: boolean;
+  peripheralEyes: boolean;
   pathDistance: number;
   layerGap: number;
   gapMultiplier: number;
@@ -24,9 +26,10 @@ export interface JungleSettings {
   gapCurve: keyof typeof gapCurves;
   heightCurve: keyof typeof heightCurves;
 }
-export type JungleKey = Exclude<keyof JungleSettings, 'gapCurve' | 'heightCurve'>;
+export type JungleKey = Exclude<keyof JungleSettings, 'gapCurve' | 'heightCurve' | 'pupilsOnly' | 'peripheralEyes'>;
 /** Fixed geometry reference; keeps existing instance transforms and collision stable. */
 export const jungleOriginal: JungleSettings = {
+  pupilsOnly: false, peripheralEyes: false,
   pathDistance: 0.95, layerGap: 2, gapMultiplier: 1,
   heightNear: 3.6, heightFar: 11.64,
   densityNear: 1, densityFar: 1, leafDepthVariation: 0,
@@ -34,6 +37,7 @@ export const jungleOriginal: JungleSettings = {
 };
 /** JP's selected values from the 2026-11-28 1:28 AM screenshots. */
 export const jungleDefaults: JungleSettings = {
+  pupilsOnly: false, peripheralEyes: false,
   pathDistance: 5,
   layerGap: 1.3,
   gapMultiplier: 1.3,
@@ -64,6 +68,9 @@ export function normalizeSettings(saved: unknown): JungleSettings {
   const result = { ...jungleDefaults };
   if (!saved || typeof saved !== 'object') return result;
   const values = saved as Record<string, unknown>;
+  for (const key of ['pupilsOnly', 'peripheralEyes'] as const) {
+    if (typeof values[key] === 'boolean') result[key] = values[key];
+  }
   // Convert the old rise multiplier into the same endpoint heights.
   const legacyHeight = typeof values.heightMultiplier === 'number' && Number.isFinite(values.heightMultiplier)
     ? 3.6 + 8.04 * Math.max(0.5, Math.min(2.5, values.heightMultiplier)) : undefined;

@@ -1,4 +1,5 @@
 import type { RoomCollider } from '@portalverse/core/types';
+import { layerDepth, type JungleSettings } from './tuning';
 
 export const PATH_HALF_WIDTH = 2.45;
 export const FIELD_HALF_LENGTH = 44;
@@ -46,3 +47,9 @@ export function createHedgeCollider(clearance: () => number = () => 0): RoomColl
 }
 
 export const hedgeCollider = createHedgeCollider();
+
+/** Shared surface for leaf placements and eyes aligned with the foliage. */
+export function foliageSkinX(z: number, y: number, layer: number, side: number, settings: JungleSettings): number {
+  const bow = Math.sin(z * 0.29 + layer * 0.74) * 0.32 + Math.sin(y * 0.65 + z * 0.13) * 0.14;
+  return pathCenter(z) + side * (pathWidth(z) + layerDepth(layer, settings) + bow);
+}

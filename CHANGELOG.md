@@ -2,6 +2,20 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — fixed eyes and peripheral watchers — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Added **Follow with pupils only**: eye pairs remain parallel to the nearby curved leaf layer while their flattened blue-black pupils follow the camera across the sphere surface. Eye heights and the selected foliage composition stay unchanged.
+- Added **Peripheral eyes**: twelve staggered pairs occupy both sides and multiple depths of the woods. Centering the view on a pair clips it shut in 0.1 seconds; it stays hidden while watched and for 0.9 seconds after looking away, then can return on its normal blink cycle.
+- Both toggles sit at the top of Jungle controls and persist in browser settings. They start off so the previously approved three-pair billboard mode remains available unchanged.
+
+### Design & engineering decisions
+
+- Leaf placement and fixed eye orientation share the same bowed surface function. Pupils move and rotate along a bounded spherical cap, retaining the flattened sphere shape and existing symmetric fragment-discard blink.
+- Gaze detection uses the actual camera projection, including pitch, aspect ratio, and apparent eye size. A small center-view ellipse triggers closure without per-frame raycasts through thousands of leaves; normal depth testing still lets foliage hide the eyes. Each pair has independent gaze suppression and blink timing, preventing repeated appearances while stared at.
+- Verified fixed body orientation, pupil movement, multiple visible pairs, fast closure, cooldown/reappearance, saved toggles, retained heights, and cleanup in WebGPU. Unit tests cover projection boundaries, timing, mode restoration, settings validation, and resource disposal.
+
 ## Jungle Path — selected composition and appearing eyes — Unreleased (2026-11-28)
 
 ### Added / Changed

@@ -4,8 +4,14 @@ import { jungleDefaults as selectedDefaults, gapCurves, heightCurves, jungleOrig
 const jungleDefaults = jungleOriginal; // Retain the original geometry-contract checks.
 
 describe('Jungle tuning', () => {
+  it('accepts saved eye toggles while old or malformed values preserve the original mode', () => {
+    expect(normalizeSettings({ pupilsOnly: true, peripheralEyes: true })).toMatchObject({ pupilsOnly: true, peripheralEyes: true });
+    expect(normalizeSettings({ pupilsOnly: 'true', peripheralEyes: 1 })).toMatchObject({ pupilsOnly: false, peripheralEyes: false });
+    expect(normalizeSettings({ heightNear: 0.5, heightFar: 14.83 })).toMatchObject({ pupilsOnly: false, peripheralEyes: false, heightNear: 0.5, heightFar: 14.83 });
+  });
   it('pins the complete screenshot selection as the room defaults', () => {
     expect(selectedDefaults).toEqual({
+      pupilsOnly: false, peripheralEyes: false,
       leafDepthVariation: 0.45, heightNear: 0.5, heightFar: 14.83, heightCurve: 'terraces',
       leafSizeNear: 0.2, densityNear: 2, leafSizeFar: 1.5, densityFar: 0.25,
       pathDistance: 5, layerGap: 1.3, gapMultiplier: 1.3, gapCurve: 'gradual',

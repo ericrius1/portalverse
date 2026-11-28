@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, color, float, fract, mix, positionLocal, positionView, positionWorld, sin, smoothstep, uniform, vec3 } from 'three/tsl';
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { seededRandom } from '@portalverse/core/rooms/kit';
-import { bankHeight, FIELD_HALF_LENGTH, createHedgeCollider, pathCenter, pathWidth } from './layout';
+import { bankHeight, FIELD_HALF_LENGTH, createHedgeCollider, foliageSkinX, pathCenter, pathWidth } from './layout';
 import { getJungleSettings, jungleOriginal, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, sameFoliageShape, observeJungleSettings, type JungleSettings } from './tuning';
 import { mountJungleControls } from './controls';
 import { mountJungleEyes } from './eyes';
@@ -75,9 +75,7 @@ const layoutSeeds = (() => {
 })();
 
 function skinX(z: number, y: number, layer: number, side: number): number {
-  const depth = layerDepth(layer, jungleOriginal);
-  const bow = Math.sin(z * 0.29 + layer * 0.74) * 0.32 + Math.sin(y * 0.65 + z * 0.13) * 0.14;
-  return pathCenter(z) + side * (pathWidth(z) + depth + bow);
+  return foliageSkinX(z, y, layer, side, jungleOriginal);
 }
 
 interface FoliageBank {
