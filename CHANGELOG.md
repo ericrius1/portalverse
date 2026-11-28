@@ -2,6 +2,122 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — production preset and peripheral radius — Unreleased (2026-11-28)
+
+### Changed
+
+- Enabled peripheral eyes and kept pupil-only tracking off in the approved room defaults. Expanded both axes of the center-view detection radius by 15%, so eyes blink away slightly sooner as the reticle approaches them.
+- Made Jungle controls and their H shortcut development-only; the control module is excluded from production builds. Production uses the approved composition and eye settings without reading experimental browser overrides. Development tuning starts a new saved-settings version with this preset.
+
+### Design & engineering decisions
+
+- JP approved the current eye and foliage heights and requested the wider peripheral effect for release. Preserved the selected composition, blinking cadence, and all geometry; the radius multiplier applies to the complete size-aware detection ellipse.
+- Keep authoring tools available locally while shipping a clean room experience. Test coverage checks both radius boundaries and the approved eye defaults; the production bundle is checked for tuning-panel code.
+
+## Jungle Path — fixed eyes and peripheral watchers — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Added **Follow with pupils only**: eye pairs remain parallel to the nearby curved leaf layer while their flattened blue-black pupils follow the camera across the sphere surface. Eye heights and the selected foliage composition stay unchanged.
+- Added **Peripheral eyes**: twelve staggered pairs occupy both sides and multiple depths of the woods. Centering the view on a pair clips it shut in 0.1 seconds; it stays hidden while watched and for 0.9 seconds after looking away, then can return on its normal blink cycle.
+- Both toggles sit at the top of Jungle controls and persist in browser settings. They start off so the previously approved three-pair billboard mode remains available unchanged.
+
+### Design & engineering decisions
+
+- Leaf placement and fixed eye orientation share the same bowed surface function. Pupils move and rotate along a bounded spherical cap, retaining the flattened sphere shape and existing symmetric fragment-discard blink.
+- Gaze detection uses the actual camera projection, including pitch, aspect ratio, and apparent eye size. A small center-view ellipse triggers closure without per-frame raycasts through thousands of leaves; normal depth testing still lets foliage hide the eyes. Each pair has independent gaze suppression and blink timing, preventing repeated appearances while stared at.
+- Verified fixed body orientation, pupil movement, multiple visible pairs, fast closure, cooldown/reappearance, saved toggles, retained heights, and cleanup in WebGPU. Unit tests cover projection boundaries, timing, mode restoration, settings validation, and resource disposal.
+
+## Jungle Path — selected composition and appearing eyes — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Set JP's screenshot selection as the defaults: 45% leaf depth variation; 0.50 m / 14.83 m near/far heights; Terraces; 20% / 150% leaf sizes; 200% / 25% densities; 5 m path clearance; 1.30 m first gap; 1.30× gap multiplier; Gradual gap curve. **Reset to chosen look** restores these values. A new browser storage version adopts this selection while leaving earlier experiments stored under v1.
+- Added three pairs of pure-yellow sphere eyes with flattened, dark-blue/almost-black ellipsoid irises. They watch the player from the hedges, opening from a central slit, blinking, and disappearing on staggered cycles. Their positions follow foliage spacing adjustments.
+
+### Design & engineering decisions
+
+- JP wanted an eye appearing out of empty space, with top and bottom cuts meeting in the middle. Both the eye and iris use the same symmetric fragment-discard aperture: clipped pixels write no color or depth. There are no eyelid meshes, opacity fades, or scaling tricks. Unlit, untone-mapped, fog-free materials retain the requested flat yellow and blue-black colors while normal scene depth allows leaves to occlude them.
+- Kept the original geometry reference separate from the newly selected defaults so transforms, collision clearance, and deterministic foliage streams remain stable. Each mount owns its eye geometry, materials, blink uniforms, subscriptions, and cleanup.
+- WebGPU rendering verified the open, half-open, and fully closed states: exact `#ffff00` eye pixels, `#040b18` irises, and only background pixels when closed. Tests cover blink timing/looping, sphere/iris shape, material clipping policy, disposal, and the complete screenshot preset.
+
+## Jungle Path — independent near/far heights — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Replaced **Height multiplier** with **Height near** and **Height far**, in metres. The selected height curve interpolates the average wall height between the two endpoints while retaining each screen's rolling contour. Both controls appear near the top of Jungle controls.
+- Converted existing saved height multipliers into equivalent endpoints (near 3.6 m; far 3.6 + 8.04 × the old multiplier), preserving the existing composition and other tuning. Reset restores 3.6 m near and 11.64 m far.
+
+### Design & engineering decisions
+
+- Independent endpoints let the foreground be lowered without moving the back wall, or raise the back without changing the foreground. Equal and descending endpoint heights also work with all four curves; individual leaf sizes remain independent.
+- Tests cover independent endpoints, every curve, reversed/equal heights, migration, and bounds. Browser interaction checks confirm each endpoint leaves the other unchanged, saved values survive reload, and Reset restores the original heights.
+
+## Jungle Path — individual leaf depth and near/far density — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Added **Leaf depth variation**: stable inward/outward offsets and gentle individual tilts give each foliage screen thickness and more varied overlap. Starts at 45%; zero restores flat screens. Displacement follows each screen's normal, is bounded by neighboring layer gaps, and keeps foreground anchors out of the path.
+- Replaced the single density slider with **Density near** and **Density far**, interpolated across all seven layers independently of leaf sizes. Existing browser density values migrate to both endpoints; other saved tuning is preserved. Moved the leaf controls to the top of the panel.
+- **Reset to original look** still restores flat layers, original leaf sizes, and 100% density at both ends.
+
+### Design & engineering decisions
+
+- JP's screenshots showed that layered depth read well from some angles but looked too flat from others. Per-leaf offsets and tilts add parallax and irregular overlap without replacing the rolling screens. Reducing near density can expose more of the cool layers behind while keeping the distant wall dense.
+- Separate deterministic depth noise preserves existing colors, sizes, and counts when adjusting thickness. Density and depth changes use the existing cancellable, cooperative foliage rebuild, including spacing changes that affect safe layer depth.
+- Tests cover density interpolation, saved-value migration, deterministic depth variation, and layer-gap bounds. WebGPU checks verify inward and outward movement, unchanged colors/sizes/counts, per-layer density, reload persistence, and reset; frontal and oblique views were inspected.
+
+## Jungle Path — depth curves and near/far leaf sizes — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Added independent **Gap curve** choices (Gradual, Even gaps, Widen at the back, Widen near the path) and **Height curve** choices (Gradual rise, Back-loaded rise, Steep back rise, Terraces). Height now changes the tier rise while preserving the foreground and the rolling crowns' amplitude. Back-loaded curves keep intermediate walls lower so the rear foliage shows above them.
+- Added **Leaf size near** and **Leaf size far**, interpolated linearly through all seven layers. New near-size values start at 65%, far at 100%; existing tuning values are retained. Density remains an independent leaf-count control. **Reset to original look** still restores the original full-size composition.
+
+### Design & engineering decisions
+
+- The previous height multiplier scaled wall height and undulation together. Applying a curve to the rise between tiers gives control over which layers grow, while keeping both the first layer and the rolling character intact.
+- Size changes scale individual blades without moving their anchors, changing counts, or consuming different random values. Height curves and sizes use the existing cancellable foliage rebuild; gap curves move existing layers immediately. All new values persist with the current browser settings.
+- Added tests for curve endpoints, monotonic spacing, fixed foreground, rear-focused height, independent density, size interpolation, and saved-value validation. WebGPU interaction checks cover both selectors, near/far interpolation, density, reload persistence, and the original reset.
+
+## Jungle Path — live foliage controls — Unreleased (2026-11-28)
+
+### Added
+
+- Added **Jungle controls** with five sliders: distance from path, gap between layers, gap multiplier, height multiplier, and leaf density. The panel opens in the active room and toggles with **H**. Values persist in this browser; **Reset to original look** restores the approved `5df88bc` composition.
+- Distance moves both hedges and their walking boundaries outward. Gap adjusts the first separation, with the gap multiplier adding progressive outward growth. Height exaggerates successive outer crowns while preserving the front wall; density changes leaf count without stretching the leaves.
+
+### Design & engineering decisions
+
+- Preserved the approved rolling path and exact default layer spacing. Spacing edits move existing instances immediately. Height and density edits coalesce into cooperatively built replacements, keeping the previous foliage visible until the latest request is ready and disposing superseded work.
+- Captured deterministic random streams per layer from the approved arrangement, so changing outer heights cannot reshuffle the foreground or the opposite side. Mounted previews share settings, while only the active room owns the panel and shortcut. Extended the ground to cover the spacing controls' range.
+- Tested all five controls in WebGPU, including saved values after reload, exact reset, H, and panel cleanup. Added coverage for parameter bounds, default preservation, outward growth, queued rebuild cancellation, and resource replacement.
+
+## Jungle Path — spaced, perforated foliage layers — Unreleased (2026-11-28)
+
+### Changed / Removed
+
+- Replaced radial seven-finger leaf sprays and all opaque black shrub cores with individual, smooth-edged hanging leaves on seven curved foliage screens per side. Their scalloped crowns rise in uneven levels, and every screen has real geometric openings.
+- Spaced the screens 2–3.5 m apart across a 16.5 m depth, following JP's request for more separation. Offset leaf placement exposes progressively cooler emerald, teal, and blue leaves through the foreground gaps; their combined overlap closes the view through the hedge.
+- Reduced room geometry from about 2.8 million to 0.78 million triangles. Retained the winding dirt path, hedge collision, wind, sampled palette, and distance tint.
+
+### Design & engineering decisions
+
+- JP wanted the depth of overlapping perforated architectural skins, rather than marijuana-like rosettes covering black balls. The hedge now gets its opacity entirely from overlapping leaf silhouettes. Broad individual blades, visibly separated layers, and distinct depth colours make the intervening space readable through parallax.
+- A geometry ray test checks real apertures and combined coverage: in 160 sampled sightlines, the nearest screen blocks 101 while the full stack blocks all 160. Existing traversal, isolated-mount, cooperative-loading, and resource-disposal checks remain in place. WebGPU renders were checked in both travel directions without shader errors.
+
+## Jungle Path — Unreleased (2026-11-28)
+
+### Added
+
+- **`jp-jungle-path` / Jungle Path**: a winding dirt trail between 138 overlapping shrubs in three staggered tiers. Roughly 136,000 curved leaves form seven-blade sprays, with dark opaque interiors, uneven crowns, subtle wind, mossy banks, and dry leaf litter. Added between JP's Reef and Apartment rooms, with a quiet ambient music blend.
+- Directly sampled emerald, olive, teal, blue, and shadow colours from JP's supplied jungle painting. Rear tiers are cooler, and a per-view distance tint turns receding foliage blue in either travel direction. The source artwork is not shipped; sampling provenance is recorded in the room's credits.
+- A continuous hedge collider slides players along both bends, with clear, level landings at both portals. Flight is disabled for this enclosed walking room. Tests cover both travel directions, hedge containment, portal crossings, independent mounts, cooperative loading, and GPU disposal.
+
+### Design & engineering decisions
+
+- The request was for huge, nearly impenetrable abstract jungle hedges, with organic bushes and distinct levels. Real curved leaf geometry preserves silhouettes and parallax; rounded, irregular dark cores make the shrubs solid without transparent billboard overdraw. Instanced sprays and cores keep rendering to a small set of batches.
+- The dirt shader follows the same centreline as collision, shading its irregular edges per pixel. Bush cores stay outside the entire curved trail, including at bends. Setup yields inside the foliage and ground loops, animation uses one uniform, and each mount owns and disposes its resources.
 ## Reef — production atmosphere preset — Unreleased (2026-11-28)
 
 ### Changed

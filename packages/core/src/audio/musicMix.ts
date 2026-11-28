@@ -53,6 +53,7 @@ export const ROOM_VIBES: Record<string, Vibe> = {
   'jp-world': { 'golden-bed': 1, 'shimmer-bells': 0.35, 'soft-beat': 0.45 },
   'jp-garden': { 'golden-bed': 0.8, 'shimmer-bells': 0.6, 'lagoon-bed': 0.3, 'soft-beat': 0.4 },
   fishpond: { 'lagoon-bed': 1, 'golden-bed': 0.35, 'soft-beat': 0.35 },
+  'jp-jungle-path': { 'lagoon-bed': 0.8, 'abyss-bed': 0.25 },
   'jp-reef': { 'lagoon-bed': 1, 'shimmer-bells': 0.45 },
   'jp-apartment': { 'lofi-bed': 1, 'soft-beat': 0.6 },
   // A dark bed under the beat its towers' chases are timed to.
