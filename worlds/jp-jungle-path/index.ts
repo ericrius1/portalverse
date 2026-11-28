@@ -3,8 +3,9 @@ import { attribute, color, float, fract, mix, positionLocal, positionView, posit
 import { defineRoom } from '@portalverse/core/portal/defineRoom';
 import { seededRandom } from '@portalverse/core/rooms/kit';
 import { bankHeight, FIELD_HALF_LENGTH, createHedgeCollider, pathCenter, pathWidth } from './layout';
-import { getJungleSettings, jungleDefaults, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, sameFoliageShape, observeJungleSettings, type JungleSettings } from './tuning';
+import { getJungleSettings, jungleOriginal, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, sameFoliageShape, observeJungleSettings, type JungleSettings } from './tuning';
 import { mountJungleControls } from './controls';
+import { mountJungleEyes } from './eyes';
 
 // Quantized directly from JP's supplied painting. See CREDITS.md for regions.
 const PALETTE = ['#0b8442', '#196b38', '#175e34', '#1f702e', '#2b5a28', '#6a7911', '#0d4130'];
@@ -74,7 +75,7 @@ const layoutSeeds = (() => {
 })();
 
 function skinX(z: number, y: number, layer: number, side: number): number {
-  const depth = layerDepth(layer, jungleDefaults);
+  const depth = layerDepth(layer, jungleOriginal);
   const bow = Math.sin(z * 0.29 + layer * 0.74) * 0.32 + Math.sin(y * 0.65 + z * 0.13) * 0.14;
   return pathCenter(z) + side * (pathWidth(z) + depth + bow);
 }
@@ -88,7 +89,7 @@ interface FoliageBank {
 
 function applySpacing(bank: FoliageBank, settings: JungleSettings): void {
   for (const mesh of bank.meshes) {
-    mesh.position.x = mesh.userData.side * (layerDepth(mesh.userData.layer, settings) - layerDepth(mesh.userData.layer, jungleDefaults));
+    mesh.position.x = mesh.userData.side * (layerDepth(mesh.userData.layer, settings) - layerDepth(mesh.userData.layer, jungleOriginal));
   }
 }
 
@@ -126,7 +127,7 @@ export default defineRoom('jp-jungle-path', {
     });
     ctx.setTerrainHeight(bankHeight);
     let currentSettings = getJungleSettings();
-    ctx.setCollider(createHedgeCollider(() => Math.max(0, currentSettings.pathDistance - jungleDefaults.pathDistance)));
+    ctx.setCollider(createHedgeCollider(() => Math.max(0, currentSettings.pathDistance - jungleOriginal.pathDistance)));
     ctx.setWalkBounds({ minX: -38, maxX: 38, minZ: -43, maxZ: 43 });
 
     const clock = uniform(0);
@@ -207,7 +208,7 @@ export default defineRoom('jp-jungle-path', {
               // Keep inward-displaced anchors clear of the trail at every bend.
               // Spacing is applied as a mesh translation after building the bank.
               if (layer === 0 && settings.leafDepthVariation > 0) {
-                const translation = side * (layerDepth(layer, settings) - layerDepth(layer, jungleDefaults));
+                const translation = side * (layerDepth(layer, settings) - layerDepth(layer, jungleOriginal));
                 const worldX = temp.position.x + translation;
                 const edge = pathCenter(temp.position.z) + side * (pathWidth(temp.position.z) + 0.25);
                 if (side * (worldX - edge) < 0) temp.position.x = edge - translation;
@@ -320,6 +321,7 @@ export default defineRoom('jp-jungle-path', {
         }).catch(error => { if (!disposed) console.error('Jungle foliage update failed', error); });
       }, 80);
     });
+    mountJungleEyes(ctx, root);
     ctx.onActivate(mountJungleControls);
   },
 });

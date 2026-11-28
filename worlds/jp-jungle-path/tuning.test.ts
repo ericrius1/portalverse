@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { jungleDefaults, gapCurves, heightCurves, jungleOriginal, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, normalizeSettings } from './tuning';
+import { jungleDefaults as selectedDefaults, gapCurves, heightCurves, jungleOriginal, layerDepth, layerHeightOffset, layerLeafSize, layerDensity, leafDepthAmplitude, leafDepthSample, normalizeSettings } from './tuning';
+
+const jungleDefaults = jungleOriginal; // Retain the original geometry-contract checks.
 
 describe('Jungle tuning', () => {
+  it('pins the complete screenshot selection as the room defaults', () => {
+    expect(selectedDefaults).toEqual({
+      leafDepthVariation: 0.45, heightNear: 0.5, heightFar: 14.83, heightCurve: 'terraces',
+      leafSizeNear: 0.2, densityNear: 2, leafSizeFar: 1.5, densityFar: 0.25,
+      pathDistance: 5, layerGap: 1.3, gapMultiplier: 1.3, gapCurve: 'gradual',
+    });
+  });
   it('resets to the exact approved depth and height arrangement', () => {
     const approved = [0.95, 2.95, 5.25, 7.85, 10.75, 13.95, 17.45];
     approved.forEach((depth, layer) => {
@@ -117,14 +126,14 @@ describe('Jungle tuning', () => {
     }
   });
   it('recovers from invalid saved settings and bounds extreme values', () => {
-    expect(normalizeSettings(null)).toEqual(jungleDefaults);
-    expect(normalizeSettings({ heightCurve: 'invalid', gapCurve: '__proto__' })).toEqual(jungleDefaults);
-    expect(normalizeSettings({ density: 1.4 }).leafSizeNear).toBe(0.65);
-    expect(normalizeSettings({ density: NaN, pathDistance: '3' })).toEqual(jungleDefaults);
+    expect(normalizeSettings(null)).toEqual(selectedDefaults);
+    expect(normalizeSettings({ heightCurve: 'invalid', gapCurve: '__proto__' })).toEqual(selectedDefaults);
+    expect(normalizeSettings({ density: 1.4 }).leafSizeNear).toBe(0.2);
+    expect(normalizeSettings({ density: NaN, pathDistance: '3' })).toEqual(selectedDefaults);
     const bounded = normalizeSettings({ density: -2, heightMultiplier: 200, gapMultiplier: Infinity });
     expect(bounded.densityNear).toBe(0.25);
     expect(bounded.densityFar).toBe(0.25);
     expect(bounded.heightFar).toBeCloseTo(23.7);
-    expect(bounded.gapMultiplier).toBe(1);
+    expect(bounded.gapMultiplier).toBe(1.3);
   });
 });

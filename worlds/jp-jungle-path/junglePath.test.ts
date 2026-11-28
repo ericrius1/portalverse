@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three/webgpu';
 import type { WorldContext } from '@portalverse/core/types';
+import { updateJungleSettings, jungleOriginal, jungleDefaults } from './tuning';
 import { bankHeight, hedgeCollider, pathCenter, pathWidth } from './layout';
 
 describe('Jungle Path traversal', () => {
@@ -36,6 +37,7 @@ describe('Jungle Path traversal', () => {
 });
 
 it('mounts isolated previews, yields during foliage setup, and releases every GPU resource', async () => {
+  updateJungleSettings(jungleOriginal);
   const { default: room } = await import('./index');
   const mount = async () => {
     const scene = new THREE.Scene();
@@ -106,11 +108,12 @@ it('mounts isolated previews, yields during foliage setup, and releases every GP
   expect(b.scene.children.length).toBeGreaterThan(0);
   expect(b.scene.fog).toBeInstanceOf(THREE.Fog);
   b.cleanups.forEach(fn => fn());
+  updateJungleSettings(jungleDefaults);
 });
 
 it('updates spacing immediately and coalesces density edits in a mounted preview', async () => {
+  updateJungleSettings(jungleOriginal);
   const { default: room } = await import('./index');
-  const { updateJungleSettings, jungleDefaults } = await import('./tuning');
   const { vi } = await import('vitest');
   const cleanups: Array<() => void> = [];
   const scene = new THREE.Scene();
@@ -141,7 +144,7 @@ it('updates spacing immediately and coalesces density edits in a mounted preview
     expect(count()).toBeGreaterThan(originalCount * 0.4);
     expect(released).toBe(14);
     expect(skins()[0].position.x).toBeCloseTo(-3);
-    updateJungleSettings(jungleDefaults);
+    updateJungleSettings(jungleOriginal);
     await vi.waitFor(() => expect(count()).toBe(originalCount), { timeout: 3000 });
     expect(skins()[0].position.x).toBeCloseTo(0);
     // A queued rebuild must not resurrect foliage after the room is disposed.

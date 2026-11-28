@@ -1,4 +1,4 @@
-import { gapCurves, heightCurves, jungleOriginal, jungleRanges, observeJungleSettings, updateJungleSettings, type JungleKey, type JungleSettings } from './tuning';
+import { gapCurves, heightCurves, jungleDefaults, jungleRanges, observeJungleSettings, updateJungleSettings, type JungleKey, type JungleSettings } from './tuning';
 
 /** Only the active room owns DOM controls. Leaving it removes every listener. */
 export function mountJungleControls(): () => void {
@@ -84,10 +84,10 @@ export function mountJungleControls(): () => void {
     if (key === 'heightFar') curvePicker('heightCurve', 'Height curve', heightCurves, 'Steep back rise keeps middle layers low to reveal the back.');
   }
   const reset = document.createElement('button');
-  reset.textContent = 'Reset to original look';
-  reset.title = 'Restore the approved rolling hedges and spacing.';
+  reset.textContent = 'Reset to chosen look';
+  reset.title = 'Restore the foliage settings selected from your screenshots.';
   reset.style.cssText = toggle.style.cssText;
-  reset.addEventListener('click', () => updateJungleSettings(jungleOriginal));
+  reset.addEventListener('click', () => updateJungleSettings(jungleDefaults));
   panel.append(reset);
   const unsubscribe = observeJungleSettings(settings => refreshers.forEach(refresh => refresh(settings)));
   function setOpen(open: boolean) {

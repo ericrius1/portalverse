@@ -25,22 +25,28 @@ export interface JungleSettings {
   heightCurve: keyof typeof heightCurves;
 }
 export type JungleKey = Exclude<keyof JungleSettings, 'gapCurve' | 'heightCurve'>;
-export const jungleDefaults: JungleSettings = {
-  pathDistance: 0.95,
-  layerGap: 2,
-  gapMultiplier: 1,
-  heightNear: 3.6,
-  heightFar: 11.64,
-  densityNear: 1,
-  densityFar: 1,
-  leafDepthVariation: 0.45,
-  leafSizeNear: 0.65,
-  leafSizeFar: 1,
-  gapCurve: 'gradual',
-  heightCurve: 'gradual',
+/** Fixed geometry reference; keeps existing instance transforms and collision stable. */
+export const jungleOriginal: JungleSettings = {
+  pathDistance: 0.95, layerGap: 2, gapMultiplier: 1,
+  heightNear: 3.6, heightFar: 11.64,
+  densityNear: 1, densityFar: 1, leafDepthVariation: 0,
+  leafSizeNear: 1, leafSizeFar: 1, gapCurve: 'gradual', heightCurve: 'gradual',
 };
-/** Preserve the original approved composition as an explicit reset preset. */
-export const jungleOriginal: JungleSettings = { ...jungleDefaults, leafSizeNear: 1, leafDepthVariation: 0 };
+/** JP's selected values from the 2026-11-28 1:28 AM screenshots. */
+export const jungleDefaults: JungleSettings = {
+  pathDistance: 5,
+  layerGap: 1.3,
+  gapMultiplier: 1.3,
+  heightNear: 0.5,
+  heightFar: 14.83,
+  densityNear: 2,
+  densityFar: 0.25,
+  leafDepthVariation: 0.45,
+  leafSizeNear: 0.2,
+  leafSizeFar: 1.5,
+  gapCurve: 'gradual',
+  heightCurve: 'terraces',
+};
 export const jungleRanges: Record<JungleKey, readonly [number, number, number]> = {
   pathDistance: [0.6, 8, 0.05],
   layerGap: [0.5, 4, 0.05],
@@ -64,7 +70,7 @@ export function normalizeSettings(saved: unknown): JungleSettings {
   for (const key of Object.keys(jungleRanges) as JungleKey[]) {
     // Preserve the previous single-density setting at both endpoints.
     const value = values[key] ?? (key === 'densityNear' || key === 'densityFar' ? values.density
-      : key === 'heightFar' ? legacyHeight : undefined);
+      : key === 'heightFar' ? legacyHeight : key === 'heightNear' && legacyHeight !== undefined ? 3.6 : undefined);
     if (typeof value !== 'number' || !Number.isFinite(value)) continue;
     result[key] = Math.max(jungleRanges[key][0], Math.min(jungleRanges[key][1], value));
   }
@@ -128,7 +134,8 @@ export function sameFoliageShape(a: JungleSettings, b: JungleSettings): boolean 
     && a.leafSizeNear === b.leafSizeNear && a.leafSizeFar === b.leafSizeFar;
 }
 
-const storageKey = 'jp-jungle-path.tuning.v1';
+// Start this chosen composition on reload; retain earlier experiments under v1.
+const storageKey = 'jp-jungle-path.tuning.v2';
 function load(): JungleSettings {
   try { return normalizeSettings(JSON.parse(localStorage.getItem(storageKey) ?? 'null')); }
   catch { return { ...jungleDefaults }; }

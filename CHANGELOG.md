@@ -2,6 +2,19 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Jungle Path — selected composition and appearing eyes — Unreleased (2026-11-28)
+
+### Added / Changed
+
+- Set JP's screenshot selection as the defaults: 45% leaf depth variation; 0.50 m / 14.83 m near/far heights; Terraces; 20% / 150% leaf sizes; 200% / 25% densities; 5 m path clearance; 1.30 m first gap; 1.30× gap multiplier; Gradual gap curve. **Reset to chosen look** restores these values. A new browser storage version adopts this selection while leaving earlier experiments stored under v1.
+- Added three pairs of pure-yellow sphere eyes with flattened, dark-blue/almost-black ellipsoid irises. They watch the player from the hedges, opening from a central slit, blinking, and disappearing on staggered cycles. Their positions follow foliage spacing adjustments.
+
+### Design & engineering decisions
+
+- JP wanted an eye appearing out of empty space, with top and bottom cuts meeting in the middle. Both the eye and iris use the same symmetric fragment-discard aperture: clipped pixels write no color or depth. There are no eyelid meshes, opacity fades, or scaling tricks. Unlit, untone-mapped, fog-free materials retain the requested flat yellow and blue-black colors while normal scene depth allows leaves to occlude them.
+- Kept the original geometry reference separate from the newly selected defaults so transforms, collision clearance, and deterministic foliage streams remain stable. Each mount owns its eye geometry, materials, blink uniforms, subscriptions, and cleanup.
+- WebGPU rendering verified the open, half-open, and fully closed states: exact `#ffff00` eye pixels, `#040b18` irises, and only background pixels when closed. Tests cover blink timing/looping, sphere/iris shape, material clipping policy, disposal, and the complete screenshot preset.
+
 ## Jungle Path — independent near/far heights — Unreleased (2026-11-28)
 
 ### Added / Changed
