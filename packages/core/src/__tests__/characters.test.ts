@@ -112,13 +112,17 @@ beforeAll(() => {
 afterAll(() => vi.restoreAllMocks());
 
 describe('playable character registry', () => {
-  it('registers suit-bee and sky-drake with valid metadata and fallback lookup', () => {
-    expect(CHARACTERS.map((c) => c.id)).toEqual(['adventurer-man', 'adventurer-woman', 'suit-bee', 'sky-drake']);
+  it('registers adventurers, suit-bee, sky-drake, and moon-moth with valid metadata, backstories, and fallback lookup', () => {
+    expect(CHARACTERS.map((c) => c.id)).toEqual(['adventurer-man', 'adventurer-woman', 'suit-bee', 'sky-drake', 'moon-moth']);
     expect(DEFAULT_CHARACTER_ID).toBe('suit-bee');
     expect(isValidCharacterId('suit-bee')).toBe(true);
     expect(isValidCharacterId('sky-drake')).toBe(true);
+    expect(isValidCharacterId('moon-moth')).toBe(true);
     expect(isValidCharacterId('unknown-hero')).toBe(false);
     expect(getCharacterDefinition('unknown-hero').id).toBe(DEFAULT_CHARACTER_ID);
+    for (const id of ['suit-bee', 'sky-drake', 'moon-moth']) {
+      expect(getCharacterDefinition(id).backstory?.trim().length ?? 0).toBeGreaterThan(120);
+    }
   });
 
   it.each(CHARACTERS.map((c) => c.id))(
@@ -331,6 +335,9 @@ describe('AvatarController character switching and multiplayer sync', () => {
     avatar.setCharacter('sky-drake');
     expect(avatar.getCharacterId()).toBe('sky-drake');
     expect(onCharacterChange).toHaveBeenCalledWith('sky-drake');
+    avatar.setCharacter('moon-moth');
+    expect(avatar.getCharacterId()).toBe('moon-moth');
+    expect(onCharacterChange).toHaveBeenCalledWith('moon-moth');
 
     avatar.setFirstPerson(false);
     expect(avatar.firstPerson).toBe(false);

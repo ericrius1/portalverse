@@ -35,7 +35,7 @@ describe('warp zone', () => {
   });
 
   it('measures flat distance on the floor, ignoring height', () => {
-    const exit = gates('eric-world').find(g => g.portal.id === 'exit')!;
+    const exit = gates('jp-reef').find(g => g.portal.id === 'exit')!;
     const z = exit.triggerCenter.z;
     expect(portalWarp([exit], v(0, 0, z))).toBe(1);
     expect(portalWarp([exit], v(0, 6, z))).toBe(1); // flying over the threshold
@@ -44,7 +44,7 @@ describe('warp zone', () => {
   });
 
   it('takes the strongest nearby portal, including links to other servers', () => {
-    const [entrance, exit] = gates('eric-world');
+    const [entrance, exit] = gates('jp-reef');
     const remote = createArchwayPortal(
       { id: 'friend', label: 'Friend', position: [10, 0, 0], targetWorldId: 'x', remoteUrl: 'https://friend.example/' },
       { passage: true },

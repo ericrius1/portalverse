@@ -19,6 +19,7 @@
     "submit": "node scripts/submit-world.mjs"
   },
   "dependencies": {
+    "@ericrius1/cast": "github:ericrius1/weft#dist/cast",
     "@ericrius1/weft": "git+https://github.com/ericrius1/weft.git#dist/weft",
     "three": "^0.187.0",
     "ws": "^8.18.0"

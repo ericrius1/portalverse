@@ -3,6 +3,9 @@ import type { AvatarController } from '@portalverse/core/engine/AvatarController
 export interface MobileControlsCallbacks {
   onOpenCharacters: () => void;
   onToggleCameraView: () => void;
+  onOpenChat?: () => void;
+  onToggleVoice?: () => void;
+  onOpenMetaView?: () => void;
 }
 
 const STICK_MAX_RADIUS = 48;
@@ -27,6 +30,9 @@ export class MobileControls {
   private readonly btnBoost: HTMLButtonElement;
   private readonly btnView: HTMLButtonElement;
   private readonly btnChar: HTMLButtonElement;
+  private readonly btnChat: HTMLButtonElement | null;
+  private readonly btnVoice: HTMLButtonElement | null;
+  private readonly btnMeta: HTMLButtonElement | null;
   private readonly avatar: AvatarController;
   private readonly callbacks: MobileControlsCallbacks;
 
@@ -64,6 +70,9 @@ export class MobileControls {
     this.btnBoost = root.querySelector('#btn-mobile-boost') as HTMLButtonElement;
     this.btnView = root.querySelector('#btn-mobile-view') as HTMLButtonElement;
     this.btnChar = root.querySelector('#btn-mobile-char') as HTMLButtonElement;
+    this.btnChat = root.querySelector('#btn-mobile-chat');
+    this.btnVoice = root.querySelector('#btn-mobile-voice');
+    this.btnMeta = root.querySelector('#btn-mobile-meta');
 
     this.bindEvents();
     this.syncLabels();
@@ -102,6 +111,13 @@ export class MobileControls {
   setFirstPerson(firstPerson: boolean): void {
     this.btnView.textContent = firstPerson ? '3rd View' : '1st View';
     this.btnView.setAttribute('aria-pressed', String(!firstPerson));
+  }
+
+  setVoiceState(joined: boolean, muted: boolean, speaking: boolean): void {
+    if (!this.btnVoice) return;
+    this.btnVoice.textContent = !joined ? 'Mic' : muted ? 'Muted' : 'Mic On';
+    this.btnVoice.setAttribute('aria-pressed', String(joined && !muted));
+    this.btnVoice.classList.toggle('voice-speaking', joined && speaking);
   }
 
   private syncLabels(): void {
@@ -255,6 +271,24 @@ export class MobileControls {
       e.preventDefault();
       if (!this.enabled || this.inputLocked) return;
       this.callbacks.onOpenCharacters();
+    });
+
+    this.btnChat?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!this.enabled || this.inputLocked) return;
+      this.callbacks.onOpenChat?.();
+    });
+
+    this.btnVoice?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!this.enabled || this.inputLocked) return;
+      this.callbacks.onToggleVoice?.();
+    });
+
+    this.btnMeta?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!this.enabled || this.inputLocked) return;
+      this.callbacks.onOpenMetaView?.();
     });
 
     window.addEventListener('blur', () => this.releaseAllPointers());

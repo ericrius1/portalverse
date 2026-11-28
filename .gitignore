@@ -14,3 +14,10 @@ assets-src/
 
 # Local rendered showcase videos served over Tailnet
 public/videos/
+
+# Blender asset-pipeline intermediates & visual-review renders
+**/__pycache__/
+tools/npcs/renders/
+tools/npcs/textures/
+tools/starlight_pavilion/renders/
+tools/starlight_pavilion/textures/

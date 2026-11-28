@@ -37,7 +37,7 @@ describe('breathe', () => {
   it('is the same helper on the room context and in the room kit', async () => {
     let fromContext: unknown;
     await RoomInstance.mount(
-      defineRoom('eric-world', { mount: ctx => { fromContext = ctx.breathe; } }),
+      defineRoom('jp-reef', { mount: ctx => { fromContext = ctx.breathe; } }),
       {} as THREE.WebGPURenderer,
     );
     expect(fromContext).toBe(breathe);

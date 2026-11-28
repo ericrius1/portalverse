@@ -4,10 +4,13 @@ import type {
   AvatarState,
   ClientNetMessage,
   PortalDefinition,
+  RtcSignalPayload,
   ServerNetMessage,
+  SpeechBubbleStyle,
   Vec3Tuple,
   WorldPresenceSummary,
 } from '../../core/src/types';
+import { sanitizeSpeechBubbleStyle } from '../../core/src/chat/bubbleStyles';
 import { sanitizePortalDefinition } from './protocol';
 
 /** One message the transport layer should deliver to a set of connections. */
@@ -58,7 +61,11 @@ function normalizeYaw(yaw: number): number {
 }
 
 function cloneAvatar(a: AvatarState): AvatarState {
-  return { ...a, position: [...a.position] as Vec3Tuple };
+  return {
+    ...a,
+    position: [...a.position] as Vec3Tuple,
+    ...(a.bubbleStyle ? { bubbleStyle: { ...a.bubbleStyle } } : {}),
+  };
 }
 
 function clonePortal(p: PortalDefinition): PortalDefinition {
@@ -164,11 +171,15 @@ export class RoomManager {
       case 'switch_world':
         return this.handleSwitchWorld(session, msg.worldId, msg.position, msg.yaw);
       case 'update_profile':
-        return this.handleUpdateProfile(session, msg.name, msg.color, msg.characterId, msg);
+        return this.handleUpdateProfile(session, msg.name, msg.color, msg.characterId, msg, msg.bubbleStyle);
       case 'spawn_portal':
         return this.handleSpawnPortal(session, msg.worldId, msg.portal);
       case 'remove_portal':
         return this.handleRemovePortal(session, msg.worldId, msg.portalId);
+      case 'rtc_signal':
+        return this.handleRtcSignal(session, msg.toPlayerId, msg.signal);
+      case 'chat_message':
+        return this.handleChatMessage(session, msg.id, msg.text, msg.bubbleStyle, msg.toPlayerIds);
       default:
         return [this.error(connectionId, 'bad_message', 'Unsupported message type')];
     }
@@ -207,6 +218,7 @@ export class RoomManager {
       color: msg.player.color,
       ...sanitizeSkinAppearance({ ...msg.player }),
       ...(msg.player.characterId ? { characterId: msg.player.characterId } : {}),
+      ...(msg.player.bubbleStyle ? { bubbleStyle: { ...msg.player.bubbleStyle } } : {}),
       worldId,
       position: this.clampPosition(msg.position),
       yaw: normalizeYaw(msg.yaw),
@@ -282,6 +294,7 @@ export class RoomManager {
     color: string,
     characterId?: string,
     appearance?: Partial<SkinAppearance>,
+    bubbleStyle?: SpeechBubbleStyle,
   ): Outbound[] {
     const a = session.avatar;
     const oldName = a.name;
@@ -289,13 +302,81 @@ export class RoomManager {
     a.color = color;
     Object.assign(a, sanitizeSkinAppearance({ ...appearance }));
     if (characterId) a.characterId = characterId;
+    if (bubbleStyle) {
+      const cleanStyle = sanitizeSpeechBubbleStyle(bubbleStyle, color);
+      if (cleanStyle) a.bubbleStyle = cleanStyle;
+    }
     a.updatedAt = this.now();
     const event = oldName !== name ? `${oldName} is now known as ${name}` : undefined;
     return [
-      // player_joined doubles as an upsert so peers refresh name/color/character.
+      // player_joined doubles as an upsert so peers refresh name/color/character/bubbleStyle.
       ...this.toWorld(a.worldId, { type: 'player_joined', player: cloneAvatar(a) }, session.connectionId),
       this.rosterUpdate(event),
     ].filter((o) => o.to.length > 0);
+  }
+
+  private handleRtcSignal(
+    session: Session,
+    toPlayerId: string,
+    signal: RtcSignalPayload,
+  ): Outbound[] {
+    if (toPlayerId === session.avatar.id) return [];
+    const targetConnId = this.playerToConnection.get(toPlayerId);
+    if (!targetConnId) return [];
+    const targetSession = this.sessions.get(targetConnId);
+    // Keep WebRTC signaling scoped to peers currently sharing the same room.
+    if (!targetSession || targetSession.avatar.worldId !== session.avatar.worldId) return [];
+    return [
+      {
+        to: [targetConnId],
+        message: {
+          type: 'rtc_signal',
+          fromPlayerId: session.avatar.id,
+          worldId: session.avatar.worldId,
+          signal,
+        },
+      },
+    ];
+  }
+
+  private handleChatMessage(
+    session: Session,
+    id: string,
+    text: string,
+    bubbleStyle?: SpeechBubbleStyle,
+    toPlayerIds?: string[],
+  ): Outbound[] {
+    const a = session.avatar;
+    const resolvedStyle =
+      (bubbleStyle ? sanitizeSpeechBubbleStyle(bubbleStyle, a.color) : null) ??
+      (a.bubbleStyle ? { ...a.bubbleStyle } : undefined);
+    const message: ServerNetMessage = {
+      type: 'chat_message',
+      id,
+      senderId: a.id,
+      senderName: a.name,
+      senderColor: a.color,
+      worldId: a.worldId,
+      text,
+      ...(resolvedStyle ? { bubbleStyle: resolvedStyle } : {}),
+      sentAt: this.now(),
+    };
+    if (toPlayerIds) {
+      const targetConns: string[] = [];
+      const seen = new Set<string>();
+      for (const pid of toPlayerIds) {
+        if (pid === a.id || seen.has(pid)) continue;
+        seen.add(pid);
+        const connId = this.playerToConnection.get(pid);
+        if (!connId) continue;
+        const targetSession = this.sessions.get(connId);
+        if (targetSession && targetSession.avatar.worldId === a.worldId) {
+          targetConns.push(connId);
+        }
+      }
+      return targetConns.length > 0 ? [{ to: targetConns, message }] : [];
+    }
+    return this.toWorld(a.worldId, message, session.connectionId).filter((o) => o.to.length > 0);
   }
 
   private handleSpawnPortal(session: Session, worldId: string, portal: PortalDefinition): Outbound[] {

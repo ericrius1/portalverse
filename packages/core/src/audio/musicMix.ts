@@ -50,7 +50,6 @@ export const STEM_ROLES: Record<StemId, StemRole> = {
  * listed get DEFAULT_VIBE.
  */
 export const ROOM_VIBES: Record<string, Vibe> = {
-  'eric-world': { 'holo-bed': 1, 'shimmer-bells': 0.45, 'soft-beat': 0.35 },
   'jp-world': { 'golden-bed': 1, 'shimmer-bells': 0.35, 'soft-beat': 0.45 },
   'jp-garden': { 'golden-bed': 0.8, 'shimmer-bells': 0.6, 'lagoon-bed': 0.3, 'soft-beat': 0.4 },
   fishpond: { 'lagoon-bed': 1, 'golden-bed': 0.35, 'soft-beat': 0.35 },
@@ -70,6 +69,8 @@ export const ROOM_VIBES: Record<string, Vibe> = {
   'honey-hood': { 'lofi-bed': 0.9, 'soft-beat': 0.8, 'golden-bed': 0.3 },
   'doug-cassette-station': { 'lofi-bed': 0.95, 'shimmer-bells': 0.55, 'holo-bed': 0.3, 'soft-beat': 0.35 },
   'frostfire-hollow': { 'abyss-bed': 0.8, 'soft-beat': 0.5, 'shimmer-bells': 0.45 },
+  'eric-starlight-pavilion': { 'holo-bed': 0.85, 'shimmer-bells': 0.9, 'golden-bed': 0.55, 'soft-beat': 0.95 },
+  '__cosmic-meta__': { 'shimmer-bells': 0.9, 'holo-bed': 0.55, 'golden-bed': 0.25 },
 };
 export const DEFAULT_VIBE: Vibe = { 'holo-bed': 0.6, 'shimmer-bells': 0.4, 'golden-bed': 0.3 };
 

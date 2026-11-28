@@ -36,6 +36,31 @@ export interface PortalverseServer {
 const DEFAULT_PORT = 3001;
 const DEFAULT_HOST = '0.0.0.0';
 
+export interface RtcIceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+const DEFAULT_ICE_SERVERS: RtcIceServerConfig[] = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+];
+
+function loadIceServers(): RtcIceServerConfig[] {
+  const raw = process.env.ICE_SERVERS_JSON;
+  if (!raw) return DEFAULT_ICE_SERVERS;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed as RtcIceServerConfig[];
+    }
+  } catch {
+    // Ignore malformed ICE_SERVERS_JSON override
+  }
+  return DEFAULT_ICE_SERVERS;
+}
+
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
@@ -171,7 +196,7 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
   const roomManager = new RoomManager({
     worldNames,
     livePortalLimits: new Map((registry?.worlds ?? []).map(w => [w.id, livePortalSlots(w)])),
-    defaultWorldId: registry?.defaultWorldId ?? 'eric-world',
+    defaultWorldId: registry?.defaultWorldId ?? 'jp-world',
   });
 
   const sockets = new Map<string, TrackedSocket>();
@@ -216,6 +241,10 @@ export function createPortalverseServer(options: PortalverseServerOptions = {}):
     }
     if (pathname === '/api/worlds') {
       sendJson(res, 200, { worlds: roomManager.getWorldSummaries() });
+      return;
+    }
+    if (pathname === '/api/rtc-config') {
+      sendJson(res, 200, { iceServers: loadIceServers() });
       return;
     }
     if (staticRoot && tryServeStatic(staticRoot, pathname, method, res)) {

@@ -5,6 +5,7 @@ import type {
   SpawnPoint,
   Vec3Tuple,
 } from '../types';
+import { sanitizeSpeechBubbleStyle } from '../chat/bubbleStyles';
 
 /*
  * Portal handoff: the small, signed-by-nobody payload a traveler carries when
@@ -156,6 +157,10 @@ export function sanitizeHandoffPayload(value: unknown): PortalHandoffPayload | n
   };
   const characterId = sanitizeId(raw.characterId);
   if (characterId) payload.characterId = characterId;
+  if (raw.bubbleStyle !== undefined) {
+    const bubbleStyle = sanitizeSpeechBubbleStyle(raw.bubbleStyle, payload.playerColor);
+    if (bubbleStyle) payload.bubbleStyle = bubbleStyle;
+  }
   if (returnUrl) payload.returnUrl = returnUrl;
   const targetWorldId = sanitizeId(raw.targetWorldId);
   if (targetWorldId) payload.targetWorldId = targetWorldId;

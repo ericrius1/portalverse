@@ -425,7 +425,7 @@ export class CharacterSelectScreen {
     this.syncSkinControls();
     this.nameEl.textContent = def.name;
     this.titleEl.textContent = `${def.title} · ${def.species}`;
-    this.descEl.textContent = def.description;
+    this.descEl.textContent = def.backstory || def.description;
     this.controlsEl.hidden = def.thirdPersonMovement !== 'adventure';
     this.traitsEl.innerHTML = def.traits
       .map((t) => `<span class="character-trait">${escapeHtml(t)}</span>`)
@@ -502,8 +502,11 @@ export class CharacterSelectScreen {
       : this.pose === 'jump' ? Math.max(0, Math.sin(Math.min(this.elapsed % 1.5, 0.9) / 0.9 * Math.PI)) * 0.45 : 0;
     this.stageRoot.position.y += (flyLift - this.stageRoot.position.y) * Math.min(1, dt * 8);
 
-    const radius = this.pose === 'fly' || this.pose === 'boost' ? 4.35 : 3.45;
-    const targetY = 0.96 + this.stageRoot.position.y * 0.65;
+    const baseRadius = this.pose === 'fly' || this.pose === 'boost' ? 4.55 : 3.78;
+    // Give slightly extra pullback on wide mobile preview frames so tall heads/wings never clip.
+    const wideBoost = this.camera.aspect > 1.25 ? 1 + Math.min(0.16, (this.camera.aspect - 1.25) * 0.18) : 1;
+    const radius = baseRadius * wideBoost;
+    const targetY = 0.94 + this.stageRoot.position.y * 0.65;
     this.camera.position.set(
       Math.sin(this.orbitYaw) * Math.cos(this.orbitPitch) * radius,
       targetY + Math.sin(this.orbitPitch) * radius,
@@ -516,6 +519,7 @@ export class CharacterSelectScreen {
       rect.width > 0 &&
       rect.height > 0 &&
       (Math.abs(this.camera.aspect - rect.width / rect.height) > 0.02 ||
+        Math.abs(this.canvas.width - Math.round(rect.width * Math.min(window.devicePixelRatio || 1, 2))) > 4 ||
         this.canvas.width < 10)
     ) {
       this.resizePreview();

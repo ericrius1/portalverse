@@ -19,7 +19,7 @@ function visibleIn(scene: THREE.Object3D, camera: THREE.Camera) {
   return { lights: lights.sort((a, b) => a - b), openings };
 }
 
-/** Draw eric-world's neighbours the ways the engine does, recording what each room render saw. */
+/** Draw jp-reef's neighbours the ways the engine does, recording what each room render saw. */
 async function renderPreviews() {
   let target: THREE.RenderTarget | null = null;
   const seen: Array<{ scene: THREE.Scene; camera: THREE.Camera } & ReturnType<typeof visibleIn>> = [];
@@ -34,7 +34,7 @@ async function renderPreviews() {
     },
   } as unknown as THREE.WebGPURenderer;
   const previews = new PortalPreviews(renderer, id => Promise.resolve(emptyRoom(id)));
-  const home = await RoomInstance.mount(emptyRoom('eric-world'), renderer);
+  const home = await RoomInstance.mount(emptyRoom('jp-reef'), renderer);
   for (const handle of home.portals) handle.group.updateMatrixWorld(true);
   await previews.syncPinnedForRoom(home);
   return { renderer, previews, home, seen };

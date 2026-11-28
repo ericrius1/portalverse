@@ -22,8 +22,11 @@ import { PortalPreviews } from './PortalPreviews';
 import { PortalRipplePass } from './PortalRipplePass';
 import type { Heading } from './roomWindow';
 import { AvatarController } from './AvatarController';
+import { NpcManager } from '../npc/npcManager';
+import type { NpcSpec } from '../npc/types';
 import { createCharacterRig, DEFAULT_CHARACTER_ID, type CharacterRig } from '../characters';
 import { PERFORMANCE_PROFILES, type PerformanceProfile } from './performanceProfile';
+import { needsViewportSync, resolvePixelRatio, resolveViewportSize } from './viewportSize';
 import { createArchwayPortal } from './PortalMesh';
 import { portalWarp, smoothSpeed, warpSpeedFactor } from './portalWarp';
 import { respawnHeight } from './falling';
@@ -37,6 +40,11 @@ import {
   type CrossingSide,
   type FrameMotion,
 } from './portalCrossing';
+
+export interface OverlaySceneView {
+  update: (dt: number, elapsed: number) => void;
+  render: (renderer: THREE.WebGPURenderer, aspect: number) => void;
+}
 
 export interface WorldEngineCallbacks {
   loadLocalWorld?: (id: string) => Promise<WorldModule> | undefined;
@@ -53,6 +61,10 @@ export interface WorldEngineCallbacks {
   performanceProfile?: PerformanceProfile;
   /** The player fell out of the room (true) or came back from a fall (false). */
   onFallChange?: (fallen: boolean) => void;
+  /** Nearest Keeper NPC within talk radius changed. */
+  onNearbyNpcChange?: (npc: NpcSpec | null) => void;
+  /** Player pressed the talk hotkey (R or E when no portal is closer) beside a Keeper NPC. */
+  onNpcTalkRequest?: (npc: NpcSpec) => void;
 }
 
 interface ActiveTransit {
@@ -82,6 +94,7 @@ export class WorldEngine {
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGPURenderer;
   readonly avatar: AvatarController;
+  readonly npcs: NpcManager;
 
   private readonly container: HTMLElement;
   private readonly callbacks: WorldEngineCallbacks;
@@ -138,12 +151,19 @@ export class WorldEngine {
   /** Where the player came into the current room, for a respawn after a fall. */
   private respawnPoint: SpawnPoint = { position: [0, 0, 0], yaw: 0 };
   private nearestPortal: PortalVisualHandle | null = null;
+  private overlayView: OverlaySceneView | null = null;
   private inputLocked = false;
   private portalCooldownUntil = 0;
   private animFrameId = 0;
   private lastTime = 0;
   private elapsed = 0;
   private running = false;
+  private viewportWidth = 0;
+  private viewportHeight = 0;
+  private viewportPixelRatio = 0;
+  private viewportCheckFrames = 0;
+  private resizeObserver?: ResizeObserver;
+  private orientationTimer: number | null = null;
 
   constructor(
     container: HTMLElement,
@@ -158,10 +178,15 @@ export class WorldEngine {
     this.scene.add(this.dynamicPortalRoot);
     this.warpZones.visible = false;
     this.avatarScene.add(this.warpZones);
+    this.npcs = new NpcManager({
+      onNearbyNpcChange: (npc) => this.callbacks.onNearbyNpcChange?.(npc),
+    });
+    this.avatarScene.add(this.npcs.root);
 
+    const initialViewport = this.measureViewport();
     this.camera = new THREE.PerspectiveCamera(
       62,
-      Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight),
+      initialViewport.aspect,
       0.1,
       this.performanceProfile.cameraFar,
     );
@@ -177,8 +202,10 @@ export class WorldEngine {
       });
     }
     this.ripplePass = new PortalRipplePass(this.renderer);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.performanceProfile.maxPixelRatio));
-    this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    this.renderer.domElement.style.display = 'block';
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
+    this.syncViewportSize(true);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
@@ -230,6 +257,14 @@ export class WorldEngine {
     };
 
     window.addEventListener('resize', this.handleResize);
+    window.addEventListener('orientationchange', this.handleOrientationChange);
+    window.addEventListener('pageshow', this.handleResize);
+    window.visualViewport?.addEventListener('resize', this.handleResize);
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(this.handleResize);
+      this.resizeObserver.observe(container);
+    }
     window.addEventListener('keydown', this.handleKeyDown);
   }
 
@@ -240,9 +275,34 @@ export class WorldEngine {
     const backend = (this.renderer as unknown as { backend: { parameters?: { device?: GPUDevice } } }).backend;
     if (device && backend.parameters) backend.parameters.device = device;
     await this.renderer.init();
+    this.syncViewportSize(true);
     this.running = true;
     this.lastTime = performance.now();
     this.loop(this.lastTime);
+  }
+
+  /** True when a full-screen overlay 3D view (e.g. Cosmic Meta View) is rendering instead of the active room. */
+  get isOverlayViewActive(): boolean {
+    return this.overlayView !== null;
+  }
+
+  /** Switch rendering to a full-screen overlay 3D view (like Cosmic Meta View), or pass null to resume the room. */
+  setOverlayView(view: OverlaySceneView | null): void {
+    this.overlayView = view;
+    if (view) {
+      this.exitPointerLock();
+      this.walkThrough = undefined;
+      this.transitPortal = undefined;
+      this.callbacks.onPortalProximity?.(null);
+      this.nearestPortal = null;
+    } else {
+      this.skipNextSpeedSample = true;
+    }
+  }
+
+  /** Re-measure the container and re-sync renderer size, DPR, and camera aspect ratio. */
+  syncViewport(): void {
+    this.syncViewportSize();
   }
 
   setInputLocked(locked: boolean): void {
@@ -295,13 +355,8 @@ export class WorldEngine {
   /** Apply a new performance profile at runtime (DPR, portal limits, clip distance, post-pass). */
   setPerformanceProfile(profile: PerformanceProfile): void {
     this.performanceProfile = profile;
-    const dpr = Math.min(window.devicePixelRatio || 1, profile.maxPixelRatio);
-    this.renderer.setPixelRatio(dpr);
-    const w = this.container.clientWidth || window.innerWidth;
-    const h = this.container.clientHeight || window.innerHeight;
-    this.renderer.setSize(w, h);
     this.camera.far = profile.cameraFar;
-    this.camera.updateProjectionMatrix();
+    this.syncViewportSize(true);
     this.previews?.setPerformanceOptions({
       windowRadius: profile.roomWindowRadius,
       maxLivePortals: profile.maxLivePortals,
@@ -318,6 +373,15 @@ export class WorldEngine {
   triggerNearestPortal(): boolean {
     if (this.inputLocked || this.fallen || this.avatar.isFlying || !this.nearestPortal) return false;
     this.requestPortalEntry(this.nearestPortal.portal);
+    return true;
+  }
+
+  /** Start a conversation with the closest Keeper NPC within talk range. */
+  triggerNearestNpc(): boolean {
+    if (this.inputLocked || this.fallen) return false;
+    const npc = this.npcs.getNearestNpc();
+    if (!npc) return false;
+    this.callbacks.onNpcTalkRequest?.(npc);
     return true;
   }
 
@@ -413,6 +477,7 @@ export class WorldEngine {
     this.room = room;
     this.previews?.applySnapshotsToRoom(room);
     room.scene.add(this.avatarScene);
+    this.npcs.mountForRoom(room);
     this.currentManifest = room.module.manifest;
     this.fallLimit = respawnHeight(room.falling);
     // Rooms that allow falling let you drop a little past the limit, into whatever is down there.
@@ -571,6 +636,7 @@ export class WorldEngine {
     this.dynamicPortals = [];
 
     this.avatar.clearRemotePlayers();
+    this.npcs.clear();
   }
 
   /** Place one warp-zone marker on each portal in the current room. */
@@ -622,6 +688,16 @@ export class WorldEngine {
     const dt = Math.min((now - this.lastTime) / 1000, 0.05);
     this.lastTime = now;
     this.elapsed += dt;
+
+    if (this.overlayView) {
+      if (this.elapsed < 2.0 || ++this.viewportCheckFrames >= 15) {
+        this.viewportCheckFrames = 0;
+        this.syncViewportSize();
+      }
+      this.overlayView.update(dt, this.elapsed);
+      this.overlayView.render(this.renderer, this.camera.aspect);
+      return;
+    }
 
     this.previousFeet.copy(this.avatar.position);
     this.previousCamera.copy(this.camera.position);
@@ -676,6 +752,7 @@ export class WorldEngine {
     }
 
     this.room?.update(dt, this.elapsed);
+    this.npcs.update(dt, this.elapsed, this.avatar.position);
 
     let portals = this.getAllPortals();
     let closest: PortalVisualHandle | null = null;
@@ -801,39 +878,118 @@ export class WorldEngine {
     this.currentFramePortals = portals;
     this.currentFrameDt = dt;
 
+    // Self-heal viewport/camera aspect after initial mobile layout or silent webview resizes
+    // (every frame during the first 2s after startup, then periodically ~4 Hz).
+    if (this.elapsed < 2.0 || ++this.viewportCheckFrames >= 15) {
+      this.viewportCheckFrames = 0;
+      this.syncViewportSize();
+    }
+
     // Render through the persistent post-processing buffer, or directly on lite mobile profiles
     if (this.performanceProfile.useRipplePass) {
       this.ripplePass.render(this.renderMainPass);
     } else {
+      // Guard against a background compileAsync yield leaving compileTarget (1x1) bound.
+      this.renderer.setRenderTarget(null);
       this.renderMainPass();
     }
   };
 
-  private readonly handleResize = (): void => {
-    const w = this.container.clientWidth || window.innerWidth;
-    const h = this.container.clientHeight || window.innerHeight;
-    this.camera.aspect = w / Math.max(1, h);
+  private measureViewport() {
+    const vv = window.visualViewport;
+    return resolveViewportSize({
+      containerWidth: this.container.clientWidth,
+      containerHeight: this.container.clientHeight,
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+      visualWidth: vv?.width,
+      visualHeight: vv?.height,
+    });
+  }
+
+  private syncViewportSize(force = false): void {
+    const { width, height, aspect } = this.measureViewport();
+    const dpr = resolvePixelRatio(window.devicePixelRatio, this.performanceProfile.maxPixelRatio);
+    if (
+      !force &&
+      !needsViewportSync(
+        {
+          width: this.viewportWidth,
+          height: this.viewportHeight,
+          pixelRatio: this.viewportPixelRatio,
+          cameraAspect: this.camera.aspect,
+        },
+        width,
+        height,
+        dpr,
+      )
+    ) {
+      return;
+    }
+    this.viewportWidth = width;
+    this.viewportHeight = height;
+    this.viewportPixelRatio = dpr;
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
+  }
+
+  private readonly handleResize = (): void => {
+    this.syncViewportSize();
+  };
+
+  private readonly handleOrientationChange = (): void => {
+    this.syncViewportSize();
+    if (this.orientationTimer !== null) window.clearTimeout(this.orientationTimer);
+    // iOS Safari & in-app webviews often report pre-rotation dimensions on the immediate event.
+    this.orientationTimer = window.setTimeout(() => {
+      this.orientationTimer = null;
+      this.syncViewportSize();
+    }, 250);
+  };
+
+  private readonly handleVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') {
+      this.syncViewportSize();
+    }
   };
 
   private readonly handleKeyDown = (e: KeyboardEvent): void => {
     if (this.inputLocked) return;
     // While flying, E descends and lands (matching Earth repo); fly directly through portals instead.
-    if (e.code === 'KeyE' && !this.avatar.isFlying && this.nearestPortal) {
-      this.requestPortalEntry(this.nearestPortal.portal);
+    if (e.code === 'KeyE' && !this.avatar.isFlying) {
+      if (this.nearestPortal) {
+        this.requestPortalEntry(this.nearestPortal.portal);
+      } else if (!e.repeat && this.npcs.getNearestNpc()) {
+        this.triggerNearestNpc();
+      }
+    } else if (e.code === 'KeyR' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.triggerNearestNpc();
     }
   };
 
   dispose(): void {
     this.mountSequence++;
     this.running = false;
+    this.overlayView = null;
     this.walkThrough = undefined;
     this.transitPortal = undefined;
     cancelAnimationFrame(this.animFrameId);
+    if (this.orientationTimer !== null) {
+      window.clearTimeout(this.orientationTimer);
+      this.orientationTimer = null;
+    }
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
     window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('orientationchange', this.handleOrientationChange);
+    window.removeEventListener('pageshow', this.handleResize);
+    window.visualViewport?.removeEventListener('resize', this.handleResize);
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('keydown', this.handleKeyDown);
     const previewsCleared = this.unmountCurrentWorld();
+    this.npcs.dispose();
     this.ripplePass.dispose();
     this.warpSphereGeometry.dispose();
     this.warpSphereMaterial.dispose();

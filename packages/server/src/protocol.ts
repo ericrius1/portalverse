@@ -3,6 +3,7 @@ import type {
   ClientNetMessage,
   PlayerIdentity,
   PortalDefinition,
+  RtcSignalPayload,
   ServerNetMessage,
 } from '../../core/src/types';
 import {
@@ -13,12 +14,19 @@ import {
   sanitizeText,
   sanitizeVec3,
 } from '../../core/src/portal/handoff';
+import {
+  MAX_CHAT_MESSAGE_LENGTH,
+  sanitizeSpeechBubbleStyle,
+} from '../../core/src/chat/bubbleStyles';
 
 /** Hard cap on a single inbound frame, before JSON parsing. */
-export const MAX_CLIENT_MESSAGE_BYTES = 16 * 1024;
+export const MAX_CLIENT_MESSAGE_BYTES = 32 * 1024;
 export const MAX_PLAYER_NAME_LENGTH = 32;
 export const MAX_PORTAL_LABEL_LENGTH = 40;
 export const MAX_PORTAL_SUBTITLE_LENGTH = 60;
+export const MAX_SDP_LENGTH = 24 * 1024;
+export const MAX_ICE_CANDIDATE_LENGTH = 2048;
+export const MAX_CHAT_TARGETS = 64;
 export const DEFAULT_PORTAL_TRIGGER_RADIUS = 2.6;
 
 type Raw = Record<string, unknown>;
@@ -38,7 +46,60 @@ function sanitizeIdentity(value: unknown): PlayerIdentity | null {
     const characterId = sanitizeId(value.characterId);
     if (characterId) identity.characterId = characterId;
   }
+  if (value.bubbleStyle !== undefined) {
+    const bubbleStyle = sanitizeSpeechBubbleStyle(value.bubbleStyle, color);
+    if (bubbleStyle) identity.bubbleStyle = bubbleStyle;
+  }
   return identity;
+}
+
+export function sanitizeRtcSignal(value: unknown): RtcSignalPayload | null {
+  if (!isRecord(value) || typeof value.kind !== 'string') return null;
+  switch (value.kind) {
+    case 'offer':
+    case 'answer': {
+      if (typeof value.sdp !== 'string' || value.sdp.length === 0 || value.sdp.length > MAX_SDP_LENGTH) {
+        return null;
+      }
+      return { kind: value.kind, sdp: value.sdp };
+    }
+    case 'ice': {
+      if (typeof value.candidate !== 'string' || value.candidate.length > MAX_ICE_CANDIDATE_LENGTH) {
+        return null;
+      }
+      const ice: Extract<RtcSignalPayload, { kind: 'ice' }> = {
+        kind: 'ice',
+        candidate: value.candidate,
+      };
+      if (value.sdpMid !== undefined) {
+        if (value.sdpMid !== null && (typeof value.sdpMid !== 'string' || value.sdpMid.length > 64)) {
+          return null;
+        }
+        ice.sdpMid = value.sdpMid;
+      }
+      if (value.sdpMLineIndex !== undefined) {
+        if (
+          value.sdpMLineIndex !== null &&
+          (!isFiniteNumber(value.sdpMLineIndex) || value.sdpMLineIndex < 0 || value.sdpMLineIndex > 64)
+        ) {
+          return null;
+        }
+        ice.sdpMLineIndex = value.sdpMLineIndex;
+      }
+      if (value.usernameFragment !== undefined) {
+        if (
+          value.usernameFragment !== null &&
+          (typeof value.usernameFragment !== 'string' || value.usernameFragment.length > 256)
+        ) {
+          return null;
+        }
+        ice.usernameFragment = value.usernameFragment;
+      }
+      return ice;
+    }
+    default:
+      return null;
+  }
 }
 
 /**
@@ -149,6 +210,10 @@ export function parseClientMessage(raw: string): ClientNetMessage | null {
         const characterId = sanitizeId(data.characterId);
         if (characterId) msg.characterId = characterId;
       }
+      if (data.bubbleStyle !== undefined) {
+        const bubbleStyle = sanitizeSpeechBubbleStyle(data.bubbleStyle, color);
+        if (bubbleStyle) msg.bubbleStyle = bubbleStyle;
+      }
       return msg;
     }
     case 'spawn_portal': {
@@ -162,6 +227,37 @@ export function parseClientMessage(raw: string): ClientNetMessage | null {
       const portalId = sanitizeId(data.portalId);
       if (!worldId || !portalId) return null;
       return { type: 'remove_portal', worldId, portalId };
+    }
+    case 'rtc_signal': {
+      const toPlayerId = sanitizeId(data.toPlayerId);
+      const signal = sanitizeRtcSignal(data.signal);
+      if (!toPlayerId || !signal) return null;
+      return { type: 'rtc_signal', toPlayerId, signal };
+    }
+    case 'chat_message': {
+      const id = sanitizeId(data.id);
+      const text = sanitizeText(data.text, MAX_CHAT_MESSAGE_LENGTH);
+      if (!id || !text) return null;
+      const msg: Extract<ClientNetMessage, { type: 'chat_message' }> = {
+        type: 'chat_message',
+        id,
+        text,
+      };
+      if (data.bubbleStyle !== undefined) {
+        const bubbleStyle = sanitizeSpeechBubbleStyle(data.bubbleStyle);
+        if (bubbleStyle) msg.bubbleStyle = bubbleStyle;
+      }
+      if (data.toPlayerIds !== undefined) {
+        if (!Array.isArray(data.toPlayerIds) || data.toPlayerIds.length > MAX_CHAT_TARGETS) return null;
+        const targets: string[] = [];
+        for (const rawId of data.toPlayerIds) {
+          const cleanId = sanitizeId(rawId);
+          if (!cleanId) return null;
+          targets.push(cleanId);
+        }
+        msg.toPlayerIds = targets;
+      }
+      return msg;
     }
     case 'ping': {
       if (!isFiniteNumber(data.t)) return null;

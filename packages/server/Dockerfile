@@ -7,6 +7,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY index.html registry.json tsconfig.json vite.config.ts ./
+COPY public ./public
 COPY app ./app
 COPY packages ./packages
 COPY worlds ./worlds
@@ -28,6 +29,8 @@ COPY packages/server ./packages/server
 COPY packages/core/src/types.ts ./packages/core/src/types.ts
 COPY packages/core/src/portal/handoff.ts ./packages/core/src/portal/handoff.ts
 COPY packages/core/src/portal/roomLayout.ts ./packages/core/src/portal/roomLayout.ts
+COPY packages/core/src/characters/appearance.ts ./packages/core/src/characters/appearance.ts
+COPY packages/core/src/chat/bubbleStyles.ts ./packages/core/src/chat/bubbleStyles.ts
 COPY --from=build /app/dist ./dist
 
 ENV NODE_ENV=production

@@ -78,6 +78,8 @@ export interface CharacterDefinition {
   species: string;
   tagline: string;
   description: string;
+  /** Richer whimsical character backstory shown in the Character Select dossier. */
+  backstory?: string;
   accentColor: string;
   /** Height of multiplayer floating nameplate above feet (Y = 0), in meters. */
   labelHeight: number;

@@ -68,11 +68,67 @@ export interface RegistryFile {
   worlds: WorldManifest[];
 }
 
+export type BubblePresetId =
+  | 'glass'
+  | 'comic'
+  | 'thought'
+  | 'cyber'
+  | 'shout'
+  | 'pixel'
+  | 'parchment'
+  | 'aurora';
+
+export type BubbleTailStyle = 'curved' | 'sharp' | 'dots' | 'none';
+export type BubbleFontStyle = 'sans' | 'comic' | 'mono' | 'serif';
+export type BubbleEffect = 'none' | 'glow' | 'shimmer' | 'sparkle' | 'pulse';
+
+export interface SpeechBubbleStyle {
+  preset: BubblePresetId;
+  /** Primary bubble fill hex color (#rrggbb). */
+  bgColor: string;
+  /** Border / accent hex color (#rrggbb). */
+  accentColor: string;
+  /** Text hex color (#rrggbb). */
+  textColor: string;
+  /** Speech bubble pointer tail style. */
+  tail: BubbleTailStyle;
+  /** Typography family. */
+  font: BubbleFontStyle;
+  /** Visual aura / animation effect. */
+  effect: BubbleEffect;
+  /** Optional short flair badge / emoji (up to 4 chars). */
+  badge?: string;
+}
+
+export type RtcSignalPayload =
+  | { kind: 'offer'; sdp: string }
+  | { kind: 'answer'; sdp: string }
+  | {
+      kind: 'ice';
+      candidate: string;
+      sdpMid?: string | null;
+      sdpMLineIndex?: number | null;
+      usernameFragment?: string | null;
+    };
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderColor: string;
+  worldId: string;
+  text: string;
+  bubbleStyle: SpeechBubbleStyle;
+  sentAt: number;
+  transport: 'webrtc' | 'ws-fallback' | 'local';
+}
+
 export interface PlayerIdentity extends Partial<SkinAppearance> {
   id: string;
   name: string;
   color: string;
   characterId?: string;
+  bubbleStyle?: SpeechBubbleStyle;
 }
 
 export interface AvatarState extends Partial<SkinAppearance> {
@@ -80,6 +136,7 @@ export interface AvatarState extends Partial<SkinAppearance> {
   name: string;
   color: string;
   characterId?: string;
+  bubbleStyle?: SpeechBubbleStyle;
   worldId: string;
   position: Vec3Tuple;
   yaw: number;
@@ -93,6 +150,7 @@ export interface PortalHandoffPayload extends Partial<SkinAppearance> {
   playerName: string;
   playerColor: string;
   characterId?: string;
+  bubbleStyle?: SpeechBubbleStyle;
   fromWorldId: string;
   fromWorldName: string;
   returnUrl?: string;
@@ -136,6 +194,7 @@ export type ClientNetMessage =
       name: string;
       color: string;
       characterId?: string;
+      bubbleStyle?: SpeechBubbleStyle;
     }
   | {
       type: 'spawn_portal';
@@ -146,6 +205,19 @@ export type ClientNetMessage =
       type: 'remove_portal';
       worldId: string;
       portalId: string;
+    }
+  | {
+      type: 'rtc_signal';
+      toPlayerId: string;
+      signal: RtcSignalPayload;
+    }
+  | {
+      type: 'chat_message';
+      id: string;
+      text: string;
+      bubbleStyle?: SpeechBubbleStyle;
+      /** Optional peer subset for WS fallback when WebRTC DataChannel is not open. */
+      toPlayerIds?: string[];
     }
   | {
       type: 'ping';
@@ -195,6 +267,23 @@ export type ServerNetMessage =
       type: 'portal_removed';
       worldId: string;
       portalId: string;
+    }
+  | {
+      type: 'rtc_signal';
+      fromPlayerId: string;
+      worldId: string;
+      signal: RtcSignalPayload;
+    }
+  | {
+      type: 'chat_message';
+      id: string;
+      senderId: string;
+      senderName: string;
+      senderColor: string;
+      worldId: string;
+      text: string;
+      bubbleStyle?: SpeechBubbleStyle;
+      sentAt: number;
     }
   | {
       type: 'pong';

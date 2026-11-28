@@ -6,10 +6,13 @@ import type {
   ConnectionState,
   PlayerIdentity,
   PortalDefinition,
+  RtcSignalPayload,
   ServerNetMessage,
+  SpeechBubbleStyle,
   Vec3Tuple,
 } from '../types';
 import { sanitizeColor, sanitizeId, sanitizeText } from '../portal/handoff';
+import { MAX_CHAT_MESSAGE_LENGTH, sanitizeSpeechBubbleStyle } from '../chat/bubbleStyles';
 
 /** Minimal WebSocket surface the client needs (browser WebSocket or `ws`). */
 export interface WebSocketLike {
@@ -24,6 +27,17 @@ export interface WebSocketLike {
 
 export type WebSocketFactory = (url: string) => WebSocketLike;
 
+export interface IncomingWsChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderColor: string;
+  worldId: string;
+  text: string;
+  bubbleStyle?: SpeechBubbleStyle;
+  sentAt: number;
+}
+
 export interface MultiplayerClientOptions {
   url?: string;
   identity: PlayerIdentity;
@@ -33,6 +47,8 @@ export interface MultiplayerClientOptions {
   onPlayersChange?: (playersInWorld: AvatarState[]) => void;
   onRosterChange?: (roster: AvatarState[], event?: string) => void;
   onDynamicPortalsChange?: (portals: PortalDefinition[]) => void;
+  onRtcSignal?: (fromPlayerId: string, worldId: string, signal: RtcSignalPayload) => void;
+  onChatFallback?: (message: IncomingWsChatMessage) => void;
   onError?: (message: string) => void;
   /** Override the socket implementation (tests / Node). Defaults to global WebSocket. */
   createSocket?: WebSocketFactory;
@@ -58,7 +74,11 @@ function defaultSocketFactory(): WebSocketFactory | null {
 }
 
 function copyAvatar(a: AvatarState): AvatarState {
-  return { ...a, position: [...a.position] as Vec3Tuple };
+  return {
+    ...a,
+    position: [...a.position] as Vec3Tuple,
+    ...(a.bubbleStyle ? { bubbleStyle: { ...a.bubbleStyle } } : {}),
+  };
 }
 
 function copyPortal(p: PortalDefinition): PortalDefinition {
@@ -211,7 +231,13 @@ export class MultiplayerClient {
     this.send({ type: 'switch_world', worldId, position: [...this.position] as Vec3Tuple, yaw });
   }
 
-  updateProfile(name: string, color: string, characterId?: string, appearance?: Partial<SkinAppearance>): void {
+  updateProfile(
+    name: string,
+    color: string,
+    characterId?: string,
+    appearance?: Partial<SkinAppearance>,
+    bubbleStyle?: SpeechBubbleStyle,
+  ): void {
     const cleanName = sanitizeText(name, 32);
     const cleanColor = sanitizeColor(color);
     if (!cleanName || !cleanColor) {
@@ -220,12 +246,17 @@ export class MultiplayerClient {
     }
     const cleanSkin = sanitizeSkinAppearance({ ...this.identity, ...appearance });
     const cleanChar = characterId ? sanitizeId(characterId) ?? undefined : this.identity.characterId;
+    const cleanBubble =
+      bubbleStyle !== undefined
+        ? sanitizeSpeechBubbleStyle(bubbleStyle, cleanColor) ?? undefined
+        : this.identity.bubbleStyle;
     this.identity = {
       ...this.identity,
       ...cleanSkin,
       name: cleanName,
       color: cleanColor,
       ...(cleanChar ? { characterId: cleanChar } : {}),
+      ...(cleanBubble ? { bubbleStyle: cleanBubble } : {}),
     };
     const msg: Extract<ClientNetMessage, { type: 'update_profile' }> = {
       type: 'update_profile',
@@ -233,10 +264,37 @@ export class MultiplayerClient {
       name: cleanName,
       color: cleanColor,
       ...(cleanChar ? { characterId: cleanChar } : {}),
+      ...(cleanBubble ? { bubbleStyle: cleanBubble } : {}),
     };
     if (!this.send(msg)) {
       this.emitRoster();
     }
+  }
+
+  sendRtcSignal(toPlayerId: string, signal: RtcSignalPayload): boolean {
+    const cleanTo = sanitizeId(toPlayerId);
+    if (!cleanTo) return false;
+    return this.send({ type: 'rtc_signal', toPlayerId: cleanTo, signal });
+  }
+
+  sendChatFallback(
+    id: string,
+    text: string,
+    bubbleStyle?: SpeechBubbleStyle,
+    toPlayerIds?: string[],
+  ): boolean {
+    const cleanId = sanitizeId(id);
+    const cleanText = sanitizeText(text, MAX_CHAT_MESSAGE_LENGTH);
+    if (!cleanId || !cleanText) return false;
+    const cleanStyle = bubbleStyle ? sanitizeSpeechBubbleStyle(bubbleStyle, this.identity.color) ?? undefined : undefined;
+    const msg: Extract<ClientNetMessage, { type: 'chat_message' }> = {
+      type: 'chat_message',
+      id: cleanId,
+      text: cleanText,
+      ...(cleanStyle ? { bubbleStyle: cleanStyle } : {}),
+      ...(toPlayerIds && toPlayerIds.length > 0 ? { toPlayerIds } : {}),
+    };
+    return this.send(msg);
   }
 
   spawnPortal(worldId: string, portal: PortalDefinition): void {
@@ -420,6 +478,25 @@ export class MultiplayerClient {
         }
         break;
       }
+      case 'rtc_signal': {
+        if (msg.worldId !== this.worldId || msg.fromPlayerId === this.localPlayerId) break;
+        this.options.onRtcSignal?.(msg.fromPlayerId, msg.worldId, msg.signal);
+        break;
+      }
+      case 'chat_message': {
+        if (msg.worldId !== this.worldId || msg.senderId === this.localPlayerId) break;
+        this.options.onChatFallback?.({
+          id: msg.id,
+          senderId: msg.senderId,
+          senderName: msg.senderName,
+          senderColor: msg.senderColor,
+          worldId: msg.worldId,
+          text: msg.text,
+          bubbleStyle: msg.bubbleStyle,
+          sentAt: msg.sentAt,
+        });
+        break;
+      }
       case 'error':
         this.options.onError?.(msg.message || msg.code);
         break;
@@ -484,6 +561,7 @@ export class MultiplayerClient {
       color: this.identity.color,
       ...sanitizeSkinAppearance({ ...this.identity }),
       ...(this.identity.characterId ? { characterId: this.identity.characterId } : {}),
+      ...(this.identity.bubbleStyle ? { bubbleStyle: { ...this.identity.bubbleStyle } } : {}),
       worldId: this.worldId,
       position: [...this.position] as Vec3Tuple,
       yaw: this.yaw,

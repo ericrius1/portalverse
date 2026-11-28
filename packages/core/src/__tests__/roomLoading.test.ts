@@ -101,14 +101,14 @@ describe('preparing a room as it loads', () => {
   it('captures both snapshots on load and gives them to portals already mounted', async () => {
     const fake = fakeRenderer();
     const previews = new PortalPreviews(fake.renderer, id => Promise.resolve(emptyRoom(id)), { idle: now });
-    const active = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
+    const active = await RoomInstance.mount(emptyRoom(at(0)), fake.renderer);
     await previews.refreshSnapshots(active);
     const exit = active.portals.find(p => p.portal.id === 'exit')!;
     const placeholder = exit.aperture.material;
 
     fake.renders.length = 0;
-    const jp = (await previews.prepare(at(1)))!;
-    expect(fake.renders.filter(scene => scene === jp.scene)).toHaveLength(2);
+    const nextRoom = (await previews.prepare(at(1)))!;
+    expect(fake.renders.filter(scene => scene === nextRoom.scene)).toHaveLength(2);
     expect(exit.aperture.material).not.toBe(placeholder);
     previews.disposeRoom(active);
     previews.clear();
@@ -144,14 +144,14 @@ describe('preparing a room as it loads', () => {
     const previews = new PortalPreviews(fake.renderer, async id =>
       defineRoom(id, { mount: ctx => { ctx.scene.name = id; } }), { idle: now });
     const running = previews.prepare(at(1), false);
-    const waiting = previews.prepare('eric-world', false);
+    const waiting = previews.prepare(at(0), false);
     await flush();
-    const selected = previews.travelTo('jp-loft');
+    const selected = previews.travelTo(at(2));
     await flush();
     expect(order).toEqual([at(1)]);
     first.open();
     await Promise.all([running, waiting, selected]);
-    expect(order).toEqual([at(1), 'jp-loft', 'eric-world']);
+    expect(order).toEqual([at(1), at(2), at(0)]);
     await previews.clear();
   });
 
@@ -201,7 +201,7 @@ describe('preparing a room as it loads', () => {
     });
     const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(module), { idle: now });
 
-    const neighbour = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
+    const neighbour = await RoomInstance.mount(emptyRoom(at(0)), fake.renderer);
     await previews.refreshSnapshots(neighbour);
     const snapshot = fake.targets.find(target => target !== null)!;
     const disposedSnapshot = vi.fn();

@@ -7,11 +7,24 @@ import type {
   ConnectionState,
   PlayerIdentity,
   PortalDefinition,
+  SpeechBubbleStyle,
+  Vec3Tuple,
   WorldManifest,
   WorldModule,
 } from '@portalverse/core/types';
 import { WorldEngine } from '@portalverse/core/engine/WorldEngine';
 import { MultiplayerClient } from '@portalverse/core/net/multiplayerClient';
+import {
+  fetchRtcIceServers,
+  WebRtcMesh,
+  type PeerRtcSnapshot,
+  type VoiceStateSnapshot,
+} from '@portalverse/core/net/webrtcMesh';
+import {
+  createDefaultBubbleStyle,
+  getBubblePreset,
+  sanitizeSpeechBubbleStyle,
+} from '@portalverse/core/chat';
 import { WorldRegistry } from '@portalverse/core/portal/registry';
 import { parseMovementMode } from '@portalverse/core/engine/movement';
 import {
@@ -23,8 +36,13 @@ import {
 } from '@portalverse/core/portal/handoff';
 import { InteractiveTutorial, hasCompletedTutorial } from './tutorial';
 import { CharacterSelectScreen } from './characterSelect';
+import { BubbleCustomizerModal } from './bubbleCustomizer';
+import { ChatAndVoiceUi } from './chatUi';
+import { NpcDialogueUi } from './dialogueUi';
+import { MetaViewUi } from './metaViewUi';
 import { MobileControls } from './mobileControls';
 import { chooseStartupCharacter, getCharacterDefinition, normalizeSkinAppearance } from '@portalverse/core/characters';
+import { CosmicMetaView } from '@portalverse/core/meta';
 import {
   detectPerformanceProfile,
   isMobileTouchDevice,
@@ -64,6 +82,9 @@ function loadOrCreateIdentity(): PlayerIdentity {
           color: parsed.color,
           characterId: startupCharacter,
           ...normalizeSkinAppearance(parsed),
+          bubbleStyle:
+            sanitizeSpeechBubbleStyle(parsed.bubbleStyle, parsed.color) ??
+            createDefaultBubbleStyle(parsed.color),
         };
       }
     }
@@ -72,12 +93,14 @@ function loadOrCreateIdentity(): PlayerIdentity {
   }
   const palette = ['#22d3ee', '#f59e0b', '#a855f7', '#34d399', '#fb7185'];
   const id = `p-${Math.random().toString(36).slice(2, 10)}`;
+  const color = palette[Math.floor(Math.random() * palette.length)];
   const identity: PlayerIdentity = {
     id,
     name: `Explorer ${id.slice(-4).toUpperCase()}`,
-    color: palette[Math.floor(Math.random() * palette.length)],
+    color,
     characterId: startupCharacter,
     ...normalizeSkinAppearance(),
+    bubbleStyle: createDefaultBubbleStyle(color),
   };
   saveIdentity(identity);
   return identity;
@@ -132,6 +155,7 @@ async function boot(): Promise<void> {
   const loadingPhaseText = document.getElementById('loading-phase-text')!;
   const btnGateTutorial = document.getElementById('btn-gate-tutorial') as HTMLButtonElement;
   const btnGateEnter = document.getElementById('btn-gate-enter') as HTMLButtonElement;
+  const btnGateMeta = document.getElementById('btn-gate-meta') as HTMLButtonElement;
   const fpsReticle = document.getElementById('fps-reticle')!;
   const pointerLockBanner = document.getElementById('pointer-lock-banner')!;
   const mouseLockLabel = document.getElementById('mouse-lock-label')!;
@@ -154,6 +178,10 @@ async function boot(): Promise<void> {
   const warpZonesToggle = document.getElementById('debug-warp-zones') as HTMLInputElement;
 
   const btnShareLink = document.getElementById('btn-share-link')!;
+  const hudEl = document.getElementById('hud')!;
+  const metaViewOverlay = document.getElementById('meta-view-overlay')!;
+  const btnCosmos = document.getElementById('btn-cosmos')!;
+  const btnWorldsOpenCosmos = document.getElementById('btn-worlds-open-cosmos')!;
   const btnWorlds = document.getElementById('btn-worlds')!;
   const btnCharacters = document.getElementById('btn-characters')!;
   const btnLinkPortal = document.getElementById('btn-link-portal')!;
@@ -165,7 +193,11 @@ async function boot(): Promise<void> {
   const modalWorlds = document.getElementById('modal-worlds')!;
   const modalCharacters = document.getElementById('modal-characters')!;
   const modalProfile = document.getElementById('modal-profile')!;
+  const modalBubbleStyle = document.getElementById('modal-bubble-style')!;
+  const modalJournal = document.getElementById('modal-journal')!;
   const modalControls = document.getElementById('modal-controls')!;
+  const profileBubbleSummary = document.getElementById('profile-bubble-summary')!;
+  const btnProfileBubbleStyle = document.getElementById('btn-profile-bubble-style') as HTMLButtonElement;
   const mobileControlsRoot = document.getElementById('mobile-controls')!;
   const perfProfileSelect = document.getElementById('perf-profile-select') as HTMLSelectElement;
   const perfProfileSummary = document.getElementById('perf-profile-summary')!;
@@ -237,9 +269,15 @@ async function boot(): Promise<void> {
       characterId: route.handoff.characterId
         ? getCharacterDefinition(route.handoff.characterId).id
         : identity.characterId,
+      bubbleStyle:
+        route.handoff.bubbleStyle ??
+        identity.bubbleStyle ??
+        createDefaultBubbleStyle(route.handoff.playerColor || identity.color),
     };
     saveIdentity(identity);
   }
+  const activeBubbleStyle = (): SpeechBubbleStyle =>
+    identity.bubbleStyle ?? createDefaultBubbleStyle(identity.color);
 
   const initialWorldId =
     (route.worldId && registry.getManifest(route.worldId) ? route.worldId : undefined) ??
@@ -325,16 +363,35 @@ async function boot(): Promise<void> {
   let mobileControls: MobileControls | null = null;
   let gateExited = false;
   let shiftHeld = false;
+  let roomInputCaptured = false;
+  let wasPointerLockedBeforeChat = false;
+  let latestVoiceSnapshot: VoiceStateSnapshot | null = null;
+  let latestRtcPeers = new Map<string, PeerRtcSnapshot>();
+  let chatUi: ChatAndVoiceUi;
+  let dialogueUi: NpcDialogueUi;
+  let metaView: CosmicMetaView | null = null;
+  let metaViewUi: MetaViewUi | null = null;
+  const initialOpenMeta = new URLSearchParams(window.location.search).get('view') === 'meta';
+  const isMetaViewOpen = () => Boolean(metaViewUi?.isOpen());
 
-  const allModals = [modalPortal, modalWorlds, modalCharacters, modalProfile, modalControls];
+  const allModals = [modalPortal, modalWorlds, modalCharacters, modalProfile, modalBubbleStyle, modalJournal, modalControls];
   const isAnyModalOpen = () => allModals.some((m) => !m.classList.contains('hidden'));
   const syncPointerUi = (locked: boolean) => {
     const touchActive = Boolean(mobileControls?.isEnabled());
-    fpsReticle.classList.toggle('hidden', !locked || touchActive);
+    fpsReticle.classList.toggle('hidden', !locked || touchActive || isMetaViewOpen());
     mouseLockLabel.textContent = locked ? 'FPS Locked (Esc)' : 'Click to Lock';
     pointerLockBanner.classList.toggle(
       'hidden',
-      touchActive || !gateExited || isTransitioning || locked || isAnyModalOpen() || fallOverlay.classList.contains('active'),
+      touchActive ||
+        !gateExited ||
+        isTransitioning ||
+        locked ||
+        isMetaViewOpen() ||
+        isAnyModalOpen() ||
+        roomInputCaptured ||
+        Boolean(dialogueUi?.isOpen()) ||
+        Boolean(chatUi?.isFocused()) ||
+        fallOverlay.classList.contains('active'),
     );
   };
 
@@ -354,6 +411,9 @@ async function boot(): Promise<void> {
       soundtrack.enterRoom(manifest.id);
       activeManifest = manifest;
       activeWorldId = manifest.id;
+      metaView?.setActiveWorld(manifest.id);
+      metaViewUi?.setActiveWorldId(manifest.id);
+      dialogueUi?.closeDialogue(false);
       tutorial.notifyWorldChanged(manifest.id);
       // Defer DOM updates out of the crossing frame's rAF so WebGPU submits first.
       scheduleHudSync(false);
@@ -367,6 +427,8 @@ async function boot(): Promise<void> {
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
         engine.avatar.getFacingYaw(),
       );
+      rtcMesh.syncPeers([], net.getLocalPlayerId(), manifest.id);
+      chatUi.clearTyping();
       scheduleHudSync(true);
     },
     onPortalProximity: (portal) => {
@@ -399,10 +461,23 @@ async function boot(): Promise<void> {
       fallOverlay.setAttribute('aria-hidden', String(!fallen));
       respawnButton.tabIndex = fallen ? 0 : -1;
       // The button isn't focused for you, so a Space press meant as a jump can't click it.
-      if (fallen) closeAllModals();
+      if (fallen) {
+        dialogueUi?.closeDialogue(false);
+        closeAllModals();
+      }
       else respawnButton.blur();
       syncInputLocks();
       syncPointerUi(engine.avatar.pointerLocked);
+    },
+    onNearbyNpcChange: (npc) => {
+      dialogueUi?.setNearbyNpc(npc, Boolean(mobileControls?.isEnabled()));
+    },
+    onNpcTalkRequest: (npc) => {
+      if (!gateExited || engine.hasFallen || isTransitioning || isAnyModalOpen() || chatUi.isFocused()) return;
+      if (dialogueUi.isOpen()) return;
+      const locked = engine.avatar.pointerLocked;
+      if (locked) engine.exitPointerLock();
+      dialogueUi.openDialogue(npc, locked);
     },
     onMovementModeChange: (mode) => {
       physicsModeLabel.textContent = mode === 'platformer' ? 'Physics: Platformer' : 'Physics: Classic';
@@ -410,6 +485,7 @@ async function boot(): Promise<void> {
     },
   }, identity.characterId);
   engine.avatar.setSkinAppearance(normalizeSkinAppearance(identity));
+  engine.avatar.setLocalBubbleStyle(activeBubbleStyle());
   if (import.meta.env.DEV) (window as unknown as { engine: WorldEngine }).engine = engine;
 
   // Adventurers start with their character default; other characters retain saved physics.
@@ -445,9 +521,13 @@ async function boot(): Promise<void> {
       hudNetStatus.dataset.state = state;
       hudNetStatus.textContent =
         state === 'connected' ? 'Live Co-op' : state === 'connecting' ? 'Connecting' : 'Solo / Local';
+      if (state !== 'connected') {
+        rtcMesh.syncPeers([], net.getLocalPlayerId(), activeWorldId);
+      }
     },
     onPlayersChange: (players) => {
       engine.syncRemotePlayers(players, net.getLocalPlayerId());
+      rtcMesh.syncPeers(players, net.getLocalPlayerId(), activeWorldId);
     },
     onRosterChange: (roster, eventText) => {
       latestRoster = roster;
@@ -458,8 +538,195 @@ async function boot(): Promise<void> {
       latestDynamicPortals = portals;
       engine.setDynamicPortals(combinedDynamicPortals());
     },
+    onRtcSignal: (fromPlayerId, worldId, signal) => {
+      void rtcMesh.handleSignal(fromPlayerId, worldId, signal);
+    },
+    onChatFallback: (msg) => {
+      rtcMesh.handleWsChatFallback(msg);
+    },
     onError: (msg) => showToast(msg),
   });
+
+  const rtcMesh = new WebRtcMesh({
+    localPlayerId: identity.id,
+    localPlayerName: identity.name,
+    localPlayerColor: identity.color,
+    localBubbleStyle: activeBubbleStyle(),
+    worldId: initialWorldId,
+    sendSignal: (toPlayerId, signal) => {
+      net.sendRtcSignal(toPlayerId, signal);
+    },
+    sendChatFallback: (id, text, style, toPlayerIds) => {
+      net.sendChatFallback(id, text, style, toPlayerIds);
+    },
+    onChatMessage: (msg) => {
+      const isSelf = msg.senderId === net.getLocalPlayerId();
+      chatUi.appendMessage(msg, isSelf);
+      if (isSelf) {
+        engine.avatar.showLocalSpeechBubble(msg.text, msg.bubbleStyle);
+      } else {
+        engine.avatar.showRemoteSpeechBubble(msg.senderId, msg.text, msg.bubbleStyle);
+      }
+    },
+    onPeerTyping: (playerId, typing, style) => {
+      const peerName =
+        latestRoster.find((p) => p.id === playerId)?.name ??
+        net.getPlayersInWorld().find((p) => p.id === playerId)?.name ??
+        playerId;
+      chatUi.setPeerTyping(playerId, peerName, typing);
+      engine.avatar.setRemoteTyping(playerId, typing, style);
+    },
+    onPeerStyleUpdate: (playerId, style) => {
+      engine.avatar.setRemoteBubbleStyle(playerId, style);
+    },
+    onVoiceActivity: (playerId, speaking, level, isLocal) => {
+      if (isLocal) {
+        engine.avatar.setLocalVoiceActivity(speaking, level, activeBubbleStyle());
+      } else {
+        const peerStyle = latestRtcPeers.get(playerId)?.bubbleStyle;
+        engine.avatar.setRemoteVoiceActivity(playerId, speaking, level, peerStyle);
+      }
+    },
+    onStateChange: (voice, peers) => {
+      latestVoiceSnapshot = voice;
+      latestRtcPeers = new Map(peers.map((p) => [p.playerId, p]));
+      chatUi.syncVoiceUi(voice, peers);
+      mobileControls?.setVoiceState(voice.joined, voice.muted, voice.speaking);
+      renderPresenceRoster();
+    },
+    onError: (msg) => showToast(msg),
+  });
+  void fetchRtcIceServers().then((servers) => rtcMesh.setIceServers(servers));
+
+  chatUi = new ChatAndVoiceUi({
+    onSendMessage: (text) => {
+      rtcMesh.resumeAudio();
+      rtcMesh.sendChatMessage(text, activeBubbleStyle());
+      if (wasPointerLockedBeforeChat && gateExited && !engine.hasFallen && !mobileControls?.isEnabled()) {
+        wasPointerLockedBeforeChat = false;
+        engine.requestPointerLock();
+      }
+    },
+    onTypingChange: (active) => {
+      rtcMesh.sendTyping(active);
+    },
+    onFocusChange: (focused) => {
+      if (focused) {
+        rtcMesh.resumeAudio();
+      }
+      syncInputLocks();
+      syncPointerUi(engine.avatar.pointerLocked);
+    },
+    onOpenBubbleCustomizer: () => {
+      openModal(modalBubbleStyle);
+    },
+    onJoinVoice: () => {
+      void rtcMesh.joinVoice().then((ok) => {
+        if (ok) showToast('Joined WebRTC voice chat (3D spatial audio)');
+      });
+    },
+    onLeaveVoice: () => {
+      rtcMesh.leaveVoice();
+      showToast('Left voice chat');
+    },
+    onToggleMute: () => {
+      const muted = rtcMesh.toggleMute();
+      showToast(muted ? 'Microphone muted' : 'Microphone live');
+    },
+    onToggleDeafen: () => {
+      const next = !(latestVoiceSnapshot?.deafened ?? false);
+      rtcMesh.setDeafened(next);
+      showToast(next ? 'Voice audio deafened' : 'Voice audio restored');
+    },
+    onTogglePushToTalk: (enabled) => {
+      rtcMesh.setPushToTalk(enabled);
+      showToast(enabled ? 'Push-to-Talk enabled (hold B)' : 'Open Mic enabled');
+    },
+    onToggleSpatialAudio: (enabled) => {
+      rtcMesh.setSpatialAudio(enabled);
+      showToast(enabled ? '3D Spatial voice enabled' : 'Room-wide stereo voice enabled');
+    },
+    onSelectInputDevice: (deviceId) => {
+      if (latestVoiceSnapshot?.joined) {
+        void rtcMesh.joinVoice(deviceId);
+      }
+    },
+    listInputDevices: () => rtcMesh.listAudioInputDevices(),
+  });
+  chatUi.syncVoiceUi(rtcMesh.getVoiceSnapshot(), rtcMesh.getPeerSnapshots());
+  if (isTouchHardware) {
+    chatUi.setCollapsed(true);
+  }
+
+  function applySpeechBubbleStyle(style: SpeechBubbleStyle, sampleText?: string, customToast?: string): void {
+    identity = { ...identity, bubbleStyle: style };
+    saveIdentity(identity);
+    engine.avatar.setLocalBubbleStyle(style);
+    rtcMesh.setLocalIdentity(net.getLocalPlayerId(), identity.name, identity.color, style);
+    net.updateProfile(identity.name, identity.color, identity.characterId, normalizeSkinAppearance(identity), style);
+    syncProfileBubbleSummary();
+    const presetName = getBubblePreset(style.preset).name;
+    showToast(customToast ?? `Speech bubble updated to ${presetName}!`);
+    if (sampleText && !engine.avatar.firstPerson) {
+      engine.avatar.showLocalSpeechBubble(sampleText, style);
+    }
+  }
+
+  const bubbleCustomizer = new BubbleCustomizerModal(modalBubbleStyle, {
+    getCurrentStyle: () => activeBubbleStyle(),
+    getAvatarColor: () => identity.color,
+    onSave: (style, sampleText) => {
+      applySpeechBubbleStyle(style, sampleText);
+    },
+    onClose: (relockPointer) => {
+      closeAllModals(relockPointer);
+    },
+  });
+
+  dialogueUi = new NpcDialogueUi({
+    onOpenDialogue: (npc) => {
+      chatUi.blurInput();
+      chatUi.closeVoicePopover();
+      engine.npcs.setDialogueActive(npc.id);
+      syncInputLocks();
+      syncPointerUi(false);
+    },
+    onCloseDialogue: (_npc, relockPointer) => {
+      engine.npcs.setDialogueActive(null);
+      syncInputLocks();
+      if (relockPointer && gateExited && !engine.hasFallen && !mobileControls?.isEnabled() && !isAnyModalOpen()) {
+        engine.requestPointerLock();
+      }
+      syncPointerUi(engine.avatar.pointerLocked);
+    },
+    onSpeakNode: (npc, node) => {
+      engine.npcs.speak(npc.id, node.text, node.expr, node.gesture ?? 'explain');
+    },
+    onAdoptBubbleStyle: (npc, style) => {
+      applySpeechBubbleStyle(
+        { ...style },
+        undefined,
+        `Equipped ${npc.name}'s ${getBubblePreset(style.preset).name} speech bubble!`,
+      );
+    },
+    onOpenJournal: () => {
+      openModal(modalJournal);
+    },
+    onJumpToWorld: (worldId) => {
+      closeAllModals();
+      void transitionToWorld(worldId);
+    },
+    onToast: (msg) => showToast(msg),
+    getWorldName: (worldId) => registry.getManifest(worldId)?.name ?? worldId,
+  });
+
+  function syncProfileBubbleSummary(): void {
+    const s = activeBubbleStyle();
+    const presetName = getBubblePreset(s.preset).name;
+    const fx = s.effect === 'none' ? 'Clean' : s.effect[0].toUpperCase() + s.effect.slice(1);
+    profileBubbleSummary.textContent = `${s.badge ? `${s.badge} ` : ''}${presetName} · ${fx}`;
+  }
+  syncProfileBubbleSummary();
 
   function renderPresenceRoster(): void {
     const displayList: AvatarState[] =
@@ -479,10 +746,18 @@ async function boot(): Promise<void> {
           ];
 
     const rosterKey = displayList
-      .map(p => `${p.id}|${p.name}|${p.color}|${p.worldId}|${activeWorldId}`)
+      .map((p) => {
+        const isMe = p.id === net.getLocalPlayerId();
+        const rtc = latestRtcPeers.get(p.id);
+        const speaking = isMe ? Boolean(latestVoiceSnapshot?.speaking) : Boolean(rtc?.speaking);
+        const hasAudio = isMe ? Boolean(latestVoiceSnapshot?.joined) : Boolean(rtc?.hasRemoteAudio);
+        const muted = isMe ? Boolean(latestVoiceSnapshot?.muted) : Boolean(rtc?.locallyMuted);
+        return `${p.id}|${p.name}|${p.color}|${p.worldId}|${activeWorldId}|${speaking}|${hasAudio}|${muted}`;
+      })
       .join('\n');
     if (rosterKey === lastRosterKey) return;
     lastRosterKey = rosterKey;
+    metaView?.syncPresence(displayList);
 
     playerCountEl.textContent = String(displayList.length);
     playerListEl.innerHTML = '';
@@ -490,16 +765,42 @@ async function boot(): Promise<void> {
     for (const p of displayList) {
       const li = document.createElement('li');
       const isMe = p.id === net.getLocalPlayerId();
+      const rtc = latestRtcPeers.get(p.id);
+      const speaking = isMe ? Boolean(latestVoiceSnapshot?.speaking) : Boolean(rtc?.speaking);
+      const hasAudio = isMe ? Boolean(latestVoiceSnapshot?.joined) : Boolean(rtc?.hasRemoteAudio);
+      const muted = isMe ? Boolean(latestVoiceSnapshot?.muted) : Boolean(rtc?.locallyMuted);
       const worldName = registry.getManifest(p.worldId)?.name ?? p.worldId;
       const canJoin = !isMe && p.worldId !== activeWorldId && !!registry.getManifest(p.worldId);
-      li.className = `player-item${canJoin ? ' clickable' : ''}`;
+      li.className = `player-item${canJoin ? ' clickable' : ''}${speaking ? ' is-speaking' : ''}`;
       li.innerHTML = `
         <span class="player-meta">
           <span class="player-swatch" style="background:${p.color};box-shadow:0 0 8px ${p.color}"></span>
           <span class="player-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}</span>
         </span>
-        <span class="player-world">${escapeHtml(worldName)}</span>
+        <span class="player-right">
+          <span class="player-world">${escapeHtml(worldName)}</span>
+        </span>
       `;
+      if (hasAudio) {
+        const right = li.querySelector('.player-right')!;
+        const voicePill = document.createElement('button');
+        voicePill.type = 'button';
+        voicePill.className = `player-voice-badge${speaking ? ' speaking' : ''}${muted ? ' muted' : ''}`;
+        voicePill.textContent = muted ? '✕' : '♪';
+        voicePill.title = isMe
+          ? muted
+            ? 'Your mic is muted (click to unmute)'
+            : 'Your mic is live (click to mute)'
+          : muted
+            ? `Unmute ${p.name}`
+            : `Mute ${p.name}`;
+        voicePill.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (isMe) rtcMesh.toggleMute();
+          else rtcMesh.setPeerLocallyMuted(p.id, !muted);
+        });
+        right.prepend(voicePill);
+      }
       if (canJoin) {
         li.title = `Click to join ${p.name} in ${worldName}`;
         li.addEventListener('click', () => {
@@ -593,6 +894,8 @@ async function boot(): Promise<void> {
         [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z],
         engine.avatar.getFacingYaw(),
       );
+      rtcMesh.syncPeers([], net.getLocalPlayerId(), worldId);
+      chatUi.clearTyping();
       renderPresenceRoster();
       if (needsOverlay) {
         // Let the newly installed room paint its first frame before lifting the loading overlay.
@@ -622,6 +925,7 @@ async function boot(): Promise<void> {
         playerColor: identity.color,
         ...normalizeSkinAppearance(identity),
         characterId: identity.characterId,
+        bubbleStyle: activeBubbleStyle(),
         fromWorldId: activeWorldId,
         fromWorldName: activeManifest.name,
         returnUrl,
@@ -658,7 +962,7 @@ async function boot(): Promise<void> {
       saveIdentity(identity);
       engine.avatar.setSkinAppearance(appearance);
       engine.avatar.setCharacter(char.id);
-      net.updateProfile(identity.name, identity.color, char.id, appearance);
+      net.updateProfile(identity.name, identity.color, char.id, appearance, activeBubbleStyle());
       if (switchToThirdPerson && engine.avatar.firstPerson) {
         engine.avatar.setFirstPerson(false);
       }
@@ -674,6 +978,18 @@ async function boot(): Promise<void> {
   mobileControls = new MobileControls(mobileControlsRoot, engine.avatar, {
     onOpenCharacters: () => openModal(modalCharacters),
     onToggleCameraView: () => engine.avatar.toggleCameraView(),
+    onOpenChat: () => chatUi.openAndFocus(),
+    onOpenMetaView: () => openMetaView(),
+    onToggleVoice: () => {
+      if (!latestVoiceSnapshot?.joined) {
+        void rtcMesh.joinVoice().then((ok) => {
+          if (ok) showToast('Joined WebRTC voice chat');
+        });
+      } else {
+        const muted = rtcMesh.toggleMute();
+        showToast(muted ? 'Microphone muted' : 'Microphone live');
+      }
+    },
   });
   mobileControls.setEnabled(shouldUseTouchControls());
   mobileControls.setFlying(engine.avatar.isFlying);
@@ -713,6 +1029,7 @@ async function boot(): Promise<void> {
       /* storage unavailable */
     }
     mobileControls?.setEnabled(shouldUseTouchControls());
+    dialogueUi.syncPrompt(Boolean(mobileControls?.isEnabled()));
     syncPointerUi(engine.avatar.pointerLocked);
     touchControlsSelect.blur();
   });
@@ -722,21 +1039,143 @@ async function boot(): Promise<void> {
     engine.triggerNearestPortal();
   });
 
-  // Keep engine UI lock (gate/modals/teleport loading) separate from engine.hasFallen so closing modals
-  // on a fall never leaves engine.inputLocked stuck true after respawn().
+  // Keep engine UI lock (gate/modals/dialogue/room takeover/chat input/teleport loading) separate from engine.hasFallen
+  // so closing modals on a fall never leaves engine.inputLocked stuck true after respawn().
   function syncInputLocks(): void {
-    const uiLocked = !gateExited || isTransitioning || isAnyModalOpen();
+    const uiLocked =
+      !gateExited ||
+      isTransitioning ||
+      isMetaViewOpen() ||
+      isAnyModalOpen() ||
+      roomInputCaptured ||
+      dialogueUi.isOpen() ||
+      chatUi.isFocused();
     engine.setInputLocked(uiLocked);
     mobileControls?.setInputLocked(uiLocked || engine.hasFallen);
   }
 
+  function ensureMetaView(): { view: CosmicMetaView; ui: MetaViewUi } {
+    if (metaView && metaViewUi) return { view: metaView, ui: metaViewUi };
+    const localWorlds = registry.listWorlds().filter((w) => w.kind === 'local');
+    metaView = new CosmicMetaView({
+      worlds: localWorlds,
+      activeWorldId,
+      isMobile: activePerfProfile.isMobile,
+      callbacks: {
+        onFocusChange: (focus) => metaViewUi?.setFocus(focus),
+        onHoverChange: (label) => metaViewUi?.setHoverLabel(label),
+        onEnterWorld: (worldId) => {
+          const sameRoom = worldId === activeWorldId;
+          closeMetaView(sameRoom);
+          if (!sameRoom) {
+            void transitionToWorld(worldId);
+          }
+        },
+      },
+    });
+    metaViewUi = new MetaViewUi(metaViewOverlay, localWorlds, {
+      onClose: () => closeMetaView(false),
+      onOverview: () => metaView?.focusOverview(),
+      onShake: (worldId) => metaView?.shakeGlobe(worldId),
+      onToggleArt: () => {
+        if (!metaView) return true;
+        const next = !metaView.getShowConstellationArt();
+        metaView.setShowConstellationArt(next);
+        return next;
+      },
+      onSelectWorld: (worldId) => {
+        metaView?.focusWorld(worldId);
+      },
+      onEnterWorld: (worldId) => {
+        metaView?.enterWorld(worldId);
+      },
+      onStepWorld: (delta) => metaView?.stepWorld(delta),
+      onSelectConstellation: (constellationId) => {
+        metaView?.focusConstellation(constellationId);
+      },
+      onStepConstellation: (delta) => metaView?.stepConstellation(delta),
+      onCopyWorldLink: (world) => {
+        const url = buildShareableWorldUrl(shareBase, { worldId: world.id });
+        void copyToClipboard(url).then(() => showToast(`Copied link to ${world.name}!`));
+      },
+    });
+    return { view: metaView, ui: metaViewUi };
+  }
+
+  function openMetaView(): void {
+    if (!gateExited || isTransitioning || isMetaViewOpen()) return;
+    if (engine.hasFallen) engine.respawn();
+    if (dialogueUi.isOpen()) dialogueUi.closeDialogue(false);
+    chatUi.blurInput();
+    chatUi.closeVoicePopover();
+    closeAllModals();
+
+    const { view, ui } = ensureMetaView();
+    view.setActiveWorld(activeWorldId);
+    const presenceRoster =
+      latestRoster.length > 0
+        ? latestRoster
+        : [
+            {
+              id: identity.id,
+              name: identity.name,
+              color: identity.color,
+              worldId: activeWorldId,
+              position: [engine.avatar.position.x, engine.avatar.position.y, engine.avatar.position.z] as Vec3Tuple,
+              yaw: engine.avatar.yaw,
+              velocityY: 0,
+              updatedAt: Date.now(),
+            },
+          ];
+    view.syncPresence(presenceRoster);
+    hudEl.classList.add('meta-view-hidden');
+    ui.show(activeWorldId);
+    engine.setOverlayView(view);
+    view.attachControls(engine.renderer.domElement);
+    soundtrack.enterRoom('__cosmic-meta__');
+    syncInputLocks();
+    syncPointerUi(false);
+  }
+
+  function closeMetaView(relockPointer = false): void {
+    if (!isMetaViewOpen()) return;
+    metaView?.detachControls();
+    engine.setOverlayView(null);
+    metaViewUi?.hide();
+    hudEl.classList.remove('meta-view-hidden');
+    soundtrack.enterRoom(activeWorldId);
+    syncInputLocks();
+    if (relockPointer && gateExited && !engine.hasFallen && !mobileControls?.isEnabled() && !isAnyModalOpen()) {
+      engine.requestPointerLock();
+    }
+    syncPointerUi(engine.avatar.pointerLocked);
+  }
+
+  window.addEventListener('portalverse:room-capture', (ev) => {
+    const active = Boolean((ev as CustomEvent<{ active?: boolean }>).detail?.active);
+    if (active === roomInputCaptured) return;
+    roomInputCaptured = active;
+    if (active && engine.avatar.pointerLocked) {
+      engine.exitPointerLock();
+    }
+    syncInputLocks();
+    syncPointerUi(engine.avatar.pointerLocked);
+  });
+
   // Modal helpers
   function openModal(modal: HTMLElement): void {
     if (!gateExited || engine.hasFallen || isTransitioning) return;
+    if (dialogueUi.isOpen()) dialogueUi.closeDialogue(false);
+    chatUi.blurInput();
+    chatUi.closeVoicePopover();
     closeAllModals();
     modal.classList.remove('hidden');
     if (modal === modalCharacters) {
       characterSelect.show();
+    } else if (modal === modalBubbleStyle) {
+      bubbleCustomizer.show();
+    } else if (modal === modalJournal) {
+      dialogueUi.renderJournal();
     }
     syncInputLocks();
     syncPointerUi(false);
@@ -744,6 +1183,7 @@ async function boot(): Promise<void> {
 
   function closeAllModals(relockPointer = false): void {
     characterSelect.hide();
+    bubbleCustomizer.hide();
     for (const modal of allModals) modal.classList.add('hidden');
     syncInputLocks();
     if (relockPointer && gateExited && !engine.hasFallen && !mobileControls?.isEnabled()) {
@@ -773,6 +1213,15 @@ async function boot(): Promise<void> {
     showToast(`Copied link to ${activeManifest.name}!`);
   });
 
+  btnCosmos.addEventListener('click', () => {
+    openMetaView();
+  });
+
+  btnWorldsOpenCosmos.addEventListener('click', () => {
+    closeAllModals();
+    openMetaView();
+  });
+
   btnWorlds.addEventListener('click', () => {
     renderWorldDirectory();
     worldDirectoryList.scrollTop = 0;
@@ -792,8 +1241,13 @@ async function boot(): Promise<void> {
   btnProfile.addEventListener('click', () => {
     profileNameInput.value = identity.name;
     profileColorInput.value = identity.color;
+    syncProfileBubbleSummary();
     openModal(modalProfile);
     profileNameInput.focus();
+  });
+
+  btnProfileBubbleStyle.addEventListener('click', () => {
+    openModal(modalBubbleStyle);
   });
 
   btnControls.addEventListener('click', () => {
@@ -851,7 +1305,8 @@ async function boot(): Promise<void> {
     identity = { ...identity, name, color };
     saveIdentity(identity);
     engine.avatar.setLocalColor(color);
-    net.updateProfile(name, color, identity.characterId);
+    rtcMesh.setLocalIdentity(net.getLocalPlayerId(), name, color, activeBubbleStyle());
+    net.updateProfile(name, color, identity.characterId, normalizeSkinAppearance(identity), activeBubbleStyle());
     renderPresenceRoster();
     closeAllModals();
     showToast(`Updated explorer identity to ${name}`);
@@ -877,14 +1332,80 @@ async function boot(): Promise<void> {
       return;
     }
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') shiftHeld = true;
+    if (isMetaViewOpen()) {
+      if ((e.code === 'Escape' || e.code === 'KeyO') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        closeMetaView(false);
+      }
+      return;
+    }
+    if (
+      e.code === 'KeyO' &&
+      !e.repeat &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement)
+    ) {
+      if (gateExited) {
+        e.preventDefault();
+        openMetaView();
+      }
+      return;
+    }
+    if (dialogueUi.isOpen()) {
+      dialogueUi.handleKeyDown(e);
+      return;
+    }
     if (e.code === 'Escape') {
+      if (chatUi.isFocused()) {
+        wasPointerLockedBeforeChat = false;
+        chatUi.blurInput();
+        return;
+      }
+      if (chatUi.isVoicePopoverOpen()) {
+        chatUi.closeVoicePopover();
+        return;
+      }
       closeAllModals();
       return;
     }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
       return;
     }
-    if (e.code === 'KeyP') {
+    if ((e.code === 'KeyT' || e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (gateExited && !isAnyModalOpen()) {
+        e.preventDefault();
+        wasPointerLockedBeforeChat = engine.avatar.pointerLocked;
+        chatUi.openAndFocus();
+      }
+    } else if (e.code === 'KeyB' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (gateExited && !isAnyModalOpen()) {
+        e.preventDefault();
+        if (latestVoiceSnapshot?.joined && latestVoiceSnapshot.pushToTalk) {
+          rtcMesh.setPushToTalkPressed(true);
+        } else if (!latestVoiceSnapshot?.joined) {
+          void rtcMesh.joinVoice().then((ok) => {
+            if (ok) showToast('Joined WebRTC voice chat (3D spatial audio)');
+          });
+        } else {
+          const muted = rtcMesh.toggleMute();
+          showToast(muted ? 'Microphone muted' : 'Microphone live');
+        }
+      }
+    } else if (e.code === 'KeyU' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!modalBubbleStyle.classList.contains('hidden')) {
+        closeAllModals(true);
+      } else {
+        openModal(modalBubbleStyle);
+      }
+    } else if (e.code === 'KeyJ' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!modalJournal.classList.contains('hidden')) {
+        closeAllModals(true);
+      } else {
+        openModal(modalJournal);
+      }
+    } else if (e.code === 'KeyP') {
       renderWorldDirectory();
       openModal(modalPortal);
     } else if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -907,9 +1428,11 @@ async function boot(): Promise<void> {
   });
   window.addEventListener('keyup', (e) => {
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') shiftHeld = false;
+    if (e.code === 'KeyB') rtcMesh.setPushToTalkPressed(false);
   });
   window.addEventListener('blur', () => {
     shiftHeld = false;
+    rtcMesh.setPushToTalkPressed(false);
   });
 
   // Soundtrack: feed it the player's state each frame, and the music toggle (button or N).
@@ -935,15 +1458,31 @@ async function boot(): Promise<void> {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
     toggleMusic();
   });
+  const listenerPos: Vec3Tuple = [0, 0, 0];
+  const listenerForward: Vec3Tuple = [0, 0, -1];
+  const listenerUp: Vec3Tuple = [0, 1, 0];
+  const getRemotePos = (id: string) => engine.avatar.getRemotePlayerPosition(id);
+
   const feedSoundtrack = () => {
     requestAnimationFrame(feedSoundtrack);
     if (!gateExited) return;
     soundtrack.update({
-      roomId: activeWorldId,
-      warp: engine.portalWarp,
-      moveNorm: engine.motionLevel,
+      roomId: isMetaViewOpen() ? '__cosmic-meta__' : activeWorldId,
+      warp: isMetaViewOpen() ? 0 : engine.portalWarp,
+      moveNorm: isMetaViewOpen() ? 0.35 : engine.motionLevel,
       fallen: engine.hasFallen,
     });
+    const e = engine.camera.matrixWorld.elements;
+    listenerPos[0] = e[12];
+    listenerPos[1] = e[13];
+    listenerPos[2] = e[14];
+    listenerForward[0] = -e[8];
+    listenerForward[1] = -e[9];
+    listenerForward[2] = -e[10];
+    listenerUp[0] = e[4];
+    listenerUp[1] = e[5];
+    listenerUp[2] = e[6];
+    rtcMesh.updateSpatialAndLevels(listenerPos, listenerForward, listenerUp, getRemotePos);
   };
   requestAnimationFrame(feedSoundtrack);
 
@@ -1011,6 +1550,7 @@ async function boot(): Promise<void> {
       loadingMedallion.disabled = false;
       btnGateTutorial.disabled = false;
       btnGateEnter.disabled = false;
+      btnGateMeta.disabled = false;
       loadingMedallion.setAttribute('aria-label', `Enter ${activeManifest.name}`);
       loadingPhaseText.textContent = activeManifest.name.toUpperCase();
       loadingMedallion.focus();
@@ -1021,25 +1561,31 @@ async function boot(): Promise<void> {
   };
   window.requestAnimationFrame(stepGate);
 
-  const enterFromGate = (startTutorial: boolean) => {
+  const enterFromGate = (startTutorial: boolean, launchMeta = false) => {
     if (gateError) {
       window.location.reload();
       return;
     }
     if (!gateReady || gateExited) return;
     gateExited = true;
+    engine.syncViewport();
     soundtrack.start();
+    rtcMesh.resumeAudio();
     loadingMedallion.disabled = true;
     btnGateTutorial.disabled = true;
     btnGateEnter.disabled = true;
+    btnGateMeta.disabled = true;
     loadingGate.classList.add('exiting');
     syncInputLocks();
-    if (!mobileControls?.isEnabled()) {
+    const shouldOpenMeta = launchMeta || (initialOpenMeta && !startTutorial);
+    if (!shouldOpenMeta && !mobileControls?.isEnabled()) {
       engine.requestPointerLock();
     }
     syncPointerUi(engine.avatar.pointerLocked);
     if (startTutorial) {
       tutorial.start(activeWorldId);
+    } else if (shouldOpenMeta) {
+      openMetaView();
     }
     window.setTimeout(() => {
       loadingGate.remove();
@@ -1049,6 +1595,7 @@ async function boot(): Promise<void> {
   loadingMedallion.addEventListener('click', () => enterFromGate(false));
   btnGateEnter.addEventListener('click', () => enterFromGate(false));
   btnGateTutorial.addEventListener('click', () => enterFromGate(true));
+  btnGateMeta.addEventListener('click', () => enterFromGate(false, true));
 
   // Boot & preload pipeline behind the loading gate
   try {

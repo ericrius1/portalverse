@@ -40,6 +40,36 @@ describe('portal handoff encode/decode', () => {
     expect(decodePortalHandoff(encoded)).toEqual(payload);
   });
 
+  it('preserves and sanitizes bubbleStyle across federated portal handoffs', () => {
+    const withStyle: PortalHandoffPayload = {
+      ...payload,
+      bubbleStyle: {
+        preset: 'aurora',
+        bgColor: '#130c2e',
+        accentColor: '#e879f9',
+        textColor: '#fdf4ff',
+        tail: 'curved',
+        font: 'sans',
+        effect: 'sparkle',
+        badge: '💫',
+      },
+    };
+    const decoded = decodePortalHandoff(encodePortalHandoff(withStyle));
+    expect(decoded?.bubbleStyle).toEqual(withStyle.bubbleStyle);
+
+    const tampered = decodePortalHandoff(
+      toBase64Url(
+        JSON.stringify({
+          ...payload,
+          bubbleStyle: { preset: 'comic', bgColor: 'bad', accentColor: '#f0f', badge: '<script>!' },
+        }),
+      ),
+    );
+    expect(tampered?.bubbleStyle?.preset).toBe('comic');
+    expect(tampered?.bubbleStyle?.accentColor).toBe('#ff00ff');
+    expect(tampered?.bubbleStyle?.badge).not.toMatch(/[<>]/);
+  });
+
   it('rejects garbage, wrong versions and missing origin worlds', () => {
     expect(decodePortalHandoff('')).toBeNull();
     expect(decodePortalHandoff('!!!not-base64!!!')).toBeNull();
@@ -210,8 +240,10 @@ describe('WorldRegistry', () => {
       expect(world.name.trim().length).toBeGreaterThan(0);
       expect(world.spawns.default).toBeDefined();
     }
-    expect(reg.getManifest('eric-world')?.name).toBe("Eric's Room");
+    expect(reg.getManifest('eric-palace-lagoon')?.name).toBe('Palace Lagoon');
+    expect(reg.getManifest('jp-reef')?.name).toBe('Coral Reef Walk');
     expect(reg.getManifest('jp-world')).toBeUndefined();
+    expect(reg.getManifest('eric-world')).toBeUndefined();
   });
 
   it('caches loaded modules and dedupes concurrent loads', async () => {

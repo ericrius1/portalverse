@@ -19,7 +19,8 @@ import {
 } from '../engine/portalCrossing';
 
 const rooms = sessionCatalog.worlds.filter(room => room.kind === 'local');
-const nextRoomId = routeGates('eric-world', rooms)[1].targetWorldId;
+const firstRoomId = rooms[0].id;
+const nextRoomId = routeGates(firstRoomId, rooms)[1].targetWorldId;
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 function gate(roomId: string, end: 'entrance' | 'exit'): PortalVisualHandle {
@@ -88,20 +89,20 @@ const loadEmptyRoom = (id: string) => Promise.resolve(emptyRoom(id));
 
 describe('stepping through a portal', () => {
   it('starts a transit when the feet pass through the front of a route gate', () => {
-    const exit = gate('eric-world', 'exit');
+    const exit = gate(firstRoomId, 'exit');
     expect(detectFeetCrossing(exit, v(0.4, 0, -36.0), v(0.4, 0, -36.5))).toBe(1);
-    const entrance = gate('eric-world', 'entrance');
+    const entrance = gate(firstRoomId, 'entrance');
     expect(detectFeetCrossing(entrance, v(-0.4, 0, 36.0), v(-0.4, 0, 36.5))).toBe(1);
   });
 
   it('ignores walking in through the back of a one-way route gate', () => {
-    const exit = gate('eric-world', 'exit');
+    const exit = gate(firstRoomId, 'exit');
     expect(detectFeetCrossing(exit, v(0, 0, -36.5), v(0, 0, -36.0))).toBeNull();
     expect(viewerSide(exit, v(0, 3, -50))).toBe(1);
   });
 
   it('only counts feet that pass through the circular opening itself', () => {
-    const exit = gate('eric-world', 'exit');
+    const exit = gate(firstRoomId, 'exit');
     expect(detectFeetCrossing(exit, v(3.2, 0, -36.0), v(3.2, 0, -36.5))).toBeNull();
     expect(detectFeetCrossing(exit, v(0, 6, -36.0), v(0, 6, -36.5))).toBeNull();
     expect(detectFeetCrossing(exit, v(0, 0, -30), v(0, 0, -35))).toBeNull();
@@ -110,7 +111,7 @@ describe('stepping through a portal', () => {
   });
 
   it('only offers the [E] prompt when on an allowed entry side and facing the portal', () => {
-    const exit = gate('eric-world', 'exit');
+    const exit = gate(firstRoomId, 'exit');
     // Facing -Z toward exit from inside the room -> offered
     expect(canOfferPortalPrompt(exit, v(0, 0, -32), 0)).toBe(true);
     // Facing +Z away from exit -> not offered
@@ -129,7 +130,7 @@ describe('stepping through a portal', () => {
 });
 
 describe('promoting the destination room', () => {
-  const exit = gate('eric-world', 'exit');
+  const exit = gate(firstRoomId, 'exit');
   const state = { walkingThrough: false, firstPerson: false };
 
   it('waits while the chase camera is still in the old room', () => {
@@ -277,7 +278,7 @@ describe('room lifecycle across crossings', () => {
   it('releases snapshot materials when a room is dropped instead of kept', async () => {
     const { renderer } = fakeRenderer();
     const previews = new PortalPreviews(renderer, loadEmptyRoom);
-    const active = await RoomInstance.mount(emptyRoom('eric-world'), renderer);
+    const active = await RoomInstance.mount(emptyRoom(firstRoomId), renderer);
     await previews.prepare(nextRoomId);
     await previews.refreshSnapshots(active);
 
@@ -296,8 +297,8 @@ describe('live portal windows', () => {
   async function lookAtExit(width = 2560, height = 1440) {
     const fake = fakeRenderer(width, height);
     const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
-    const active = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
-    const jp = (await previews.prepare(nextRoomId))!;
+    const active = await RoomInstance.mount(emptyRoom(firstRoomId), fake.renderer);
+    const nextRoom = (await previews.prepare(nextRoomId))!;
     const viewer = new THREE.PerspectiveCamera(62, width / height, 0.1, 450);
     viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
     const exit = active.portals.find(p => p.portal.id === 'exit')!;
@@ -308,7 +309,7 @@ describe('live portal windows', () => {
       viewer.updateProjectionMatrix();
       viewer.updateMatrixWorld();
       previews.render(active.portals, viewer, 1 / 60, 1);
-      const live = fake.renders.find(r => r.scene === jp.scene);
+      const live = fake.renders.find(r => r.scene === nextRoom.scene);
       const bounds = portalPixels(exit.aperture, viewer, fake.size, new THREE.Vector4());
       return { live: live!, bounds };
     };
@@ -368,7 +369,7 @@ describe('backing through a portal', () => {
   }
 
   it('starts the crossing when the camera reaches the opening, not 5.6 m later at the feet', () => {
-    const exit = gate('eric-world', 'exit');
+    const exit = gate(firstRoomId, 'exit');
     let started: { by: string; feetZ: number } | null = null;
     walk(-28, -40, 1, 0.4, motion => {
       const start = beginCrossing(exit, motion, false);
@@ -383,7 +384,7 @@ describe('backing through a portal', () => {
   });
 
   it('still lets the feet lead walking forward, or in first person, and ignores passing beside the ring', () => {
-    const exit = gate('eric-world', 'exit');
+    const exit = gate(firstRoomId, 'exit');
     const firstStart = (x: number, facing: 1 | -1, firstPerson: boolean) => {
       let result: string | null = null;
       walk(-28, -40, facing, x, motion => {
@@ -399,7 +400,7 @@ describe('backing through a portal', () => {
   });
 
   it('completes once the player backs fully in, or switches back if they walk away', () => {
-    // After switching on the camera, the feet are still behind JP's entrance, the portal back.
+    // After switching on the camera, the feet are still behind the next room's entrance, the portal back.
     const back = gate(nextRoomId, 'entrance');
     const state = { walkingThrough: false, firstPerson: false };
     const shift = ROUTE_LENGTH;
@@ -413,16 +414,16 @@ describe('backing through a portal', () => {
       return seen;
     };
     expect(decisions(-40 + shift, 1)).toEqual(['wait', 'cancel']); // kept backing: crossing done
-    expect(decisions(-20 + shift, -1)).toEqual(['promote']); // turned and walked away: back to Eric's
+    expect(decisions(-20 + shift, -1)).toEqual(['promote']); // turned and walked away: back to previous room
   });
 
   it('shows the same picture on both sides of the switch', async () => {
     const W = 1920, H = 1080;
     const fake = fakeRenderer(W, H);
     const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
-    const eric = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
-    eric.activate(() => {});
-    const jp = (await previews.prepare(nextRoomId))!;
+    const first = await RoomInstance.mount(emptyRoom(firstRoomId), fake.renderer);
+    first.activate(() => {});
+    const nextRoom = (await previews.prepare(nextRoomId))!;
     const viewer = new THREE.PerspectiveCamera(62, W / H, 0.1, 450);
     viewer.coordinateSystem = THREE.WebGPUCoordinateSystem;
     const place = (z: number) => {
@@ -431,23 +432,23 @@ describe('backing through a portal', () => {
       viewer.updateProjectionMatrix();
       viewer.updateMatrixWorld();
     };
-    const lamp = v(1.5, 1.2, -25); // something in Eric's room in front of the camera
+    const lamp = v(1.5, 1.2, -25); // something in the room in front of the camera
     const full = new THREE.Vector4(0, 0, W, H);
 
-    place(-ROUTE_LENGTH / 2 + 0.001); // camera just inside Eric's exit: sees his room directly
+    place(-ROUTE_LENGTH / 2 + 0.001); // camera just inside exit: sees first room directly
     const before = screenPixel(lamp, viewer.projectionMatrix.clone().multiply(viewer.matrixWorldInverse), full);
 
-    // Camera passes through: JP becomes the room, and Eric's is seen back through JP's entrance.
-    eric.deactivate();
-    previews.retain('eric-world', eric);
-    expect(previews.takeReady(nextRoomId)).toBe(jp);
-    jp.activate(() => {});
+    // Camera passes through: nextRoom becomes the room, and first is seen back through its entrance.
+    first.deactivate();
+    previews.retain(firstRoomId, first);
+    expect(previews.takeReady(nextRoomId)).toBe(nextRoom);
+    nextRoom.activate(() => {});
     place(-ROUTE_LENGTH / 2 - 0.001 + ROUTE_LENGTH);
     fake.renders.length = 0;
-    previews.render(jp.portals, viewer, 1 / 60, 1);
-    const ericView = fake.renders.find(r => r.scene === eric.scene)!;
-    expect(ericView.target).toBeNull(); // the opening fills the view, so it's drawn straight to the screen
-    const after = screenPixel(lamp, ericView.viewProjection, full);
+    previews.render(nextRoom.portals, viewer, 1 / 60, 1);
+    const firstView = fake.renders.find(r => r.scene === first.scene)!;
+    expect(firstView.target).toBeNull(); // the opening fills the view, so it's drawn straight to the screen
+    const after = screenPixel(lamp, firstView.viewProjection, full);
 
     expect(after.distanceTo(before)).toBeLessThan(0.25);
     previews.clear();
@@ -455,21 +456,20 @@ describe('backing through a portal', () => {
 });
 
 describe('the portal two rooms ahead', () => {
-  // Eric's entrance leads back to Alpine, whose far gate (its entrance) leads to Laser.
-  const lantern = v(2.5, 2.85, -ROUTE_LENGTH / 2 + 20); // 20 m into Laser, seen from its exit
+  const lantern = v(2.5, 2.85, -ROUTE_LENGTH / 2 + 20);
   const W = 1920, H = 1080;
 
-  async function ericLookingAtPrevRoom() {
+  async function lookingAtPrevRoom() {
     const fake = fakeRenderer(W, H);
     const previews = new PortalPreviews(fake.renderer, loadEmptyRoom);
-    const eric = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
-    eric.activate(() => {});
+    const home = await RoomInstance.mount(emptyRoom(firstRoomId), fake.renderer);
+    home.activate(() => {});
     // With snapshots captured, any fallback to them at the crossing would show as a crossfade.
     for (const { id } of rooms) {
-      if (id !== 'eric-world') await previews.prepare(id);
+      if (id !== firstRoomId) await previews.prepare(id);
     }
-    await previews.refreshSnapshots(eric);
-    const prevId = eric.portals.find(p => p.portal.id === 'entrance')!.portal.targetWorldId;
+    await previews.refreshSnapshots(home);
+    const prevId = home.portals.find(p => p.portal.id === 'entrance')!.portal.targetWorldId;
     const nearRoom = (await previews.prepare(prevId))!;
     const nearFar = nearRoom.portals.find(p => p.portal.id === 'entrance')!;
     const farId = nearFar.portal.targetWorldId;
@@ -488,13 +488,13 @@ describe('the portal two rooms ahead', () => {
       previews.render(handles, viewer, 1 / 60, 1);
       return fake.renders;
     };
-    return { previews, eric, prevId, nearRoom, farRoom, nearFar, viewer, place, frame };
+    return { previews, home, prevId, nearRoom, farRoom, nearFar, viewer, place, frame };
   }
 
   it('draws the far portal live while you walk toward the near one', async () => {
-    const { previews, eric, farRoom, nearFar, place, frame } = await ericLookingAtPrevRoom();
+    const { previews, home, farRoom, nearFar, place, frame } = await lookingAtPrevRoom();
     place(0, ROUTE_LENGTH / 2 - 20);
-    const renders = frame(eric.portals);
+    const renders = frame(home.portals);
     const farWindow = windowFor(previews, nearFar.aperture)!;
     expect(renders.some(r => r.scene === farRoom.scene)).toBe(true);
     expect(nearFar.aperture.material).toBe(farWindow.material);
@@ -504,11 +504,11 @@ describe('the portal two rooms ahead', () => {
   });
 
   it.each([0, 1.5])('keeps it steady through the crossing, %s m off-centre', async lateral => {
-    const { previews, eric, prevId, nearRoom, farRoom, nearFar, viewer, place, frame } = await ericLookingAtPrevRoom();
+    const { previews, home, prevId, nearRoom, farRoom, nearFar, viewer, place, frame } = await lookingAtPrevRoom();
 
-    // Just before the near threshold, in Eric's room.
+    // Just before the near threshold.
     place(lateral, ROUTE_LENGTH / 2 - 0.01);
-    const before = frame(eric.portals);
+    const before = frame(home.portals);
     const beforeWindow = windowFor(previews, nearFar.aperture)!;
     const lanternBefore = screenPixel(lantern, before.find(r => r.scene === farRoom.scene)!.viewProjection, beforeWindow.bounds);
     // The near room fills the view here, so it is drawn straight to the screen.
@@ -524,8 +524,8 @@ describe('the portal two rooms ahead', () => {
     previews.releaseViews();
     const active = previews.takeReady(prevId)!;
     expect(active).toBe(nearRoom);
-    eric.deactivate();
-    previews.retain('eric-world', eric);
+    home.deactivate();
+    previews.retain(firstRoomId, home);
     nearRoom.activate(() => {});
     place(lateral, ROUTE_LENGTH / 2 + 0.01 - ROUTE_LENGTH);
     const after = frame(nearRoom.portals);
@@ -541,14 +541,14 @@ describe('the portal two rooms ahead', () => {
     expect(afterWindow.liveBlend.value).toBe(1);
     expect(nearFar.group.scale.x).toBe(1);
     // The portal we just stepped out of sits behind the camera and must not render full-screen.
-    expect(after.some(r => r.scene === eric.scene)).toBe(false);
+    expect(after.some(r => r.scene === home.scene)).toBe(false);
     previews.clear();
   });
 
   it('keeps snapshot materials un-fogged like live windows so depth-3 previews do not pop in saturation', async () => {
     const fake = fakeRenderer();
     const previews = new PortalPreviews(fake.renderer, () => Promise.resolve(emptyRoom(nextRoomId)));
-    const room = await RoomInstance.mount(emptyRoom('eric-world'), fake.renderer);
+    const room = await RoomInstance.mount(emptyRoom(firstRoomId), fake.renderer);
     await previews.prepare(nextRoomId);
     await previews.refreshSnapshots(room);
     const exit = room.portals.find(p => p.portal.id === 'exit')!;

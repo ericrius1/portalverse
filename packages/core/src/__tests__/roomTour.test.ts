@@ -21,8 +21,9 @@ describe('Visages comparison tour', () => {
       expect(fullCatalog.worlds.some(room => room.id === id)).toBe(true);
       expect(normal.worlds.some(room => room.id === id)).toBe(false);
     }
-    expect(routeGates('eric-world', normal.worlds)[1].targetWorldId).toBe('jp-reef');
-    expect(routeGates('jp-reef', normal.worlds)[0].targetWorldId).toBe('eric-world');
+    const last = normal.worlds.at(-1)!.id;
+    expect(routeGates(last, normal.worlds)[1].targetWorldId).toBe('jp-reef');
+    expect(routeGates('jp-reef', normal.worlds)[0].targetWorldId).toBe(last);
   });
 
   it('selects just the Visages variants, starting in Neon, without changing the full catalog', () => {

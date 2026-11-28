@@ -9,7 +9,7 @@ const renderer = {} as THREE.WebGPURenderer;
 
 describe('falling out of a room', () => {
   it('keeps a floor everywhere unless the room allows falling', async () => {
-    const room = await RoomInstance.mount(defineRoom('eric-world', { mount: () => {} }), renderer);
+    const room = await RoomInstance.mount(defineRoom('jp-reef', { mount: () => {} }), renderer);
     expect(room.falling).toBeNull();
     expect(respawnHeight(room.falling)).toBeNull();
   });

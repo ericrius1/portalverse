@@ -107,6 +107,62 @@ describe('protocol: parseClientMessage', () => {
     const msg: ServerNetMessage = { type: 'pong', t: 42 };
     expect(JSON.parse(serializeServerMessage(msg))).toEqual(msg);
   });
+
+  it('validates rtc_signal, chat_message, and bubbleStyle on profile updates', () => {
+    const offer = parseClientMessage(
+      JSON.stringify({ type: 'rtc_signal', toPlayerId: 'jp', signal: { kind: 'offer', sdp: 'v=0\r\n' } }),
+    );
+    expect(offer).toEqual({ type: 'rtc_signal', toPlayerId: 'jp', signal: { kind: 'offer', sdp: 'v=0\r\n' } });
+
+    const ice = parseClientMessage(
+      JSON.stringify({
+        type: 'rtc_signal',
+        toPlayerId: 'jp',
+        signal: { kind: 'ice', candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 },
+      }),
+    );
+    expect(ice).toMatchObject({ type: 'rtc_signal', toPlayerId: 'jp', signal: { kind: 'ice', sdpMLineIndex: 0 } });
+
+    // Reject invalid signaling payloads
+    expect(
+      parseClientMessage(JSON.stringify({ type: 'rtc_signal', toPlayerId: 'jp', signal: { kind: 'offer', sdp: '' } })),
+    ).toBeNull();
+    expect(
+      parseClientMessage(
+        JSON.stringify({ type: 'rtc_signal', toPlayerId: '<bad>', signal: { kind: 'offer', sdp: 'v=0' } }),
+      ),
+    ).toBeNull();
+
+    const chat = parseClientMessage(
+      JSON.stringify({
+        type: 'chat_message',
+        id: 'm-123',
+        text: '  Hello <world>!  ',
+        bubbleStyle: { preset: 'pixel', bgColor: '#111', accentColor: '#0f0', textColor: '#fff' },
+        toPlayerIds: ['jp'],
+      }),
+    );
+    expect(chat).toMatchObject({
+      type: 'chat_message',
+      id: 'm-123',
+      text: 'Hello world !',
+      bubbleStyle: expect.objectContaining({ preset: 'pixel', bgColor: '#111111', accentColor: '#00ff00' }),
+      toPlayerIds: ['jp'],
+    });
+
+    const profile = parseClientMessage(
+      JSON.stringify({
+        type: 'update_profile',
+        name: 'Eric',
+        color: '#22d3ee',
+        bubbleStyle: { preset: 'shout', bgColor: '#fef08a', accentColor: '#ef4444', textColor: '#18181b' },
+      }),
+    );
+    expect(profile).toMatchObject({
+      type: 'update_profile',
+      bubbleStyle: expect.objectContaining({ preset: 'shout' }),
+    });
+  });
 });
 
 describe('protocol: sanitizePortalDefinition', () => {
@@ -382,6 +438,56 @@ describe('RoomManager', () => {
     rm.getRoster()[0].position[0] = 999;
     expect(rm.getRoster()[0].position[0]).toBe(0);
   });
+
+  it('relays rtc_signal and chat_message strictly between players in the same world', () => {
+    const rm = makeManager();
+    rm.handleMessage('c1', hello('eric', 'Eric', 'hub'));
+    rm.handleMessage('c2', hello('jp', 'JP', 'hub'));
+    rm.handleMessage('c3', hello('max', 'Max', 'jp-world'));
+
+    // Same-world WebRTC offer reaches JP only
+    const sigOut = rm.handleMessage('c1', {
+      type: 'rtc_signal',
+      toPlayerId: 'jp',
+      signal: { kind: 'offer', sdp: 'v=0\r\ntest' },
+    });
+    expect(sigOut).toEqual([
+      {
+        to: ['c2'],
+        message: {
+          type: 'rtc_signal',
+          fromPlayerId: 'eric',
+          worldId: 'hub',
+          signal: { kind: 'offer', sdp: 'v=0\r\ntest' },
+        },
+      },
+    ]);
+
+    // Cross-world WebRTC signal is silently dropped
+    expect(
+      rm.handleMessage('c1', {
+        type: 'rtc_signal',
+        toPlayerId: 'max',
+        signal: { kind: 'offer', sdp: 'v=0\r\ntest' },
+      }),
+    ).toEqual([]);
+
+    // Targeted WS chat fallback delivers only to same-world recipients
+    const chatOut = rm.handleMessage('c1', {
+      type: 'chat_message',
+      id: 'm-1',
+      text: 'Hi JP!',
+      toPlayerIds: ['jp', 'max', 'eric'],
+    });
+    expect(chatOut).toHaveLength(1);
+    expect(chatOut[0].to).toEqual(['c2']);
+    expect(chatOut[0].message).toMatchObject({
+      type: 'chat_message',
+      id: 'm-1',
+      senderId: 'eric',
+      text: 'Hi JP!',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -479,11 +585,15 @@ describe('HTTP + WebSocket server (ephemeral port)', () => {
     expect(body).toMatchObject({ ok: true, totalPlayers: 0 });
     expect(typeof body.uptimeMs).toBe('number');
     expect(body.worlds.map((w: { worldId: string }) => w.worldId)).toEqual(
-      expect.arrayContaining(['eric-world', 'jp-world', 'fishpond', 'laser-lab', 'alpine-sled']),
+      expect.arrayContaining(['jp-world', 'fishpond', 'laser-lab', 'alpine-sled']),
     );
 
     const worlds = await (await fetch(`${urls.http}/api/worlds`)).json();
     expect(Array.isArray(worlds.worlds)).toBe(true);
+
+    const rtcConfig = await (await fetch(`${urls.http}/api/rtc-config`)).json();
+    expect(Array.isArray(rtcConfig.iceServers)).toBe(true);
+    expect(rtcConfig.iceServers.length).toBeGreaterThan(0);
 
     const preflight = await fetch(`${urls.http}/api/worlds`, { method: 'OPTIONS' });
     expect(preflight.status).toBe(204);
@@ -494,34 +604,34 @@ describe('HTTP + WebSocket server (ephemeral port)', () => {
 
   it('syncs Eric and JP across rooms over real sockets', async () => {
     const urls = await boot();
-    const eric = await join(urls.ws, 'eric', 'Eric', 'eric-world');
+    const eric = await join(urls.ws, 'eric', 'Eric', 'jp-world');
     expect(eric.welcome.playerId).toBe('eric');
 
-    const jp = await join(urls.ws, 'jp', 'JP', 'eric-world');
+    const jp = await join(urls.ws, 'jp', 'JP', 'jp-world');
     expect(jp.welcome.players.map((p) => p.id)).toEqual(['eric']);
     await eric.s.next('player_joined', (m) => m.player.id === 'jp');
     const joinEvent = await eric.s.next('roster_update', (m) => !!m.event?.includes('JP joined'));
-    expect(joinEvent.event).toBe("JP joined the metaverse in Eric's Room");
+    expect(joinEvent.event).toBe("JP joined the metaverse in JP's Solarpunk Meadow");
 
     eric.s.send({ type: 'state', position: [3, 1, 4], yaw: 0.2, velocityY: 0 });
     const state = await jp.s.next('player_state');
     expect(state).toMatchObject({ playerId: 'eric', position: [3, 1, 4] });
 
-    eric.s.send({ type: 'spawn_portal', worldId: 'eric-world', portal: portal('eric-to-jp') });
+    eric.s.send({ type: 'spawn_portal', worldId: 'jp-world', portal: portal('jp-to-fishpond') });
     const spawned = await jp.s.next('portal_spawned');
-    expect(spawned.portal).toMatchObject({ id: 'eric-to-jp', createdBy: 'eric' });
+    expect(spawned.portal).toMatchObject({ id: 'jp-to-fishpond', createdBy: 'eric' });
 
-    jp.s.send({ type: 'switch_world', worldId: 'jp-world', position: [0, 0, 10], yaw: 0 });
+    jp.s.send({ type: 'switch_world', worldId: 'fishpond', position: [0, 0, 10], yaw: 0 });
     const jpWelcome = await jp.s.next('welcome');
-    expect(jpWelcome.worldId).toBe('jp-world');
-    expect(await eric.s.next('player_left')).toMatchObject({ playerId: 'jp', worldId: 'eric-world' });
-    const travel = await eric.s.next('roster_update', (m) => m.event === "JP entered JP's Solarpunk Meadow");
-    expect(travel.roster.find((a) => a.id === 'jp')?.worldId).toBe('jp-world');
+    expect(jpWelcome.worldId).toBe('fishpond');
+    expect(await eric.s.next('player_left')).toMatchObject({ playerId: 'jp', worldId: 'jp-world' });
+    const travel = await eric.s.next('roster_update', (m) => m.event === 'JP entered Kāneʻohe Fishpond');
+    expect(travel.roster.find((a) => a.id === 'jp')?.worldId).toBe('fishpond');
 
     const health = await (await fetch(`${urls.http}/api/health`)).json();
     expect(health.totalPlayers).toBe(2);
-    expect(health.worlds.find((w: { worldId: string }) => w.worldId === 'eric-world')).toEqual({
-      worldId: 'eric-world',
+    expect(health.worlds.find((w: { worldId: string }) => w.worldId === 'jp-world')).toEqual({
+      worldId: 'jp-world',
       playerCount: 1,
       dynamicPortalCount: 1,
     });

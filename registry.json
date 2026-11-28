@@ -1,27 +1,7 @@
 {
   "version": 1,
-  "defaultWorldId": "eric-world",
+  "defaultWorldId": "jp-reef",
   "worlds": [
-    {
-      "id": "eric-world",
-      "name": "Eric's Room",
-      "owner": "ericrius1",
-      "author": "Eric (ericrius1)",
-      "description": "Eric's placeholder studio room — cyan holographic workshop ready to build in worlds/eric-world.",
-      "accentColor": "#22d3ee",
-      "kind": "local",
-      "allowFlight": true,
-      "spawns": {
-        "default": {
-          "position": [0, 0, 35.75],
-          "yaw": 0
-        },
-        "from-jp": {
-          "position": [0, 0, 35.75],
-          "yaw": 0
-        }
-      }
-    },
     {
       "id": "jp-world",
       "inRotation": false,
@@ -311,6 +291,22 @@
       "author": "simplesessions",
       "description": "A lava cave where a hilly path splits around a menacing horned lava monster who roars fire at you. Step on a switch to freeze the whole cavern to slippery ice, and back again.",
       "accentColor": "#ff6a1a",
+      "kind": "local",
+      "allowFlight": true,
+      "spawns": {
+        "default": {
+          "position": [0, 0, 35.75],
+          "yaw": 0
+        }
+      }
+    },
+    {
+      "id": "eric-starlight-pavilion",
+      "name": "Starlight Dance Pavilion",
+      "owner": "ericrius1",
+      "author": "Eric (ericrius1)",
+      "description": "Celestial Art-Deco festival pavilion where Soraya, Dex, and Ermelin dance together in 88 BPM harmony — select any of them to take over dancing with phone swipes, mouse/trackpad, or keyboard, cast 6 elemental spells, ride Zero-G Star Geysers, and light the Harmonic Chime Totems for Starlight Overdrive.",
+      "accentColor": "#fbbf24",
       "kind": "local",
       "allowFlight": true,
       "spawns": {

@@ -10,6 +10,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#040914" />
     <title>Portalverse — Co-op WebGPU Metaverse</title>
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; height: 100dvh; overflow: hidden; background: #040914; }
+      #viewport { position: fixed; inset: 0; z-index: 1; }
+      #viewport canvas { display: block; width: 100%; height: 100%; }
+    </style>
     <link rel="stylesheet" href="/app/styles.css" />
   </head>
   <body>
@@ -68,6 +73,9 @@
           <button type="button" class="gate-choice-btn gate-choice-enter" id="btn-gate-enter" disabled>
             Jump Right In
           </button>
+          <button type="button" class="gate-choice-btn gate-choice-meta" id="btn-gate-meta" disabled>
+            &#10023; Cosmic Meta View
+          </button>
         </div>
         <div class="gate-controls-preview gate-controls-desktop">
           <span><kbd>WASD</kbd> Move</span>
@@ -76,14 +84,16 @@
           <span><kbd>Space ×2</kbd> Fly</span>
           <span><kbd>Q</kbd> Up · <kbd>E</kbd> Down / Land</span>
           <span><kbd>V</kbd> 1st / 3rd</span>
+          <span><kbd>O</kbd> Meta View</span>
           <span><kbd>C</kbd> Characters</span>
+          <span><kbd>T</kbd> Chat · <kbd>B</kbd> Voice</span>
           <span><kbd>Esc</kbd> Cursor</span>
         </div>
         <div class="gate-controls-preview gate-controls-mobile">
           <span>Left Stick: Move &amp; Sprint</span>
           <span>Drag Screen: Look</span>
           <span>Tap Fly / Jump / Boost</span>
-          <span>Tap Char: Switch Character</span>
+          <span>Tap Meta: Cosmic Snowglobes</span>
         </div>
       </div>
     </div>
@@ -111,13 +121,20 @@
     <!-- HUD -->
     <div id="hud">
       <header class="hud-top">
-        <div class="world-badge glass">
-          <span class="world-dot" id="world-accent-dot"></span>
-          <div>
-            <div class="world-title" id="hud-world-name">Eric's Room</div>
-            <div class="world-sub" id="hud-world-author">Owner: ericrius1 · WebGPU</div>
+        <div class="hud-top-left">
+          <div class="world-badge glass">
+            <span class="world-dot" id="world-accent-dot"></span>
+            <div>
+              <div class="world-title" id="hud-world-name">Coral Reef Walk</div>
+              <div class="world-sub" id="hud-world-author">Owner: jpwhitaker · WebGPU</div>
+            </div>
+            <span class="net-pill" id="hud-net-status" data-state="connecting">Connecting</span>
           </div>
-          <span class="net-pill" id="hud-net-status" data-state="connecting">Connecting</span>
+          <button class="btn glass btn-cosmos btn-meta-launch" id="btn-cosmos" title="Open Cosmic Snowglobe Meta View from anywhere (O)">
+            <span class="btn-cosmos-star" aria-hidden="true">&#10023;</span>
+            <span>Meta View</span>
+            <kbd class="meta-btn-kbd">O</kbd>
+          </button>
         </div>
 
         <div class="hud-actions">
@@ -125,7 +142,70 @@
             <span class="music-bars" aria-hidden="true"><i></i><i></i><i></i></span>
             <span id="music-label">Muted</span>
           </button>
+          <div class="voice-control-wrap" id="voice-control-wrap">
+            <button
+              type="button"
+              class="btn glass btn-voice"
+              id="btn-voice"
+              title="Join WebRTC Voice Chat (B)"
+              aria-pressed="false"
+            >
+              <svg class="voice-mic-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 8 1Zm-4 6.5a.75.75 0 0 0-1.5 0 5.5 5.5 0 0 0 4.75 5.45V14.5H5.5a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5H8.75v-1.55A5.5 5.5 0 0 0 13.5 7.5a.75.75 0 0 0-1.5 0 4 4 0 0 1-8 0Z"
+                />
+              </svg>
+              <span id="voice-label">Voice</span>
+              <span class="voice-meter-track" aria-hidden="true"><span id="voice-meter-fill"></span></span>
+            </button>
+            <button
+              type="button"
+              class="btn glass btn-voice-menu"
+              id="btn-voice-menu"
+              title="Voice chat settings"
+              aria-label="Voice chat settings"
+              aria-expanded="false"
+            >
+              &#9662;
+            </button>
+            <div class="voice-popover glass hidden" id="voice-popover" role="dialog" aria-label="Voice chat settings">
+              <div class="voice-popover-header">
+                <span class="voice-popover-title">WebRTC Voice</span>
+                <span class="voice-popover-status" id="voice-status-text">Voice ready</span>
+              </div>
+              <button type="button" class="btn btn-primary voice-full-btn" id="btn-voice-join-leave">
+                Join Voice Chat
+              </button>
+              <div class="voice-btn-row">
+                <button type="button" class="btn btn-sm" id="btn-voice-mute" disabled>Mute Mic</button>
+                <button type="button" class="btn btn-sm" id="btn-voice-deafen">Deafen All</button>
+              </div>
+              <label class="voice-check-row">
+                <input type="checkbox" id="voice-spatial-toggle" checked />
+                <span>3D Spatial Voice (distance &amp; direction)</span>
+              </label>
+              <label class="voice-check-row">
+                <input type="checkbox" id="voice-ptt-toggle" />
+                <span>Push-to-Talk (Hold <kbd>B</kbd>)</span>
+              </label>
+              <label class="voice-device-label">
+                Microphone
+                <select id="voice-device-select">
+                  <option value="">Default Microphone</option>
+                </select>
+              </label>
+              <div class="voice-test-meter" aria-hidden="true">
+                <div id="voice-test-meter-fill"></div>
+              </div>
+            </div>
+          </div>
           <button class="btn glass" id="btn-share-link" title="Copy direct shareable link to this room">Share Link</button>
+          <button class="btn glass btn-journal" id="btn-journal" title="Seam Clue Journal (J)">
+            <span aria-hidden="true">&#10022;</span>
+            <span>Journal</span>
+            <span class="journal-count-pill" id="journal-count">0/14</span>
+          </button>
           <button class="btn glass" id="btn-worlds" title="Rooms & Direct Links (M)">Rooms</button>
           <button class="btn glass" id="btn-characters" title="Choose Playable Character (C)">Characters</button>
           <button class="btn btn-primary glass" id="btn-link-portal" title="Spawn Portal (P)">+ Link Portal</button>
@@ -172,7 +252,7 @@
 
       <!-- Subtle pointer-lock context banner when cursor is unlocked -->
       <div id="pointer-lock-banner" class="pointer-lock-banner glass hidden">
-        Click scene to look around (FPS) · <kbd>Esc</kbd> cursor &amp; menus · <kbd>?</kbd> Controls
+        Click scene to look around (FPS) · <kbd>O</kbd> Meta View · <kbd>Esc</kbd> cursor &amp; menus · <kbd>?</kbd> Controls
       </div>
 
       <aside class="presence-panel glass" id="presence-panel">
@@ -188,6 +268,62 @@
         <span id="portal-prompt-text">Step through portal</span>
       </button>
 
+      <!-- Keeper NPC Proximity Talk Prompt -->
+      <button type="button" id="npc-prompt" class="npc-prompt glass hidden">
+        <span class="prompt-key" id="npc-prompt-key">R</span>
+        <span class="npc-prompt-dot" id="npc-prompt-dot"></span>
+        <span class="npc-prompt-meta">
+          <span class="npc-prompt-name" id="npc-prompt-name">Talk to Keeper</span>
+          <span class="npc-prompt-role" id="npc-prompt-role">Keeper</span>
+        </span>
+        <span class="npc-prompt-new hidden" id="npc-prompt-new" title="Undiscovered Seam thread">&#10022;</span>
+      </button>
+
+      <!-- KOTOR / Zelda-Style Branching Keeper Dialogue Overlay -->
+      <div id="dialogue-overlay" class="dialogue-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="dialogue-name" aria-hidden="true">
+        <div id="dialogue-panel" class="dialogue-panel">
+          <div class="dialogue-portrait-col">
+            <div id="dialogue-portrait-wrap" class="dialogue-portrait-wrap">
+              <img id="dialogue-portrait-img" class="dialogue-portrait-img" src="" alt="" />
+              <span id="dialogue-expr-pill" class="dialogue-expr-pill">Warm</span>
+            </div>
+          </div>
+          <div class="dialogue-main-col">
+            <div class="dialogue-header">
+              <div class="dialogue-speaker">
+                <span id="dialogue-badge" class="dialogue-badge hidden"></span>
+                <div>
+                  <h2 id="dialogue-name" class="dialogue-name">Keeper</h2>
+                  <div id="dialogue-role" class="dialogue-role">Title</div>
+                </div>
+              </div>
+              <div class="dialogue-header-actions">
+                <button type="button" class="dialogue-action-btn" id="btn-dialogue-wear-bubble">
+                  <span aria-hidden="true">&#10024;</span>
+                  <span>Wear Bubble</span>
+                </button>
+                <button type="button" class="icon-btn dialogue-close-btn" id="btn-dialogue-close" aria-label="End conversation">&times;</button>
+              </div>
+            </div>
+
+            <div class="dialogue-speech-box">
+              <p id="dialogue-text" class="dialogue-text"></p>
+              <span id="dialogue-skip-hint" class="dialogue-skip-hint hidden">Click or press <kbd>Space</kbd></span>
+            </div>
+
+            <div id="dialogue-clue-banner" class="dialogue-clue-banner hidden">
+              <div class="dialogue-clue-copy">
+                <span class="dialogue-clue-eyebrow">&#10022; Seam Thread Noted</span>
+                <strong id="dialogue-clue-title"></strong>
+              </div>
+              <button type="button" class="btn btn-sm" id="btn-dialogue-journal">Open Journal</button>
+            </div>
+
+            <div id="dialogue-choices" class="dialogue-choices" role="group" aria-label="Dialogue responses"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Mobile Multi-Touch Controls (iPhone / Android / Tablets) -->
       <div id="mobile-controls" class="mobile-controls hidden" aria-label="Touch controls">
         <div id="mobile-look-zone" class="mobile-look-zone" aria-hidden="true"></div>
@@ -200,6 +336,9 @@
 
         <div class="mobile-actions" aria-label="Action buttons">
           <div class="mobile-quick-row">
+            <button type="button" class="mobile-pill-btn mobile-pill-meta" id="btn-mobile-meta">&#10023; Meta</button>
+            <button type="button" class="mobile-pill-btn" id="btn-mobile-chat">Chat</button>
+            <button type="button" class="mobile-pill-btn" id="btn-mobile-voice" aria-pressed="false">Mic</button>
             <button type="button" class="mobile-pill-btn" id="btn-mobile-view" aria-pressed="false">3rd View</button>
             <button type="button" class="mobile-pill-btn" id="btn-mobile-char">Char</button>
           </div>
@@ -210,6 +349,52 @@
           </div>
         </div>
       </div>
+
+      <!-- WebRTC Speech Bubble Text Chat Dock -->
+      <section class="chat-dock glass" id="chat-dock" aria-label="Text chat">
+        <div class="chat-header">
+          <button
+            type="button"
+            class="chat-toggle-btn"
+            id="btn-chat-toggle"
+            aria-expanded="true"
+            title="Collapse chat"
+          >
+            <svg class="chat-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M2.5 2A2.5 2.5 0 0 0 0 4.5v5A2.5 2.5 0 0 0 2.5 12H4v2.25a.5.5 0 0 0 .83.37L7.8 12h5.7A2.5 2.5 0 0 0 16 9.5v-5A2.5 2.5 0 0 0 13.5 2h-11Z"
+              />
+            </svg>
+            <span>Chat</span>
+            <span class="chat-unread-badge hidden" id="chat-unread-badge">0</span>
+          </button>
+          <span class="chat-p2p-badge" id="chat-p2p-badge" data-state="idle">WebRTC Ready</span>
+          <button
+            type="button"
+            class="chat-style-btn"
+            id="btn-bubble-style"
+            title="Customize your speech bubble (U)"
+          >
+            <span aria-hidden="true">&#10024;</span>
+            <span>Bubble</span>
+          </button>
+        </div>
+        <div class="chat-body">
+          <div class="chat-feed" id="chat-feed" aria-live="polite"></div>
+          <div class="chat-typing hidden" id="chat-typing"></div>
+          <form class="chat-form" id="form-chat" autocomplete="off">
+            <input
+              type="text"
+              id="chat-input"
+              maxlength="240"
+              placeholder="Press T to chat…"
+              aria-label="Send a chat message"
+            />
+            <button type="submit" class="btn btn-primary btn-sm" id="btn-chat-send">Send</button>
+          </form>
+        </div>
+      </section>
 
       <div id="toast-stack" class="toast-stack"></div>
 
@@ -222,8 +407,14 @@
           <span><kbd>Q</kbd>/<kbd>E</kbd> Rise / Land</span>
           <span><kbd>V</kbd> <span id="camera-view-label">View: FPS</span></span>
           <span><kbd>C</kbd> Characters</span>
+          <span><kbd>R</kbd> Talk</span>
+          <span><kbd>J</kbd> Journal</span>
+          <span><kbd>T</kbd> Chat</span>
+          <span><kbd>B</kbd> Voice</span>
+          <span><kbd>U</kbd> Bubble</span>
           <span><kbd>G</kbd> <span id="physics-mode-label">Physics: Classic</span></span>
           <span><kbd>P</kbd> Link</span>
+          <span><kbd>O</kbd> Cosmos</span>
           <span><kbd>M</kbd> Rooms</span>
           <span><kbd>N</kbd> Music</span>
           <span><kbd>?</kbd> Help</span>
@@ -232,6 +423,55 @@
           </label>
         </div>
       </footer>
+    </div>
+
+    <!-- Cosmic Snowglobe Meta View HUD Overlay -->
+    <div id="meta-view-overlay" class="meta-view-overlay hidden" aria-hidden="true">
+      <header class="meta-top-bar">
+        <div class="meta-badge glass">
+          <span class="meta-badge-star" aria-hidden="true">&#10023;</span>
+          <div>
+            <div class="meta-title">Cosmic Meta View</div>
+            <div class="meta-sub" id="meta-view-counts">World Snowglobes · Celestial Constellations</div>
+          </div>
+        </div>
+        <div class="meta-actions">
+          <button type="button" class="btn glass btn-meta-shake" id="btn-meta-shake" title="Swirl snow inside globes (Space)">
+            ❄ Shake All
+          </button>
+          <button type="button" class="btn glass active" id="btn-meta-art" aria-pressed="true" title="Toggle celestial atlas illustrations">
+            Atlas Art
+          </button>
+          <button type="button" class="btn glass active" id="btn-meta-overview" title="Frame full cosmos & all snowglobes">
+            Overview
+          </button>
+          <button type="button" class="btn btn-primary glass" id="btn-meta-close" title="Return to active room (Esc or O)">
+            Return
+          </button>
+        </div>
+      </header>
+
+      <div id="meta-hover-pill" class="meta-hover-pill glass hidden" aria-live="polite"></div>
+
+      <aside id="meta-inspector" class="meta-inspector glass hidden" aria-live="polite"></aside>
+
+      <section class="meta-sky-dock glass" aria-label="Celestial sky and snowglobe navigator">
+        <div class="meta-dock-head">
+          <div class="meta-dock-mode" role="group" aria-label="Browse mode">
+            <button type="button" class="meta-mode-btn active" id="btn-meta-dock-skies" aria-pressed="true">
+              &#10023; Constellations
+            </button>
+            <button type="button" class="meta-mode-btn" id="btn-meta-dock-worlds" aria-pressed="false">
+              ❄ Snowglobes
+            </button>
+          </div>
+          <div class="meta-constellation-tabs" id="meta-constellation-tabs"></div>
+        </div>
+        <div class="meta-pill-strip" id="meta-pill-strip"></div>
+        <div class="meta-hint-line">
+          Drag to orbit · Scroll / Pinch to zoom · Click a snowglobe or constellation · Double-click a globe to enter · <kbd>Space</kbd> shake · <kbd>Esc</kbd> return
+        </div>
+      </section>
     </div>
 
     <!-- Link Portal Modal -->
@@ -298,8 +538,13 @@
           <button class="icon-btn" data-close-modal>&times;</button>
         </div>
         <p class="modal-desc">
-          Jump straight into any room in the promenade loop or copy a direct shareable link.
+          Jump straight into any room in the promenade loop, inspect them in 3D cosmic space, or copy a direct shareable link.
         </p>
+        <button type="button" class="btn btn-cosmos worlds-meta-banner" id="btn-worlds-open-cosmos">
+          <span aria-hidden="true">&#10023;</span>
+          <span>Open 3D Cosmic Snowglobe Meta View</span>
+          <kbd class="meta-btn-kbd">O</kbd>
+        </button>
         <div id="world-directory-list" class="world-cards"></div>
         <div class="modal-footer modal-footer-between">
           <span class="modal-hint">Open source — clone &amp; build your own room</span>
@@ -327,7 +572,7 @@
         <div class="modal-header">
           <div>
             <h2 id="character-modal-title">Choose Your Character</h2>
-            <p class="character-modal-sub" id="character-roster-count">4 playable · more coming soon</p>
+            <p class="character-modal-sub" id="character-roster-count">5 playable · more coming soon</p>
           </div>
           <button class="icon-btn" data-close-modal aria-label="Close character select">&times;</button>
         </div>
@@ -380,7 +625,7 @@
         <div class="modal-footer modal-footer-between">
           <label class="character-view-toggle">
             <input type="checkbox" id="character-third-person-toggle" checked />
-            <span>Switch to 3rd-person view (<kbd>V</kbd> anytime)</span>
+            <span>Switch to 3rd-person view<span class="character-view-kbd"> (<kbd>V</kbd> anytime)</span></span>
           </label>
           <div class="character-footer-actions">
             <button type="button" class="btn" data-close-modal>Cancel</button>
@@ -406,11 +651,111 @@
             Avatar Aura Color
             <input type="color" id="profile-color" value="#38bdf8" />
           </label>
+          <div class="profile-bubble-shortcut">
+            <div>
+              <div class="profile-bubble-shortcut-title">Speech Bubble Style</div>
+              <div class="profile-bubble-shortcut-sub" id="profile-bubble-summary">Portal Glass · Glow</div>
+            </div>
+            <button type="button" class="btn btn-sm" id="btn-profile-bubble-style">Customize…</button>
+          </div>
           <div class="modal-footer">
             <button type="button" class="btn" data-close-modal>Cancel</button>
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Speech Bubble Studio / Customizer Modal -->
+    <div id="modal-bubble-style" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="bubble-modal-title">
+      <div class="modal modal-bubble-style glass">
+        <div class="modal-header">
+          <div>
+            <h2 id="bubble-modal-title">Speech Bubble Studio</h2>
+            <p class="character-modal-sub">Customize how your 3D floating &amp; chat speech bubbles look to everyone</p>
+          </div>
+          <button class="icon-btn" data-close-modal aria-label="Close speech bubble customizer">&times;</button>
+        </div>
+
+        <div class="bubble-studio-layout">
+          <div class="bubble-preview-col">
+            <div class="bubble-preview-stage">
+              <canvas id="bubble-preview-canvas" width="720" height="320" aria-label="Live speech bubble preview"></canvas>
+            </div>
+            <div class="bubble-preview-modes" role="group" aria-label="Preview mode">
+              <button type="button" class="character-pose-btn active" data-bubble-preview-mode="text" aria-pressed="true">Text Bubble</button>
+              <button type="button" class="character-pose-btn" data-bubble-preview-mode="voice" aria-pressed="false">Voice Wave</button>
+              <button type="button" class="character-pose-btn" data-bubble-preview-mode="typing" aria-pressed="false">Typing •••</button>
+            </div>
+            <label class="bubble-sample-label">
+              Preview Message
+              <input
+                type="text"
+                id="bubble-sample-input"
+                maxlength="120"
+                value="Meet me by the portal!"
+                placeholder="Type to preview your speech bubble…"
+              />
+            </label>
+
+            <div class="bubble-section">
+              <div class="bubble-section-head">
+                <span>Colors &amp; Quick Themes</span>
+                <button type="button" class="btn btn-sm" id="btn-bubble-match-avatar">Match Avatar</button>
+              </div>
+              <div class="bubble-palette-row" id="bubble-palette-row"></div>
+              <div class="bubble-color-pickers">
+                <label>
+                  Fill
+                  <input type="color" id="bubble-bg-color" value="#0a1328" />
+                </label>
+                <label>
+                  Border / Glow
+                  <input type="color" id="bubble-accent-color" value="#38bdf8" />
+                </label>
+                <label>
+                  Text
+                  <input type="color" id="bubble-text-color" value="#f8fafc" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="bubble-controls-col">
+            <div class="bubble-section">
+              <div class="bubble-section-head"><span>Bubble Style Presets</span></div>
+              <div class="bubble-preset-grid" id="bubble-preset-grid"></div>
+            </div>
+
+            <div class="bubble-section">
+              <div class="bubble-section-head"><span>Tail Shape</span></div>
+              <div class="bubble-pill-group" id="bubble-tail-group"></div>
+            </div>
+
+            <div class="bubble-section">
+              <div class="bubble-section-head"><span>Typography</span></div>
+              <div class="bubble-pill-group" id="bubble-font-group"></div>
+            </div>
+
+            <div class="bubble-section">
+              <div class="bubble-section-head"><span>Aura Effect</span></div>
+              <div class="bubble-pill-group" id="bubble-effect-group"></div>
+            </div>
+
+            <div class="bubble-section">
+              <div class="bubble-section-head"><span>Flair Icon</span></div>
+              <div class="bubble-badge-group" id="bubble-badge-group"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer modal-footer-between">
+          <span class="modal-hint">Synced over WebRTC &amp; visible in 3D (press <kbd>V</kbd> for 3rd-person view)</span>
+          <div class="character-footer-actions">
+            <button type="button" class="btn" data-close-modal>Cancel</button>
+            <button type="button" class="btn btn-primary" id="btn-save-bubble-style">Save Speech Bubble</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -444,7 +789,14 @@
             <h4>Portals &amp; Co-op</h4>
             <ul class="controls-guide-list">
               <li><span>Walk through or <kbd>E</kbd></span><span>Enter any glowing portal</span></li>
+              <li><span><kbd>R</kbd> (or <kbd>E</kbd> near NPC)</span><span>Talk to a room's Keeper</span></li>
+              <li><span><kbd>1</kbd>–<kbd>4</kbd></span><span>Pick dialogue choices</span></li>
+              <li><span><kbd>J</kbd></span><span>Open the Seam Clue Journal</span></li>
               <li><span><kbd>C</kbd></span><span>Choose playable character</span></li>
+              <li><span><kbd>T</kbd> / <kbd>Enter</kbd></span><span>Open WebRTC text chat</span></li>
+              <li><span><kbd>B</kbd></span><span>Toggle Voice Mic (or hold in Push-to-Talk)</span></li>
+              <li><span><kbd>U</kbd></span><span>Customize your speech bubble</span></li>
+              <li><span><kbd>O</kbd></span><span>Cosmic Snowglobe Meta View</span></li>
               <li><span><kbd>M</kbd></span><span>Browse all rooms &amp; share links</span></li>
               <li><span><kbd>P</kbd></span><span>Spawn a live local or remote portal</span></li>
               <li><span><kbd>?</kbd></span><span>Open this controls guide</span></li>
@@ -480,6 +832,35 @@
 
         <div class="modal-footer">
           <button type="button" class="btn" id="btn-replay-tutorial">Start Interactive Tutorial</button>
+          <button type="button" class="btn btn-primary" data-close-modal>Resume Exploring</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seam Clue Journal Modal -->
+    <div id="modal-journal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="journal-modal-title">
+      <div class="modal modal-journal glass">
+        <div class="modal-header">
+          <div>
+            <h2 id="journal-modal-title">Seam Journal</h2>
+            <p class="character-modal-sub" id="journal-progress-text">0 / 14 Seam Threads · 0 / 14 Keepers Met</p>
+          </div>
+          <button class="icon-btn" data-close-modal aria-label="Close journal">&times;</button>
+        </div>
+
+        <div class="journal-progress-track">
+          <div class="journal-progress-fill" id="journal-progress-fill"></div>
+        </div>
+
+        <p class="modal-desc journal-intro">
+          Every room in the promenade keeps its own witness. Speak with them—and return with what you learned elsewhere—to trace the quiet pattern running between worlds.
+        </p>
+
+        <div id="journal-shuttle-card" class="journal-shuttle-card"></div>
+        <div id="journal-grid" class="journal-grid"></div>
+
+        <div class="modal-footer modal-footer-between">
+          <button type="button" class="btn btn-sm" id="btn-journal-reset">Reset Notes</button>
           <button type="button" class="btn btn-primary" data-close-modal>Resume Exploring</button>
         </div>
       </div>

@@ -1,7 +1,16 @@
 import { normalizeSkinAppearance, type SkinAppearance } from '../characters/appearance';
 import { RUN_SPEED } from '../portal/roomLayout';
 import * as THREE from 'three/webgpu';
-import type { AvatarState, PlatformCollider, RoomCollider, SpawnPoint, TerrainHeight, Vec3Tuple, WalkBounds } from '../types';
+import type {
+  AvatarState,
+  PlatformCollider,
+  RoomCollider,
+  SpawnPoint,
+  SpeechBubbleStyle,
+  TerrainHeight,
+  Vec3Tuple,
+  WalkBounds,
+} from '../types';
 import {
   createCharacterRig,
   DEFAULT_CHARACTER_ID,
@@ -20,11 +29,13 @@ import {
   type MovementMode,
 } from './movement';
 import { createFloatingLabel } from './signage';
+import { AvatarSpeechBubble, createDefaultBubbleStyle } from '../chat';
 import { FLOOR_LIMIT } from './falling';
 
 interface RemoteAvatarVisual {
   rig: CharacterRig;
   label: { sprite: THREE.Sprite; dispose: () => void };
+  bubble: AvatarSpeechBubble;
   targetPos: THREE.Vector3;
   prevPos: THREE.Vector3;
   targetYaw: number;
@@ -35,6 +46,7 @@ interface RemoteAvatarVisual {
   name: string;
   color: string;
   characterId: string;
+  bubbleStyleKey: string;
   dispose: () => void;
 }
 
@@ -160,6 +172,7 @@ export class AvatarController {
   private pendingJumpPresses = 0;
 
   private localRig: CharacterRig;
+  private localBubble: AvatarSpeechBubble;
   private localCharacterId: string;
   private localColor: string;
   private localAppearance = normalizeSkinAppearance();
@@ -216,6 +229,11 @@ export class AvatarController {
     this.onCharacterChange = onCharacterChange;
 
     this.localRig = createCharacterRig(this.localCharacterId, { accentColor: initialColor });
+    this.localBubble = new AvatarSpeechBubble({
+      baseHeight: getCharacterDefinition(this.localCharacterId).labelHeight + 0.36,
+      style: createDefaultBubbleStyle(initialColor),
+    });
+    this.localRig.group.add(this.localBubble.sprite);
     this.localRig.group.visible = !this.firstPerson;
     this.scene.add(this.localRig.group);
     this.scene.add(this.remoteRoot);
@@ -416,7 +434,8 @@ export class AvatarController {
   }
 
   setCharacter(characterId: string): void {
-    const resolved = getCharacterDefinition(characterId).id;
+    const resolvedDef = getCharacterDefinition(characterId);
+    const resolved = resolvedDef.id;
     if (resolved === this.localCharacterId) return;
     this.facingYaw = this.getFacingYaw();
     this.localCharacterId = resolved;
@@ -424,6 +443,7 @@ export class AvatarController {
     if (defaultMode) this.setMovementMode(defaultMode);
 
     const wasVisible = this.localRig.group.visible;
+    this.localRig.group.remove(this.localBubble.sprite);
     this.scene.remove(this.localRig.group);
     this.localRig.dispose();
 
@@ -431,9 +451,60 @@ export class AvatarController {
     this.localRig.group.position.copy(this.position);
     this.localRig.group.rotation.y = this.getFacingYaw();
     this.localRig.group.visible = wasVisible;
+    this.localBubble.setBaseHeight(resolvedDef.labelHeight + 0.36);
+    this.localRig.group.add(this.localBubble.sprite);
     this.localRig.update(0, 0, this.localMotion);
     this.scene.add(this.localRig.group);
     this.onCharacterChange?.(resolved);
+  }
+
+  setLocalBubbleStyle(style: SpeechBubbleStyle): void {
+    this.localBubble.setStyle(style);
+  }
+
+  showLocalSpeechBubble(text: string, style?: SpeechBubbleStyle): void {
+    this.localBubble.showText(text, style);
+  }
+
+  setLocalVoiceActivity(speaking: boolean, level: number, style?: SpeechBubbleStyle): void {
+    this.localBubble.setVoiceState(speaking, level, style);
+  }
+
+  showRemoteSpeechBubble(playerId: string, text: string, style?: SpeechBubbleStyle): void {
+    const vis = this.remoteMap.get(playerId);
+    if (!vis) return;
+    vis.bubble.showText(text, style);
+  }
+
+  setRemoteVoiceActivity(
+    playerId: string,
+    speaking: boolean,
+    level: number,
+    style?: SpeechBubbleStyle,
+  ): void {
+    const vis = this.remoteMap.get(playerId);
+    if (!vis) return;
+    vis.bubble.setVoiceState(speaking, level, style);
+  }
+
+  setRemoteTyping(playerId: string, typing: boolean, style?: SpeechBubbleStyle): void {
+    const vis = this.remoteMap.get(playerId);
+    if (!vis) return;
+    vis.bubble.setTyping(typing, style);
+  }
+
+  setRemoteBubbleStyle(playerId: string, style: SpeechBubbleStyle): void {
+    const vis = this.remoteMap.get(playerId);
+    if (!vis) return;
+    vis.bubble.setStyle(style);
+    vis.bubbleStyleKey = JSON.stringify(style);
+  }
+
+  getRemotePlayerPosition(playerId: string): Vec3Tuple | null {
+    const vis = this.remoteMap.get(playerId);
+    if (!vis) return null;
+    const p = vis.rig.group.position;
+    return [p.x, p.y, p.z];
   }
 
   getMotionState(): Readonly<AvatarMotionState> {
@@ -660,6 +731,8 @@ export class AvatarController {
       activeIds.add(p.id);
 
       const charDef = getCharacterDefinition(p.characterId);
+      const nextBubbleStyle = p.bubbleStyle ?? createDefaultBubbleStyle(p.color);
+      const nextBubbleKey = JSON.stringify(nextBubbleStyle);
       let vis = this.remoteMap.get(p.id);
       if (!vis) {
         const rig = charDef.createRig({ accentColor: p.color, ...normalizeSkinAppearance(p) });
@@ -670,6 +743,13 @@ export class AvatarController {
         });
         label.sprite.position.set(0, charDef.labelHeight, 0);
         rig.group.add(label.sprite);
+
+        const bubble = new AvatarSpeechBubble({
+          baseHeight: charDef.labelHeight + 0.42,
+          style: nextBubbleStyle,
+        });
+        rig.group.add(bubble.sprite);
+
         rig.group.position.set(p.position[0], p.position[1], p.position[2]);
         rig.group.rotation.y = p.yaw;
         this.remoteRoot.add(rig.group);
@@ -677,6 +757,7 @@ export class AvatarController {
         vis = {
           rig,
           label,
+          bubble,
           targetPos: startPos.clone(),
           prevPos: startPos.clone(),
           targetYaw: p.yaw,
@@ -687,9 +768,11 @@ export class AvatarController {
           name: p.name,
           color: p.color,
           characterId: charDef.id,
+          bubbleStyleKey: nextBubbleKey,
           dispose: () => {
             vis!.rig.dispose();
             vis!.label.dispose();
+            vis!.bubble.dispose();
           },
         };
         this.remoteMap.set(p.id, vis);
@@ -704,6 +787,7 @@ export class AvatarController {
           const pos = oldGroup.position.clone();
           const yaw = oldGroup.rotation.y;
           oldGroup.remove(vis.label.sprite);
+          oldGroup.remove(vis.bubble.sprite);
           this.remoteRoot.remove(oldGroup);
           vis.rig.dispose();
 
@@ -712,12 +796,19 @@ export class AvatarController {
           newRig.group.rotation.y = yaw;
           vis.label.sprite.position.set(0, charDef.labelHeight, 0);
           newRig.group.add(vis.label.sprite);
+          vis.bubble.setBaseHeight(charDef.labelHeight + 0.42);
+          newRig.group.add(vis.bubble.sprite);
           this.remoteRoot.add(newRig.group);
           vis.rig = newRig;
           vis.characterId = charDef.id;
         }
 
         vis.rig.setSkinAppearance?.(normalizeSkinAppearance(p));
+
+        if (vis.bubbleStyleKey !== nextBubbleKey) {
+          vis.bubble.setStyle(nextBubbleStyle);
+          vis.bubbleStyleKey = nextBubbleKey;
+        }
 
         if (vis.name !== p.name || vis.color !== p.color) {
           vis.rig.setAccentColor?.(p.color);
@@ -1025,10 +1116,11 @@ export class AvatarController {
       : this.pitch;
     this.localMotion.landImpact = this.landImpact;
 
-    // Update local avatar rig
+    // Update local avatar rig + 3D speech bubble
     this.localRig.group.position.copy(this.position);
     this.localRig.group.rotation.y = this.getFacingYaw();
     this.localRig.update(clampedDt, elapsed, this.localMotion);
+    this.localBubble.update(clampedDt, elapsed);
 
     // Update camera (3rd person chase OR 1st person eye)
     const eyeY = this.position.y + 1.65;
@@ -1097,6 +1189,7 @@ export class AvatarController {
         ? Math.atan2(vis.velocityY, Math.max(0.01, rSpeed)) : 0;
       vis.motion.landImpact = 0;
       vis.rig.update(clampedDt, elapsed, vis.motion);
+      vis.bubble.update(clampedDt, elapsed);
     }
   }
 
@@ -1237,6 +1330,8 @@ export class AvatarController {
     window.removeEventListener('pointerup', this.handlePointerUp);
     document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
     this.clearRemotePlayers();
+    this.localRig.group.remove(this.localBubble.sprite);
+    this.localBubble.dispose();
     this.scene.remove(this.localRig.group);
     this.scene.remove(this.remoteRoot);
     this.localRig.dispose();

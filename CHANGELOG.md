@@ -2,6 +2,121 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Cosmic Snowglobe Meta View & Celestial Constellations — Unreleased (2026-11-27)
+
+### Added
+
+- **Cosmic Snowglobe Meta View (`packages/core/src/meta/constellations.ts`, `cosmicShaders.ts`, `snowglobeDioramas.ts`, `CosmicMetaView.ts`, `app/metaViewUi.ts`)**:
+  - Added a full-screen WebGPU + TSL **Cosmic Meta View** accessible from everywhere: a dedicated always-visible **`✦ Meta View`** button pinned next to the top-left world badge (never scrolled off-screen on narrow viewports), the **`O`** global hotkey (works even during pointer-lock, modals, or dialogue), a **`✦ Cosmic Meta View`** button on the opening loading gate, a **`✦ Meta`** quick pill in mobile touch controls, a top banner inside the Rooms (`M`) modal, and `/?view=meta`.
+  - Crafted bespoke animated miniature 3D dioramas inside every world's snowglobe (`jp-world`, `jp-garden`, `fishpond`, `jp-reef`, `jp-loft`, `jp-abyss`, `jp-visages-synthesis`, `eric-palace-lagoon`, `laser-lab`, `alpine-sled`, `eric-biolum-grove`, `eric-sun-observatory`, `honey-hood`, `doug-cassette-station`, `eric-starlight-pavilion`, plus a dynamic accent-matched fallback diorama for community rooms like `frostfire-hollow`).
+  - Built a TSL crystal glass dome shader (Fresnel rim glow, curved specular reflections, prismatic iridescence), lathe-turned obsidian & brass pedestals pulsing at 88 BPM, biome-themed swirling snow/bubble/spore/stardust flurries with interactive **Shake (`Space`)** vortex physics, golden orbital astrolabe halo marking your current room, and live multiplayer explorer firefly orbs circling rooms where friends are active.
+  - Built a deep TSL cosmic sky dome (Milky Way nebula band, drifting translucent 3D nebula clouds, 2,200+ twinkling 3D parallax stars, periodic shooting stars) crowned by **12 interactive constellations** with starburst nodes, glowing star-to-star beams, and toggleable Uranometria-style celestial atlas art spanning **Creatures** (*The Great Buffalo*, *The Star Whale*, *The Lunar Moth*), **Aliens** (*The Star Visitor*, *The Star Saucer*), **Plants** (*The Cosmic Monstera*, *The Lotus of Worlds*, *The World Tree*), and **Concepts** (*The Seam Loop*, *The Luminous Idea*, *The Hourglass of Time*, *The Golden Spiral*).
+  - Added smooth orbit/pitch/pinch-zoom controls, click-to-inspect World & Constellation inspector cards, double-click / CTA dive-into-snowglobe world entry, a filterable bottom Celestial Sky-Guide dock, and a dedicated `'__cosmic-meta__'` soundtrack shimmer vibe in `packages/core/src/audio/musicMix.ts`.
+- **Shared overlay scene rendering in `WorldEngine` (`packages/core/src/engine/WorldEngine.ts`)**:
+  - Added `engine.setOverlayView(...)` so full-screen 3D meta views render directly on Portalverse's shared `WebGPURenderer` with zero extra GPU context overhead while keeping the active room mounted in memory for instant return.
+- **Automated test coverage (`packages/core/src/__tests__/cosmicMetaView.test.ts`)** covering all 12 constellations, orthonormal spherical projection, non-overlapping snowglobe layout math, bespoke & fallback diorama build/update/dispose across the full catalog, and headless `CosmicMetaView` focus/presence/shake/dive lifecycle.
+
+### Removed
+
+- **Eric's placeholder room (`worlds/eric-world/`, `registry.json`, `packages/core/src/npc/dialogueData.ts`, `placements.ts`, `musicMix.ts`)**:
+  - Removed the original placeholder studio room `eric-world` ("Eric's Room") now that Eric's finished worlds are in the loop, promoted `jp-reef` ("Coral Reef Walk", first active room in rotation) to `defaultWorldId`, removed `KESTREL` from the active Keeper roster (re-linking Soraya's cross-world callback cleanly to Halcyon's Observatory clue so all 8 bubble presets and the full dialogue web remain intact), and updated affected catalog/server tests.
+
+### Design & engineering decisions
+
+- **Shared `WebGPURenderer` overlay pass instead of a second canvas/context:** Rendering `CosmicMetaView` directly on `WorldEngine`'s existing `WebGPURenderer` avoids creating a second WebGPU device (preventing mobile memory pressure and context loss), inherits automatic viewport/DPR syncing, and leaves the current room alive in memory so returning to the same room is instantaneous.
+- **Instanced volumetric starlight beams & starburst sprites instead of 1px WebGPU `LineSegments`/`Points`:** Because WebGPU locks `PointList` and `LineList` primitives to 1 physical pixel regardless of DPI, drawing constellation edges as oriented additive instanced cylinders and stars as multi-point starburst sprites keeps constellations luminous and crisp on 2× Retina and 4K displays alike.
+- **Bespoke lightweight procedural 3D dioramas + automatic fallback:** Building every room's miniature world out of shared low-poly primitives keeps draw calls and memory minimal across all globes while automatically welcoming any future community world added to `registry.json`.
+
+## Mobile portrait viewport fix, Character Select mobile layout & Velveteen Moonbite — Unreleased (2026-11-27)
+
+### Added
+
+- **New playable character — Velveteen Moonbite (`packages/core/src/characters/moonMoth.ts`, `packages/core/src/characters/index.ts`, `packages/core/src/characters/types.ts`)**:
+  - Built a procedural Three.js WebGPU + TSL velvet luna moth rig (`moon-moth`) with feathery instanced plume antennae, a floating emissive crescent-moon tiara (88 BPM beat pulse + boost flare), a cream-lilac fur-stole ruff, six articulated limbs (expressive upper opera arms + dainty middle hands that periodically dab her chin with a scalloped lace napkin), fluffy violet pantaloon legs grounded at `Y = 0`, and four scalloped TSL-shaded luna wings with crescent-SDF eyespots, iridescent scale-dust glitter, and articulated 4-segment swallowtail hindwing trains that fold into an opera cape on foot and sweep into a figure-eight hover & moondust-trail Moonbite Dash in flight.
+- **Whimsical, subtly interconnected character backstories (`packages/core/src/characters/index.ts`, `app/characterSelect.ts`)**:
+  - Expanded **Barnaby Buzz**, **Zephyr**, and **Velveteen Moonbite** with full whimsical backstories (collaborated with Claude Opus 5.5) containing quiet, mystery-movie-opening cross-references woven unobtrusively across the three bios.
+- **Viewport sizing unit tests (`packages/core/src/engine/viewportSize.ts`, `packages/core/src/__tests__/viewportSize.test.ts`, `packages/core/src/__tests__/characters.test.ts`)**:
+  - Added regression coverage for zero-height/zero-width mobile container startup, `visualViewport` keyboard resilience, camera aspect drift detection, and `moon-moth` rig grounding/animation/switching.
+
+### Fixed
+
+- **Mobile portrait stretched / collapsed 3D view (`packages/core/src/engine/WorldEngine.ts`, `packages/core/src/engine/viewportSize.ts`, `index.html`, `app/main.ts`)**:
+  - Fixed a race condition on phones (especially iOS in-app browsers in vertical mode) where `new WorldEngine(viewport, ...)` initialized `PerspectiveCamera.aspect` from `Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight)` without falling back to `window.innerWidth`/`innerHeight` — so when `#viewport` had `clientHeight === 0` before stylesheet layout settled, `camera.aspect` stuck at `~390` (crushing the room into a narrow vertical strip) while `renderer.setSize` used full portrait dimensions and `window.resize` never fired.
+  - Added critical inline `#viewport` sizing in `index.html`, `renderer.setSize(w, h, false)` so CSS keeps the canvas flush, `ResizeObserver` + `visualViewport` + `orientationchange` + `pageshow` + `visibilitychange` + startup self-healing sync in `WorldEngine`, explicit `camera.aspect` sync in `setPerformanceProfile()`, and a `setRenderTarget(null)` guard on the `mobile-lite` direct render path.
+- **iPhone vertical Character Select & Speech Bubble Studio modal overlap (`app/styles.css`, `app/characterSelect.ts`, `index.html`)**:
+  - Fixed flex-shrink overflow where `.character-select-layout` and `.bubble-studio-layout` had `min-height: 0` without `overflow-y: auto`, causing character cards and detail boxes to spill behind and overlap the modal footer buttons on vertical iPhone screens.
+  - Made both modals clean 3-band flex layouts (pinned header, single smooth touch-scrolling body, pinned footer with safe-area insets), improved mobile 3D turntable camera framing so tall heads/antennae don't clip, hid desktop-only `<kbd>V</kbd>` hints on touch devices, and prevented narrow-screen mobile HUD pill collisions.
+
+### Design & engineering decisions
+
+- **Container-first sizing with per-axis fallback instead of raw `visualViewport`:** Using `#viewport`'s positive dimensions first (falling back per-axis to `window` and `visualViewport` only when `<= 0`) fixes pre-layout mobile portrait distortion without letting the iOS/Android software keyboard squash the full-screen 3D scene when typing in chat.
+- **Three-band modal scroll on mobile portrait:** Removing nested `max-height` scroll boxes inside `.character-roster` on narrow viewports eliminates double-scroll friction on iOS touchscreens while keeping the action footer pinned and cleanly separated from character cards and backstories.
+
+## Starlight Dance Pavilion (`eric-starlight-pavilion`) — Unreleased (2026-11-27)
+
+### Added
+
+- **New interactive dance & spellcraft room `eric-starlight-pavilion` (`worlds/eric-starlight-pavilion/`, `registry.json`, `packages/core/src/audio/musicMix.ts`)**:
+  - **Live 3-Keeper Dancing Trio (`dancers.ts`)**: Mounts **Soraya Benali**, **Dex Arclight**, and **Ermelin** dancing together in synchronized 88 BPM choreography (full humanoid + bespoke bone animation for cloaks, tails, ears, lantern, and baton, plus `@ericrius1/cast` expressions & 3D speech bubbles).
+  - **Seamless Dancer Takeover for Phone & Desktop (`controlsUi.ts`, `app/main.ts`)**: Click/tap any of the three dancers in 3D or on the stage HUD (or press `1`/`2`/`3`) to take over dancing them while the other two dynamically orbit as your backup crew. Supports **phone multi-touch drag-to-steer, directional swipes (`←/→` Spin, `↑` Leap, `↓` Bass Drop, circular swirl Tornado Twirl, two-finger camera orbit)** alongside **mouse/trackpad swipes, scroll gestures, `WASD`, and beat-synced `Space`**. Press `Esc` or tap **Walk Free** anytime to return to free exploration.
+  - **6 Unique Character Powers / Spells (`spells.ts`, `audio.ts`)**:
+    - **Soraya**: *Zellige Starburst* (8 spinning gold-teal star blades ringing totems & orbs) & *Aurora Canopy* (overhead aurora ribbons granting zero-G levitation to all 3 dancers).
+    - **Dex**: *Prism Laser Nova* (360° rainbow concert laser fan supercharging disco orbs) & *Holo-Clone Rush* (3 translucent neon holographic dance clones).
+    - **Ermelin**: *Blizzard Ribbon Twirl* (60 swirling snowflakes & frost-crystal floor shader) & *Lantern Comet Ring* (5 homing golden lantern comets auto-ringing all Chime Totems).
+  - **4 Sculpted Blender Hero Stage Props (`worlds/eric-starlight-pavilion/assets/`, `tools/starlight_pavilion/build_stage_assets.py`)**: Uncompressed AA Art-Deco celestial GLBs (`2.18 MiB` combined) — `dance_gazebo.glb` (open octagonal pavilion with spinning `ChandelierCore`), `dj_gramophone.glb` (Celestial Turntable with spinning star-chart vinyl `TurntablePlatter` & 7 live-pulsing 88 BPM EQ bars `Starlight_Eq0`–`Starlight_Eq6`), `chime_totem.glb` (3 Harmonic Crystal Chime Totems that trigger **Starlight Overdrive** when all 3 resonate), and `star_fountain.glb` (2 walkable Zero-G Star Geyser Launch Pads), plus 12 musical G♯ minor floor tiles, 4 hovering mirror-prism disco orbs, and 8 rim sparkler cannons.
+  - **Tests (`worlds/eric-starlight-pavilion/starlightPavilion.test.ts`, `packages/core/src/__tests__/npcDialogue.test.ts`)**: Verifies trio choreography, takeover movement & spells, unobstructed `X = 0` promenade corridor, Starlight Overdrive trigger, and uncompressed GLB node integrity.
+
+### Design & engineering decisions
+
+- **Non-invasive room input capture (`portalverse:room-capture`):** Instead of coupling dance logic into `WorldEngine` or `AvatarController`, entering Dance Takeover dispatches a lightweight custom event that cleanly locks Explorer movement and hides the mobile walking joystick while keeping chat, voice, music, and modals responsive, and automatically restores control on `Esc` or room exit.
+- **Reusing `public/assets/npcs/` rigged models + compact 2.18 MiB stage GLBs:** Loading Soraya, Dex, and Ermelin from shared `/assets/npcs/<id>/model.glb` avoids duplicating character meshes while keeping `worlds/eric-starlight-pavilion/` at ~2.2 MiB (well inside the 12 MiB room budget).
+
+## Keepers of the Loop: AA-rigged NPCs, KOTOR/Zelda branching dialogue & Seam Clue Journal — Unreleased (2026-11-27)
+
+### Added
+
+- **Story bible & branching dialogue graph (`docs/npc-bible.md`, `packages/core/src/npc/types.ts`, `packages/core/src/npc/dialogueData.ts`, `packages/core/src/npc/index.ts`)**:
+  - Created 14 active Keepers across the portal promenade loop (with Vesper also shared across the 3 archived Visages comparison rooms) bound together by a subtle higher-dimensional mythos (**"The Seam & The G♯ Loom"**) tied to Portalverse's real 88 BPM G♯ minor soundtrack.
+  - Each Keeper has a 7–8 node KOTOR/Zelda-style branching dialogue tree, `@ericrius1/cast` facial expressions, body gestures, 3 ambient approach barks, a bespoke custom `SpeechBubbleStyle` (spanning all 8 speech bubble presets), a discoverable journal clue, and a cross-world callback choice unlocked by clues found in other rooms.
+- **Blender-modeled, rigged, PBR-textured GLB characters & 512×512 stylized portraits (`public/assets/npcs/<id>/{model.glb,portrait.webp}`, `tools/npcs/`)**:
+  - Built a reusable Blender 4.5+ modeling/rigging/turnaround-sheet kit (`tools/npcs/blender_kit.py`), three modular build scripts (`tools/npcs/build_batch_a.py`, `build_batch_b.py`, `build_batch_c.py`), and a Pillow/NumPy PBR texture & GLB/portrait verification pipeline (`tools/npcs/process_textures.py`).
+  - Exported all rigged Keepers as strictly uncompressed single-skin GLBs (`0.83–1.95 MiB`, zero Draco/meshopt/KTX2, feet grounded at `Y = 0`, facing `+Z`) alongside cohesive painterly 512×512 WebP dialogue portraits.
+- **Core NPC runtime & `@ericrius1/cast` facial animation (`packages/core/src/npc/npcRig.ts`, `npcManager.ts`, `npcMemory.ts`, `placements.ts`, `packages/core/src/engine/WorldEngine.ts`)**:
+  - Installed `@ericrius1/cast` (`0.7.6`) and integrated `Face` + `lineOf` into `NpcActor` for real-time phoneme lip-sync (`Jaw`), blinks/saccades/gaze tracking (`Head`, `Neck`, `EyeL`, `EyeR` with orientation-aware vertical blinking), 7 animated gestures, secondary bone physics (`Cloak`, `Tail1/2`, `EarL/R`, `Hat`, `Halo`, `Lantern`, `WingL/R`, `Tentacle1–4`), 88 BPM emissive pulsing, and floating 3D speech bubbles (`AvatarSpeechBubble`).
+  - Wired `NpcManager` into `WorldEngine` to mount and live-ground each room's Keeper onto `terrainHeight` / `platforms` without modifying contributor `worlds/*` folders, handle proximity prompts (`R`, or `E` when no portal is closer) & ambient barks, and dispose cleanly on room switches.
+- **KOTOR/Zelda Dialogue Panel & Seam Clue Journal UI (`app/dialogueUi.ts`, `index.html`, `app/main.ts`, `app/styles.css`)**:
+  - Built a lower-third RPG dialogue overlay dynamically themed to each Keeper's custom `SpeechBubbleStyle` (preset, fill/accent/text colors, font, aura effect, flair badge) with live expression mood pills, typewriter reveal (`Space`/click to skip), `1–4` keyboard response hotkeys, highlighted cross-world thread choices (`✦ Thread from <Keeper>`), and a one-click **"Wear Bubble"** button to equip any Keeper's speech bubble for WebRTC player chat.
+  - Added `NpcJournalStore` (`localStorage`-persisted) and the **Seam Journal** modal (`J` hotkey + top-bar counter) tracking discovered threads across the loop, quick room teleports, and the hidden final journal page (**"The Shuttle"**) unlocked once all clues are found.
+- **Automated test coverage (`packages/core/src/__tests__/npcDialogue.test.ts`, `packages/core/src/__tests__/npcRuntime.test.ts`)** — validates all dialogue node links, reachability, clue web invariants, bubble presets, safe room placements, `NpcJournalStore` progression, headless `@ericrius1/cast` lip-sync/actor lifecycle, and on-disk portrait + uncompressed rigged GLB integrity.
+
+### Design & engineering decisions
+
+- **Central engine mounting + `public/assets/npcs/` lazy assets instead of editing `worlds/*`:** Mounting Keepers via `NpcManager` inside `WorldEngine` and serving GLBs/portraits lazily from `public/assets/npcs/<id>/` populates worlds automatically while respecting contributor room ownership and keeping every room well inside the 12 MiB per-room bundle budget.
+- **Closed cross-world clue web ("the walker is the thread"):** Every Keeper holds one subtle sensory anomaly in their own trade and unlocks a unique callback when the player brings a clue from elsewhere in the loop, rewarding multi-lap exploration without breaking any room's standalone vibe (and keeping Uncle Keola's fishpond dialogue grounded in real loko iʻa stewardship with zero invented mythology).
+- **Orientation-aware bone blinking & pure-data dialogue tests:** Inspecting each rig's `EyeL`/`EyeR` rest world quaternion on load guarantees vertical blinking across rigs regardless of Blender bone tail orientation, while keeping `dialogueData.ts` DOM/engine-free lets Vitest verify the entire branching narrative headlessly.
+
+## WebRTC text & spatial voice chat + customizable 3D speech bubbles — Unreleased (2026-11-27)
+
+### Added
+
+- **WebRTC P2P full-mesh text & spatial voice chat (`packages/core/src/net/webrtcMesh.ts`, `packages/core/src/net/multiplayerClient.ts`, `packages/server/src/protocol.ts`, `packages/server/src/roomManager.ts`, `packages/server/src/index.ts`)**:
+  - Added W3C Perfect Negotiation WebRTC signaling (`rtc_signal` offer/answer/ICE) scoped per room over the existing `/ws` multiplayer socket, plus `/api/rtc-config` (serving public STUN servers with optional `ICE_SERVERS_JSON` override for TURN deployments).
+  - Established reliable peer-to-peer `RTCDataChannel`s (`"portalverse-chat"`) for instant room text chat, typing indicators, live voice status, and speech bubble style updates, with a deduplicated targeted WebSocket fallback (`chat_message`) whenever a peer's DataChannel is still negotiating or behind a strict NAT.
+  - Added opt-in WebRTC microphone voice chat with a dedicated Web Audio graph (`PannerNode` HRTF 3D spatialization + distance attenuation, toggleable to room-wide stereo), live `AnalyserNode` voice activity detection, Open Mic or Push-to-Talk (`B`), Mute, Deafen, microphone device picker, and per-player mute controls in the Explorers roster.
+- **Customizable 3D & HUD speech bubbles (`packages/core/src/chat/bubbleStyles.ts`, `packages/core/src/chat/speechBubbleCanvas.ts`, `packages/core/src/chat/speechBubble3D.ts`, `packages/core/src/engine/AvatarController.ts`)**:
+  - Added 8 distinct speech bubble presets (**Portal Glass**, **Pop Comic**, **Thought Cloud**, **Neon Cyber**, **Action Shout**, **Retro 8-Bit**, **Arcane Scroll**, and **Prism Aurora**) plus mix-and-match customization for **Fill / Border / Text colors**, **4 tail shapes** (`curved`, `sharp`, `dots`, `none`), **4 fonts** (`sans`, `comic`, `mono`, `serif`), **5 aura effects** (`none`, `glow`, `shimmer`, `sparkle`, `pulse`), and **optional flair badges**.
+  - Rendered matching animated speech bubbles in 3D above remote avatars (and your own avatar in 3rd-person view) for text messages, live voice-speaking equalizer waves, and `• • •` typing indicators using fixed-dimension WebGPU-safe `CanvasTexture` sprites.
+  - Persisted customized speech bubble styles in `localStorage` and synced them across `hello`, `update_profile`, WebRTC DataChannels, and federated `PortalHandoffPayload` links.
+- **Chat Dock, Voice Bar & Speech Bubble Studio (`index.html`, `app/chatUi.ts`, `app/bubbleCustomizer.ts`, `app/mobileControls.ts`, `app/styles.css`, `app/main.ts`)**:
+  - Added bottom-left speech-bubble Chat Dock (`T` / `Enter` to type, collapsible on mobile, auto-dimming when idle), top-bar Voice split control with live level meter and settings popover (`B` to toggle mic or hold for PTT), and the interactive **Speech Bubble Studio** modal (`U` or from Chat / Avatar Settings) with a live Text / Voice Wave / Typing preview canvas.
+- **Automated test coverage (`packages/core/src/__tests__/speechBubbles.test.ts`, `packages/core/src/__tests__/webrtcMesh.test.ts`, `packages/server/src/__tests__/roomManager.test.ts`, `packages/core/src/__tests__/handoffAndRegistry.test.ts`)** — added unit and integration tests for bubble sanitization/lifecycle, two-peer WebRTC Perfect Negotiation + DataChannel chat + voice track controls, room-scoped signaling relay, `/api/rtc-config`, and federated handoff round-tripping.
+
+### Design & engineering decisions
+
+- **Dedicated Voice `AudioContext` separate from `Soundtrack`.** Because `Soundtrack.setMuted(true)` suspends its own `AudioContext` to save CPU when music is muted, routing WebRTC voice through an independent `AudioContext` guarantees voice chat remains audible whether soundtrack music is muted or playing.
+- **Fixed-size bottom-anchored WebGPU `CanvasTexture` sprites for 3D speech bubbles.** Keeping every 3D bubble sprite canvas at a constant `768×400` avoids WebGPU `GPUTexture` dimension-mismatch errors when message line counts change, while bottom-anchoring the bubble keeps the tail planted cleanly above each character's nameplate regardless of bubble height.
+- **Zero-prompt P2P DataChannels with opt-in microphone tracks.** Negotiating the `"portalverse-chat"` DataChannel on room entry makes peer-to-peer text chat and typing indicators work immediately without triggering a browser microphone permission prompt; enabling Voice seamlessly attaches the local audio track via Perfect Negotiation renegotiation.
+
 ## Visages pentagram response — Unreleased (2026-11-27)
 
 ### Changed
