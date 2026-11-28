@@ -6,7 +6,7 @@ const DEFAULT_DENSITY = 0.46;
 const STORAGE_KEY = 'jp-reef.fog-density.v2';
 const listeners = new Set<(density: number) => void>();
 let density = DEFAULT_DENSITY;
-try {
+if (import.meta.env.DEV) try {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved !== null && Number.isFinite(Number(saved))) density = MathUtils.clamp(Number(saved), 0, 1.5);
 } catch { /* Storage is optional. */ }

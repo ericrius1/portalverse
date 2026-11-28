@@ -144,7 +144,7 @@ export default defineRoom('jp-reef', {
     const fog = new THREE.Fog(WATER_COLOR, WATER_FOG_NEAR, WATER_FOG_FAR);
     ctx.scene.fog = fog;
     ctx.onDispose(bindFogDensity(fog));
-    ctx.onActivate(mountFogControls);
+    if (import.meta.env.DEV) ctx.onActivate(mountFogControls);
     root.add(new THREE.HemisphereLight('#c9f5ec', '#237f7e', 1.1));
     const sun = new THREE.DirectionalLight('#fff4d6', 1.2);
     sun.position.set(6, 30, 4);

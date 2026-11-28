@@ -2,6 +2,16 @@
 
 Notable changes and design decisions in **Portalverse**, newest first. Each section names the commit(s) it shipped in and the *why* behind each decision so contributors and their agents stay in sync across sessions.
 
+## Reef — production atmosphere preset — Unreleased (2026-11-28)
+
+### Changed
+
+- Restricted the Reef fog tuning panel and saved experimental density overrides to development. Production ships the approved 46% fog density without a tuning panel.
+
+### Design & engineering decisions
+
+- Release the approved undersea water and creature updates with the same clean production experience as Jungle Path; retain the authoring slider for local development.
+
 ## Reef approved fog density — Unreleased (2026-11-28)
 
 ### Changed
